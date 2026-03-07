@@ -1,6 +1,6 @@
 # Dynamic VoIP Real-Time Media Gateway
 
-> **최신 버전: 1.2.0.5**
+> **최신 버전: 1.2.0.6**
 
 AI 연동을 위한 고성능 실시간 VoIP 미디어 게이트웨이입니다.
 Asterisk/VitalPBX의 통화 오디오를 실시간으로 AI 서비스(STT·LLM·TTS)에 스트리밍합니다.
@@ -23,10 +23,10 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/down
 
 ```bash
 # 최신 릴리즈 다운로드
-wget https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/download/dvgateway_1.2.0.5_amd64.deb
+wget https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/download/dvgateway_1.2.0.6_amd64.deb
 
 # 설치
-sudo dpkg -i dvgateway_1.2.0.5_amd64.deb
+sudo dpkg -i dvgateway_1.2.0.6_amd64.deb
 
 # 설정 편집 (AMI 비밀번호 등)
 sudo nano /etc/dvgateway/env
@@ -136,7 +136,7 @@ open http://<서버IP>:8081
 |------|------|
 | `dvgateway_linux_amd64` | Linux x86_64 바이너리 |
 | `dvgateway_linux_arm64` | Linux ARM64 바이너리 |
-| `dvgateway_1.2.0.5_amd64.deb` | Debian/Ubuntu .deb 패키지 |
+| `dvgateway_1.2.0.6_amd64.deb` | Debian/Ubuntu .deb 패키지 |
 
 ---
 
