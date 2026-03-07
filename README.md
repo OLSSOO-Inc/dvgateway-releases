@@ -10,7 +10,7 @@ Asterisk/VitalPBX의 통화 오디오를 실시간으로 AI 서비스(STT·LLM·
 ## 원라인 설치
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway/master/install.sh | sudo bash
+curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/download/install.sh | sudo bash
 ```
 
 > **지원 환경:** Debian 12/13 · Ubuntu 22.04+ · amd64 / arm64
