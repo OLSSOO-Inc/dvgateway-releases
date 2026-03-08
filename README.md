@@ -1,6 +1,6 @@
 # Dynamic VoIP Real-Time Media Gateway
 
-> **최신 버전: 1.2.1.9**
+> **최신 버전: 1.2.2.0**
 
 Dynamic VoIP 통화 오디오를 AI 서비스(STT·LLM·TTS)에 실시간으로 연결하는 고성능 미디어 게이트웨이입니다.
 
