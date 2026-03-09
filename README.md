@@ -23,6 +23,6 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/down
 | 실시간 오디오 스트리밍 | Dynamic VoIP 통화 오디오를 AI 서비스로 PCM 16kHz 스트림 전달 |
 | AI 파이프라인 연동 지원 (SDK 제공예정) | Deepgram · Whisper · Google STT / Anthropic · OpenAI / ElevenLabs · Polly |
 | TTS 오디오 주입 | REST API로 AI 응답 오디오를 통화에 실시간 삽입 |
-| 컨퍼런스 지원 | 다자통화 참여자별 독립 스트림 + 의사록 자동 생성 |
+| 컨퍼런스 지원 | 다자통화 참여자별 독립 스트림 + 스트리밍 지원 |
 | 모니터링 대시보드 | 포트 8081에서 실시간 세션·VU미터·로그 확인 |
 | 원클릭 업데이트 | 대시보드에서 최신 버전으로 즉시 업그레이드 |
