@@ -1,9 +1,9 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.2.6.1** | 업데이트: 2026-03-11
+> **최신 버전: 1.2.6.2** | 업데이트: 2026-03-11
 
-**DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 Node.js 라이브러리입니다.
-개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
+**DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
+**Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
 
 ---
 
@@ -25,6 +25,11 @@
     - [OpenAI GPT LLM](#openai-gpt-llm)
     - [OpenAI TTS](#openai-tts-음성-합성)
     - [OpenAI 리얼타임 (Speech-to-Speech)](#openai-리얼타임-speech-to-speech)
+    - [로컬 STT — whisper.cpp (오프라인 무료)](#로컬-stt--whispercpp-오프라인-무료)
+    - [로컬 STT — Faster-Whisper (Python 고속 추론)](#로컬-stt--faster-whisper-python-고속-추론)
+    - [로컬 STT — OpenAI Whisper (Python 공식)](#로컬-stt--openai-whisper-python-공식)
+    - [로컬 LLM — Qwen (Ollama 경유)](#로컬-llm--qwen-ollama-경유)
+    - [로컬 LLM — vLLM 서버 연동](#로컬-llm--vllm-서버-연동)
 11. [이벤트 후킹 — 통화 시작·종료·발화 감지](#11-이벤트-후킹--통화-시작종료발화-감지)
 12. [폴백(Fallback) 설정 — 장애 자동 전환](#12-폴백fallback-설정--장애-자동-전환)
 13. [멀티테넌트 지원](#13-멀티테넌트-지원)
@@ -32,6 +37,7 @@
 15. [자주 묻는 질문 (FAQ)](#15-자주-묻는-질문-faq)
 16. [문제 해결](#16-문제-해결)
 17. [원라인 서버 업데이트](#17-원라인-서버-업데이트)
+18. [진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지](#18-진짜-초보자용-메뉴얼--nodejs-python-설치부터-봇-실행까지)
 
 ---
 
@@ -77,6 +83,8 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/download/v1
 
 ## 3. SDK 설치
 
+### 3-1. Node.js SDK (TypeScript / JavaScript)
+
 Node.js 프로젝트 폴더에서 실행합니다.
 
 ```bash
@@ -103,6 +111,224 @@ npx tsc --init   # tsconfig.json 생성
   }
 }
 ```
+
+### 3-2. Python SDK
+
+Python 3.10 이상 환경에서 실행합니다.
+
+```bash
+# 가상환경 생성 (권장)
+python3 -m venv venv
+source venv/bin/activate        # macOS / Linux
+# venv\Scripts\activate.bat    # Windows
+
+# SDK + 어댑터 설치
+pip install dvgateway dvgateway-adapters
+```
+
+환경 변수는 `python-dotenv` 로 관리합니다:
+
+```bash
+pip install python-dotenv
+```
+
+`.env` 파일을 만들고 API 키를 저장합니다:
+
+```ini
+DEEPGRAM_API_KEY=dg_xxxxxxxxxxxx
+ELEVENLABS_API_KEY=sk_xxxxxxxxxxxx
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
+OPENAI_API_KEY=sk-xxxxxxxxxxxx
+```
+
+#### Python 5분 시작 — 헬로 월드 봇
+
+```python
+# bot.py
+import asyncio
+import os
+from dotenv import load_dotenv
+
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.stt import DeepgramAdapter
+from dvgateway.adapters.llm import AnthropicAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter
+
+load_dotenv()  # .env 파일 로드
+
+async def main():
+    # 1. 게이트웨이 서버에 연결
+    gw = DVGatewayClient(
+        base_url="http://localhost:8080",
+        auth={"type": "apiKey", "api_key": "your-gateway-api-key"},
+        tenant_id="tenant-a",  # (선택) 멀티테넌트 환경
+    )
+
+    # 2. AI 어댑터 준비
+    stt = DeepgramAdapter(
+        api_key=os.environ["DEEPGRAM_API_KEY"],
+        language="ko",
+        model="nova-3",
+    )
+
+    llm = AnthropicAdapter(
+        api_key=os.environ["ANTHROPIC_API_KEY"],
+        model="claude-haiku-4-5-20251001",
+        system_prompt="당신은 친절한 한국어 음성 안내원입니다. 짧고 명확하게 답변하세요.",
+    )
+
+    tts = ElevenLabsAdapter(
+        api_key=os.environ["ELEVENLABS_API_KEY"],
+        model="eleven_flash_v2_5",
+        voice_id="21m00Tcm4TlvDq8ikWAM",  # Rachel 음성
+    )
+
+    # 3. 파이프라인 시작
+    await (
+        gw.pipeline()
+        .stt(stt)
+        .llm(llm)
+        .tts(tts)
+        .on_new_call(lambda session: print(f"📞 새 통화: {session.linked_id}"))
+        .on_transcript(lambda result: print(f"🎙️  발화: {result.text}") if result.is_final else None)
+        .on_call_ended(lambda linked_id, duration: print(f"📴 통화 종료: {linked_id} ({duration}초)"))
+        .on_error(lambda err: print(f"오류: {err}"))
+        .start()
+    )
+
+asyncio.run(main())
+```
+
+실행:
+
+```bash
+python bot.py
+```
+
+#### Python — OpenAI Realtime 봇
+
+```python
+# realtime_bot.py
+import asyncio
+import os
+from dotenv import load_dotenv
+
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter
+
+load_dotenv()
+
+async def main():
+    gw = DVGatewayClient(
+        base_url="http://localhost:8080",
+        auth={"type": "apiKey", "api_key": "your-key"},
+    )
+
+    realtime = OpenAIRealtimeAdapter(
+        api_key=os.environ["OPENAI_API_KEY"],
+        model="gpt-4o-mini-realtime-preview",
+        voice="alloy",
+        instructions="당신은 친절한 한국어 AI 상담원입니다. 짧고 자연스럽게 답변하세요.",
+        turn_detection={
+            "mode": "server_vad",
+            "threshold": 0.5,
+            "silence_duration_ms": 500,
+            "prefix_padding_ms": 300,
+        },
+        input_transcription=True,
+        temperature=0.8,
+    )
+
+    realtime.on_audio_output(lambda chunk, linked_id: gw.inject_audio(linked_id, chunk))
+    realtime.on_transcript(lambda result: print(
+        f"{'🤖 AI' if result.speaker == 'agent' else '👤 고객'}: {result.text}"
+    ))
+
+    @gw.on("call:new")
+    async def on_new_call(event):
+        session = event["session"]
+        print(f"📞 리얼타임 세션 시작: {session.linked_id}")
+        audio_stream = gw.audio_stream(session.linked_id, dir="in")
+        await realtime.start_session(session.linked_id, audio_stream)
+
+    @gw.on("call:ended")
+    async def on_call_ended(event):
+        print(f"📴 리얼타임 세션 종료: {event['linked_id']}")
+        await realtime.stop(event["linked_id"])
+
+    await gw.connect()
+    print("🎙️ OpenAI Realtime 봇이 준비되었습니다.")
+    await asyncio.Event().wait()  # 무한 대기
+
+asyncio.run(main())
+```
+
+#### Python — 컨퍼런스 회의록 봇
+
+```python
+# conference_bot.py
+import asyncio
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.stt import DeepgramAdapter
+
+load_dotenv()
+
+minutes = []
+
+async def main():
+    gw = DVGatewayClient(
+        base_url="http://localhost:8080",
+        auth={"type": "apiKey", "api_key": "your-key"},
+    )
+
+    stt = DeepgramAdapter(
+        api_key=os.environ["DEEPGRAM_API_KEY"],
+        language="ko",
+        model="nova-3",
+        diarize=True,
+    )
+
+    async def on_transcript(result, session):
+        if not result.is_final:
+            return
+        entry = {
+            "speaker": result.speaker or session.linked_id,
+            "text": result.text,
+            "time": datetime.fromtimestamp(result.timestamp_ms / 1000),
+        }
+        minutes.append(entry)
+        print(f"[{entry['time'].strftime('%H:%M:%S')}] {entry['speaker']}: {entry['text']}")
+
+    await (
+        gw.pipeline()
+        .stt(stt)
+        .for_conference()  # TTS 없음, 전사만
+        .on_transcript(on_transcript)
+        .on_error(lambda err: print(f"오류: {err}"))
+        .start()
+    )
+
+asyncio.run(main())
+```
+
+#### Node.js vs Python SDK 비교
+
+| 항목 | Node.js SDK | Python SDK |
+|------|-------------|------------|
+| 패키지 | `npm install dvgateway-sdk` | `pip install dvgateway` |
+| 진입점 | `DVGatewayClient` | `DVGatewayClient` |
+| 어댑터 import | `dvgateway-adapters/stt` | `dvgateway.adapters.stt` |
+| 비동기 방식 | `async/await` | `asyncio` + `async/await` |
+| 이벤트 핸들러 | `.onNewCall(handler)` | `.on_new_call(handler)` |
+| 환경 변수 | `dotenv` 패키지 | `python-dotenv` 패키지 |
+| 타입 지원 | TypeScript 완전 지원 | Python `typing` / `mypy` 지원 |
+| 로컬 어댑터 | 제한적 | ✅ whisper.cpp, Faster-Whisper, Qwen 등 |
+
+> **로컬 어댑터(whisper.cpp, Qwen 등)**는 Python SDK에서 더 풍부하게 지원됩니다. 자세한 설정은 [섹션 10](#10-어댑터별-상세-설정)을 참고하세요.
 
 ---
 
@@ -214,6 +440,10 @@ npx tsc && node dist/bot.js
 | 서비스 | 어댑터 클래스 | 추천 모델 | 특징 |
 |--------|------------|---------|------|
 | **Deepgram** | `DeepgramAdapter` | `nova-3` | 최고 정확도, 한국어 지원, 가장 빠른 스트리밍 |
+| **whisper.cpp** ⭐로컬 | `WhisperCppAdapter` | `large-v3-turbo` | 완전 오프라인, 무료, GPU/CPU 모두 지원 |
+| **Faster-Whisper** ⭐로컬 | `FasterWhisperAdapter` | `large-v3` | Python 고속 추론 (CTranslate2), 배치 지원 |
+| **OpenAI Whisper** 로컬 | `WhisperLocalAdapter` | `large-v3` | Python 공식 라이브러리, 설치 간단 |
+| **Qwen3-ASR** 로컬 | `QwenAudioAdapter` | `Qwen3-ASR-1.7B` | 52개 언어, 오픈소스 최고 성능 ASR (2026-01 출시) |
 
 ### 음성 합성 (TTS — Text to Speech)
 
@@ -229,6 +459,8 @@ npx tsc && node dist/bot.js
 |--------|------------|---------|------|
 | **Anthropic Claude** | `AnthropicAdapter` | `claude-haiku-4-5-20251001` | 초저지연, 한국어 우수 |
 | **OpenAI GPT** | `OpenAILlmAdapter` | `gpt-4o-mini` | 저렴, 빠름 |
+| **Qwen (Ollama)** ⭐로컬 | `OllamaAdapter` | `qwen3.5:9b` | 완전 무료, GPU 불필요 (CPU 가능), 멀티모달 |
+| **vLLM 서버** 로컬 | `OpenAICompatAdapter` | `Qwen/Qwen3-8B` 등 | OpenAI 호환 API, 고성능 GPU 서버 |
 
 ### 실시간 음성-음성 직통 (Realtime Speech-to-Speech)
 
@@ -566,6 +798,10 @@ const llm = new AnthropicAdapter({
   systemPrompt: '당신은 친절한 AI 상담원입니다. 짧게 답변하세요.',
   maxTokens:    512,   // 응답 최대 토큰 (짧을수록 빠름)
   temperature:  0.7,   // 창의성 (0.0=정확, 1.0=창의적)
+
+  // ── 고급 설정 (선택) ─────────────────────────────────────
+  // topP: 0.9,                           // 핵 샘플링 (temperature와 동시 사용 불가)
+  // stopSequences: ['###', '[END]'],      // 이 문자열이 등장하면 생성 중단
 });
 ```
 
@@ -643,8 +879,10 @@ const realtime = new OpenAIRealtimeAdapter({
   // ── 모델 선택 ─────────────────────────────────────────────
   model: 'gpt-4o-realtime-preview',
   // 옵션:
-  //   'gpt-4o-realtime-preview'           — 최고 품질 (기본값)
-  //   'gpt-4o-mini-realtime-preview'      — 비용 절감형 (Audio 1.5)
+  //   'gpt-4o-realtime-preview'                     — 최고 품질 (기본값, 항상 최신)
+  //   'gpt-4o-realtime-preview-2024-12-17'          — 고정 버전 (재현성 필요 시)
+  //   'gpt-4o-mini-realtime-preview'                — 비용 절감형 (Audio 1.5)
+  //   'gpt-4o-mini-realtime-preview-2024-12-17'     — 고정 버전 (미니)
 
   // ── AI 음성 선택 ──────────────────────────────────────────
   voice: 'alloy',    // alloy | echo | nova | shimmer | ash | coral | sage | verse
@@ -665,6 +903,447 @@ const realtime = new OpenAIRealtimeAdapter({
   temperature:        0.8,    // 응답 다양성 (0.6–1.2 권장)
   maxResponseTokens:  'inf',  // 응답 길이 제한 없음 (또는 숫자)
 });
+```
+
+---
+
+### 로컬 STT — whisper.cpp (오프라인 무료)
+
+**whisper.cpp**는 OpenAI Whisper 모델을 C++로 재구현한 초고속 로컬 STT 엔진입니다.
+인터넷 없이 완전 오프라인 운영이 가능하며, CPU만으로도 실시간에 가까운 속도를 냅니다.
+
+#### 1단계 — whisper.cpp 서버 설치 및 실행
+
+```bash
+# 소스 빌드 (Ubuntu/Debian)
+sudo apt update && sudo apt install -y build-essential libopenblas-dev cmake git
+git clone https://github.com/ggerganov/whisper.cpp
+cd whisper.cpp
+
+# GPU 지원 빌드 (CUDA — NVIDIA GPU가 있는 경우)
+cmake -B build -DGGML_CUDA=ON
+# CPU 전용 빌드
+cmake -B build
+
+cmake --build build --config Release -j$(nproc)
+
+# 모델 다운로드 (large-v3-turbo 권장 — 속도·정확도 균형)
+bash ./models/download-ggml-model.sh large-v3-turbo
+# 또는 한국어 정확도 최고
+bash ./models/download-ggml-model.sh large-v3
+
+# HTTP 스트리밍 서버 실행 (포트 8178)
+./build/bin/whisper-server \
+  --model models/ggml-large-v3-turbo.bin \
+  --host 0.0.0.0 \
+  --port 8178 \
+  --language ko \
+  --threads 4 \
+  --beam-size 1 \
+  --no-timestamps
+```
+
+> **모델 용량**: `tiny`(75MB) ~ `large-v3`(3.1GB). 실시간 통화에는 `large-v3-turbo`(809MB) 권장.
+
+#### 2단계 — Node.js 어댑터 설정
+
+```typescript
+import { WhisperCppAdapter } from 'dvgateway-adapters/stt';
+
+const stt = new WhisperCppAdapter({
+  // whisper.cpp HTTP 서버 주소 (같은 서버라면 localhost)
+  serverUrl: 'http://localhost:8178',
+
+  // ── 언어 설정 ───────────────────────────────────────────
+  language: 'ko',       // 'ko' | 'en' | 'ja' | 'zh' | 'auto'
+
+  // ── 발화 감지 ────────────────────────────────────────────
+  // whisper.cpp는 VAD(Voice Activity Detection)를 내장 지원
+  vadEnabled:      true,    // 자동 발화 감지 활성화
+  vadThreshold:    0.6,     // 발화 감지 민감도 (0.0–1.0)
+  silenceDurationMs: 600,   // 발화 종료 판단 침묵 시간
+
+  // ── 추론 품질 ────────────────────────────────────────────
+  beamSize:       1,        // 1=빠름, 5=정확 (실시간에는 1 권장)
+  temperature:    0.0,      // 0.0=결정론적 (가장 안정적)
+  noSpeechThreshold: 0.6,   // 무음 구간 필터링 임계값
+});
+```
+
+#### 2단계 — Python 어댑터 설정
+
+```python
+from dvgateway.adapters.stt import WhisperCppAdapter
+
+stt = WhisperCppAdapter(
+    server_url="http://localhost:8178",  # whisper.cpp 서버 주소
+    language="ko",
+    vad_enabled=True,
+    vad_threshold=0.6,
+    silence_duration_ms=600,
+    beam_size=1,
+    temperature=0.0,
+)
+```
+
+**모델별 성능 비교 (CPU 4코어 기준):**
+
+| 모델 | 크기 | 실시간 배율 | 한국어 정확도 |
+|------|------|------------|-------------|
+| `tiny` | 75MB | ~32x | 낮음 |
+| `base` | 142MB | ~16x | 보통 |
+| `medium` | 769MB | ~6x | 좋음 |
+| `large-v3-turbo` ★ | 809MB | ~8x | 매우 좋음 |
+| `large-v3` | 3.1GB | ~2x | 최고 |
+
+---
+
+### 로컬 STT — Faster-Whisper (Python 고속 추론)
+
+**Faster-Whisper**는 CTranslate2 엔진으로 OpenAI Whisper를 4–8배 빠르게 실행합니다.
+DVGateway 서버와 같은 머신에서 Python 프로세스로 실행합니다.
+
+#### 1단계 — Faster-Whisper 서비스 설치
+
+```bash
+# 가상환경 설정
+python3 -m venv /opt/faster-whisper-svc
+source /opt/faster-whisper-svc/bin/activate
+
+# 패키지 설치
+pip install faster-whisper
+
+# GPU 사용 시 (NVIDIA CUDA 12.x)
+pip install faster-whisper nvidia-cublas-cu12 nvidia-cudnn-cu12
+
+# 간단한 스트리밍 서버 실행 (dvgateway-whisper-server 유틸리티)
+pip install dvgateway-whisper-server
+dvgateway-whisper-server \
+  --model large-v3 \
+  --device cuda \        # CPU 사용 시: --device cpu
+  --compute-type float16 \  # CPU 사용 시: int8
+  --port 8179 \
+  --language ko
+```
+
+> `dvgateway-whisper-server`는 DVGateway 생태계에서 제공하는 Faster-Whisper 래퍼 서버입니다.
+> 독립 실행 스크립트로도 사용 가능합니다:
+
+```python
+# whisper_server.py — 독립 실행 가능
+from faster_whisper import WhisperModel
+from fastapi import FastAPI, WebSocket
+import asyncio, numpy as np, struct
+
+app = FastAPI()
+model = WhisperModel("large-v3", device="cpu", compute_type="int8")
+
+@app.websocket("/ws/transcribe")
+async def transcribe_ws(ws: WebSocket):
+    await ws.accept()
+    audio_buffer = bytearray()
+
+    while True:
+        data = await ws.receive_bytes()
+        audio_buffer.extend(data)
+
+        # 640바이트(20ms) 청크가 쌓이면 추론
+        if len(audio_buffer) >= 16000 * 2:   # 1초 분량
+            pcm = np.frombuffer(audio_buffer, dtype=np.int16).astype(np.float32) / 32768.0
+            audio_buffer.clear()
+
+            segments, info = model.transcribe(
+                pcm,
+                language="ko",
+                beam_size=1,
+                vad_filter=True,
+                vad_parameters={"threshold": 0.5, "min_silence_duration_ms": 500},
+            )
+            for seg in segments:
+                await ws.send_json({"text": seg.text, "is_final": True})
+
+# 실행: uvicorn whisper_server:app --host 0.0.0.0 --port 8179
+```
+
+#### 어댑터 설정
+
+**Node.js:**
+
+```typescript
+import { FasterWhisperAdapter } from 'dvgateway-adapters/stt';
+
+const stt = new FasterWhisperAdapter({
+  serverUrl:         'ws://localhost:8179/ws/transcribe',
+  language:          'ko',
+  vadEnabled:        true,
+  vadThreshold:      0.5,
+  silenceDurationMs: 500,
+});
+```
+
+**Python:**
+
+```python
+from dvgateway.adapters.stt import FasterWhisperAdapter
+
+stt = FasterWhisperAdapter(
+    server_url="ws://localhost:8179/ws/transcribe",
+    language="ko",
+    vad_enabled=True,
+    vad_threshold=0.5,
+    silence_duration_ms=500,
+)
+```
+
+또는 **Python 인프로세스 모드** (같은 프로세스에서 직접 실행):
+
+```python
+from dvgateway.adapters.stt import FasterWhisperAdapter
+
+# server_url 없이 model 지정 → 인프로세스 실행 (추가 서버 불필요)
+stt = FasterWhisperAdapter(
+    model="large-v3",
+    device="cpu",           # "cuda" (GPU 사용 시)
+    compute_type="int8",    # CPU: "int8", GPU: "float16"
+    language="ko",
+    vad_enabled=True,
+    vad_threshold=0.5,
+    silence_duration_ms=500,
+    beam_size=1,
+    num_workers=2,          # 병렬 추론 워커 수
+)
+```
+
+---
+
+### 로컬 STT — OpenAI Whisper (Python 공식)
+
+공식 OpenAI Whisper Python 라이브러리를 로컬에서 실행합니다.
+Faster-Whisper보다 느리지만 설치가 가장 간단합니다.
+
+```bash
+# 설치
+pip install openai-whisper
+
+# ffmpeg 필요 (오디오 포맷 변환)
+sudo apt install -y ffmpeg   # Ubuntu/Debian
+# brew install ffmpeg        # macOS
+```
+
+**Python 인프로세스 어댑터:**
+
+```python
+from dvgateway.adapters.stt import WhisperLocalAdapter
+
+stt = WhisperLocalAdapter(
+    model="large-v3",       # "tiny" | "base" | "small" | "medium" | "large-v3"
+    device="cpu",           # "cpu" | "cuda" | "mps" (Apple Silicon)
+    language="ko",
+
+    # 발화 감지 — silero-vad 사용 (pip install silero-vad)
+    vad_enabled=True,
+    vad_threshold=0.5,
+
+    # 추론 옵션
+    temperature=0.0,        # 0.0 = 결정론적 (가장 안정적)
+    beam_size=1,            # 실시간에는 1 권장
+    fp16=False,             # CPU에서는 False, GPU에서는 True
+)
+```
+
+> **주의**: OpenAI Whisper는 스트리밍이 아닌 파일 단위 추론이 기본입니다.
+> DVGateway 어댑터는 내부적으로 20ms 오디오 청크를 버퍼링하여 VAD 기반 세그먼트로 분할합니다.
+
+---
+
+### 로컬 LLM — Qwen (Ollama 경유)
+
+**Qwen**은 Alibaba Cloud의 오픈소스 LLM으로, 한국어 성능이 우수합니다.
+**Ollama**를 통해 GPU 없이 CPU만으로도 실행 가능합니다.
+
+#### 1단계 — Ollama 설치 및 Qwen 모델 다운로드
+
+```bash
+# Ollama 설치 (Linux/macOS)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Qwen3.5 모델 다운로드 (2026-03 최신 — 멀티모달, 한국어 최고 성능)
+ollama pull qwen3.5:9b       # 9B 파라미터 (RAM 8GB 이상 권장) ★ 권장
+ollama pull qwen3.5:4b       # 4B 경량 (RAM 4GB 이상)
+ollama pull qwen3:8b         # 안정화된 Qwen3 이전 버전
+
+# 실행 확인
+ollama run qwen3:8b "안녕하세요, 잘 작동하나요?"
+
+# Ollama 서버는 기본적으로 http://localhost:11434 에서 실행됩니다
+```
+
+#### 2단계 — 어댑터 설정
+
+**Node.js:**
+
+```typescript
+import { OllamaAdapter } from 'dvgateway-adapters/llm';
+
+const llm = new OllamaAdapter({
+  baseUrl: 'http://localhost:11434',  // Ollama 서버 주소
+
+  // ── 모델 선택 ────────────────────────────────────────────
+  model: 'qwen3.5:9b',
+  // 옵션:
+  //   'qwen3.5:9b'      — 멀티모달, 한국어 최고 품질 (2026-03 최신) ★
+  //   'qwen3.5:4b'      — RAM 4GB로 실행 가능한 경량형
+  //   'qwen3:8b'        — 안정성 검증된 이전 세대
+  //   'gemma3:12b'      — Google Gemma 3 대안
+  //   'llama3.3:8b'     — Meta Llama 3.3 대안
+
+  // ── 대화 설정 ────────────────────────────────────────────
+  systemPrompt: '당신은 친절한 한국어 AI 상담원입니다. 2–3문장으로 짧게 답변하세요.',
+  maxTokens:    512,
+  temperature:  0.7,
+
+  // ── 스트리밍 ─────────────────────────────────────────────
+  stream: true,   // 토큰 스트리밍 활성화 (지연 최소화)
+
+  // ── Qwen3 특화 옵션 ──────────────────────────────────────
+  options: {
+    think: false,     // 사고 과정(thinking) 비활성화 → 빠른 응답
+    num_ctx: 4096,    // 컨텍스트 윈도우 크기
+    num_predict: 200, // 최대 생성 토큰 수
+    top_p: 0.9,
+    repeat_penalty: 1.1,
+  },
+});
+```
+
+**Python:**
+
+```python
+from dvgateway.adapters.llm import OllamaAdapter
+
+llm = OllamaAdapter(
+    base_url="http://localhost:11434",
+    model="qwen3.5:9b",
+    system_prompt="당신은 친절한 한국어 AI 상담원입니다. 2–3문장으로 짧게 답변하세요.",
+    max_tokens=512,
+    temperature=0.7,
+    stream=True,
+    options={
+        "think": False,       # Qwen3 사고 과정 비활성화
+        "num_ctx": 4096,
+        "num_predict": 200,
+        "top_p": 0.9,
+        "repeat_penalty": 1.1,
+    },
+)
+```
+
+**Qwen 모델 선택 가이드 (2026-03 기준):**
+
+| 모델 | RAM 요구 | 응답 속도 | 한국어 | 특징 |
+|------|---------|---------|--------|------|
+| `qwen3.5:4b` | 4GB | ★★★★★ | ★★★★ | 저사양 서버, 멀티모달 경량 (2026-03 최신) |
+| `qwen3.5:9b` ★ | 8GB | ★★★★ | ★★★★★ | **권장**, 멀티모달, 고품질 한국어 (2026-03 최신) |
+| `qwen3:8b` | 8GB | ★★★★ | ★★★★★ | 안정성 검증된 Qwen3 |
+| `qwen3:14b` | 16GB | ★★★ | ★★★★★ | 복잡한 추론 |
+
+> **Qwen3 `think` 옵션**: Qwen3는 기본적으로 "사고 과정"을 생성합니다. 실시간 음성 봇에서는 `think: false`로 비활성화하여 응답 속도를 높이세요.
+
+---
+
+### 로컬 LLM — vLLM 서버 연동
+
+**vLLM**은 고성능 GPU 서버에서 OpenAI 호환 API로 LLM을 서빙합니다.
+DVGateway의 `OpenAICompatAdapter`로 바로 연결됩니다.
+
+#### 1단계 — vLLM 서버 설치 및 실행
+
+```bash
+# vLLM 설치 (CUDA 12.x + Python 3.10+)
+pip install vllm
+
+# Qwen3-8B 모델 서버 실행 (Hugging Face에서 자동 다운로드)
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen3-8B \
+  --port 8000 \
+  --served-model-name qwen3-8b \
+  --max-model-len 4096 \
+  --tensor-parallel-size 1 \   # GPU 수
+  --dtype auto \
+  --trust-remote-code
+
+# 확인
+curl http://localhost:8000/v1/models
+```
+
+#### 2단계 — 어댑터 설정
+
+**Node.js:**
+
+```typescript
+import { OpenAICompatAdapter } from 'dvgateway-adapters/llm';
+
+const llm = new OpenAICompatAdapter({
+  // vLLM 서버는 OpenAI API와 완전 호환
+  baseUrl: 'http://localhost:8000/v1',
+  apiKey:  'not-needed',   // vLLM은 키 검증 없음 (로컬)
+
+  model: 'qwen3-8b',       // --served-model-name 으로 지정한 이름
+  systemPrompt: '친절한 한국어 AI 상담원입니다. 짧게 답변하세요.',
+  maxTokens:    512,
+  temperature:  0.7,
+  stream:       true,
+
+  // Qwen3 사고 과정 비활성화 (extra_body)
+  extraBody: {
+    chat_template_kwargs: { enable_thinking: false },
+  },
+});
+```
+
+**Python:**
+
+```python
+from dvgateway.adapters.llm import OpenAICompatAdapter
+
+llm = OpenAICompatAdapter(
+    base_url="http://localhost:8000/v1",
+    api_key="not-needed",
+    model="qwen3-8b",
+    system_prompt="친절한 한국어 AI 상담원입니다. 짧게 답변하세요.",
+    max_tokens=512,
+    temperature=0.7,
+    stream=True,
+    extra_body={
+        "chat_template_kwargs": {"enable_thinking": False}
+    },
+)
+```
+
+> **vLLM 대안**: SGLang, LMDeploy, llama.cpp server 등도 OpenAI 호환 API를 제공하므로 `OpenAICompatAdapter`로 동일하게 연결됩니다.
+
+**완전 로컬(오프라인) 파이프라인 예시:**
+
+```typescript
+// 모든 컴포넌트를 로컬에서 실행 — 인터넷 불필요
+await gw.pipeline()
+  .stt(new WhisperCppAdapter({
+    serverUrl: 'http://localhost:8178',
+    language:  'ko',
+    vadEnabled: true,
+  }))
+  .llm(new OllamaAdapter({
+    baseUrl:     'http://localhost:11434',
+    model:       'qwen3:8b',
+    systemPrompt: '친절한 한국어 AI 상담원입니다.',
+    options:     { think: false },
+  }))
+  .tts(new ElevenLabsAdapter({    // TTS는 현재 로컬 오픈소스 품질이 제한적이므로 유료 권장
+    apiKey:  process.env.ELEVENLABS_API_KEY!,
+    model:   'eleven_flash_v2_5',
+    voiceId: 'YOUR_VOICE_ID',
+  }))
+  .start();
 ```
 
 ---
@@ -898,6 +1577,580 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/down
 ```
 
 업데이트는 서비스 무중단으로 진행됩니다 (zero-downtime rolling update).
+
+---
+
+---
+
+## 18. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
+
+> 이 섹션은 프로그래밍 경험이 없거나 처음 시작하는 분들을 위한 단계별 안내입니다.
+> 마치 옆에서 알려주듯이 하나씩 따라 하세요. 어렵지 않아요! 😊
+
+---
+
+### A. Node.js로 시작하기 (Windows / macOS / Linux)
+
+#### A-1. Node.js 설치
+
+Node.js는 JavaScript를 서버에서 실행하게 해주는 프로그램입니다.
+
+**Windows:**
+
+1. 웹 브라우저에서 https://nodejs.org 접속
+2. **"LTS"** 버튼 클릭 (Long Term Support — 안정 버전)
+3. 다운로드된 `.msi` 파일을 실행하고 "Next" 계속 클릭
+4. 설치 완료 후 **Windows 키 → "cmd" 검색 → 명령 프롬프트** 실행
+5. 아래 명령어 입력 후 버전이 나오면 설치 성공:
+
+```
+node --version
+npm --version
+```
+
+예상 출력:
+```
+v22.14.0
+10.9.2
+```
+
+**macOS:**
+
+```bash
+# Homebrew가 없다면 먼저 설치
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Node.js 설치
+brew install node@22
+
+# 버전 확인
+node --version
+npm --version
+```
+
+**Ubuntu / Debian Linux:**
+
+```bash
+# NodeSource 공식 저장소 추가 (Node.js 22 LTS)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# 버전 확인
+node --version
+npm --version
+```
+
+---
+
+#### A-2. 프로젝트 폴더 만들기
+
+```bash
+# 바탕화면이나 원하는 위치에 폴더 생성
+mkdir my-voice-bot
+cd my-voice-bot
+```
+
+---
+
+#### A-3. DVGateway 서버 설치
+
+AI 음성 봇이 통화를 받으려면 DVGateway 서버가 필요합니다.
+서버는 여러분의 컴퓨터(또는 클라우드 서버)에 설치합니다.
+
+```bash
+# DVGateway 서버 원라인 설치 (Ubuntu/Debian 서버)
+# ⚠️ 이 명령은 서버 컴퓨터(Linux)에서 실행하세요
+curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/download/install.sh | sudo bash
+```
+
+설치 후 자동으로 서비스가 시작됩니다.
+
+```bash
+# 서버가 잘 실행되는지 확인
+systemctl status dvgateway
+
+# 대시보드 접속 (웹 브라우저)
+# http://서버IP주소:8081
+```
+
+---
+
+#### A-4. SDK 설치 (Node.js)
+
+```bash
+# my-voice-bot 폴더 안에서 실행
+npm init -y                          # package.json 생성
+npm install dvgateway-sdk dvgateway-adapters dotenv
+```
+
+> `npm init -y`는 프로젝트 설정 파일을 자동 생성합니다.
+> 여러 질문을 건너뛰고 싶을 때 `-y` 옵션을 씁니다.
+
+---
+
+#### A-5. API 키 준비
+
+AI 서비스를 사용하려면 각 서비스의 API 키가 필요합니다.
+API 키는 "서비스를 쓰기 위한 비밀 암호"라고 생각하세요.
+
+| 서비스 | 가입 주소 | 비용 |
+|--------|---------|------|
+| **Deepgram** (음성→텍스트) | https://console.deepgram.com | 무료 $200 크레딧 |
+| **ElevenLabs** (텍스트→음성) | https://elevenlabs.io | 무료 월 10,000자 |
+| **Anthropic Claude** (AI 대화) | https://console.anthropic.com | 소액 유료 |
+
+가입 후 각 사이트의 "API Keys" 메뉴에서 키를 발급받으세요.
+
+`.env` 파일 만들기:
+
+```bash
+# my-voice-bot 폴더 안에 .env 파일 생성
+# Windows: 메모장으로 .env 파일 만들기
+# Mac/Linux: 아래 명령어 실행
+cat > .env << 'EOF'
+DEEPGRAM_API_KEY=여기에_Deepgram_키_붙여넣기
+ELEVENLABS_API_KEY=여기에_ElevenLabs_키_붙여넣기
+ANTHROPIC_API_KEY=여기에_Anthropic_키_붙여넣기
+GATEWAY_API_KEY=여기에_게이트웨이_API_키
+EOF
+```
+
+> ⚠️ `.env` 파일은 절대 다른 사람에게 보여주거나 GitHub에 올리지 마세요!
+> API 키가 유출되면 요금이 나올 수 있습니다.
+
+---
+
+#### A-6. 첫 번째 봇 코드 작성
+
+`bot.js` 파일을 만들고 아래 내용을 붙여넣으세요:
+
+```javascript
+// bot.js — 가장 간단한 AI 음성 봇
+require('dotenv/config');  // .env 파일 읽기
+
+const { DVGatewayClient } = require('dvgateway-sdk');
+const { DeepgramAdapter } = require('dvgateway-adapters/stt');
+const { AnthropicAdapter } = require('dvgateway-adapters/llm');
+const { ElevenLabsAdapter } = require('dvgateway-adapters/tts');
+
+async function main() {
+  // 1. 게이트웨이 서버 연결
+  //    ↓ 서버 IP 주소를 입력하세요 (같은 컴퓨터면 localhost)
+  const gw = new DVGatewayClient({
+    baseUrl: 'http://localhost:8080',
+    auth: {
+      type: 'apiKey',
+      apiKey: process.env.GATEWAY_API_KEY,
+    },
+  });
+
+  // 2. AI 어댑터 설정
+  const stt = new DeepgramAdapter({
+    apiKey: process.env.DEEPGRAM_API_KEY,
+    language: 'ko',      // 한국어
+    model: 'nova-3',     // 가장 정확한 모델
+  });
+
+  const llm = new AnthropicAdapter({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    model: 'claude-haiku-4-5-20251001',  // 가장 빠른 모델
+    systemPrompt: '당신은 친절한 한국어 AI 안내원입니다. 짧고 명확하게 답변하세요.',
+  });
+
+  const tts = new ElevenLabsAdapter({
+    apiKey: process.env.ELEVENLABS_API_KEY,
+    model: 'eleven_flash_v2_5',   // 가장 빠른 음성 합성
+    voiceId: '21m00Tcm4TlvDq8ikWAM',  // Rachel 음성 (무료)
+  });
+
+  // 3. 파이프라인 시작
+  console.log('봇을 시작합니다...');
+
+  await gw.pipeline()
+    .stt(stt)
+    .llm(llm)
+    .tts(tts)
+    .onNewCall((session) => {
+      console.log('📞 전화가 왔어요! ID:', session.linkedId);
+    })
+    .onTranscript((result) => {
+      if (result.isFinal) {
+        console.log('🎙️  고객이 말했어요:', result.text);
+      }
+    })
+    .onCallEnded((id, duration) => {
+      console.log(`📴 통화 종료. 통화 시간: ${duration}초`);
+    })
+    .onError((err) => {
+      console.error('❌ 오류 발생:', err.message);
+    })
+    .start();
+
+  console.log('✅ 봇이 준비되었습니다. 전화를 기다리는 중...');
+}
+
+// 프로그램 시작
+main().catch(console.error);
+```
+
+---
+
+#### A-7. 봇 실행
+
+```bash
+node bot.js
+```
+
+정상 실행 시 아래와 같이 출력됩니다:
+```
+봇을 시작합니다...
+✅ 봇이 준비되었습니다. 전화를 기다리는 중...
+```
+
+이제 전화가 오면 자동으로 AI가 응대합니다!
+
+멈추려면 `Ctrl + C`를 누르세요.
+
+---
+
+#### A-8. 봇을 항상 실행되게 하기 (PM2 사용)
+
+컴퓨터가 재시작되어도 봇이 자동으로 켜지게 하려면:
+
+```bash
+# PM2 설치 (프로세스 관리자)
+npm install -g pm2
+
+# 봇을 PM2로 실행
+pm2 start bot.js --name "my-voice-bot"
+
+# 컴퓨터 재시작 시 자동 실행 등록
+pm2 startup
+pm2 save
+
+# 로그 보기
+pm2 logs my-voice-bot
+
+# 봇 상태 확인
+pm2 status
+
+# 봇 재시작
+pm2 restart my-voice-bot
+```
+
+---
+
+### B. Python으로 시작하기 (Windows / macOS / Linux)
+
+#### B-1. Python 설치
+
+Python은 데이터 과학, AI 분야에서 가장 인기 있는 언어입니다.
+
+**Windows:**
+
+1. https://python.org/downloads 접속
+2. **"Download Python 3.12.x"** 버튼 클릭
+3. 설치 파일 실행
+4. **반드시** "Add Python to PATH" 체크 후 Install Now 클릭
+5. 설치 후 명령 프롬프트(cmd) 열고 확인:
+
+```
+python --version
+pip --version
+```
+
+예상 출력:
+```
+Python 3.12.8
+pip 24.3.1
+```
+
+**macOS:**
+
+```bash
+# Homebrew로 설치
+brew install python@3.12
+
+# 버전 확인
+python3 --version
+pip3 --version
+```
+
+**Ubuntu / Debian Linux:**
+
+```bash
+sudo apt update
+sudo apt install -y python3.12 python3.12-venv python3-pip
+
+# 버전 확인
+python3 --version
+pip3 --version
+```
+
+---
+
+#### B-2. 가상환경 만들기
+
+가상환경은 프로젝트마다 독립된 Python 환경을 만들어줍니다.
+다른 프로젝트와 패키지 버전이 충돌하지 않도록 해줍니다.
+
+```bash
+# 프로젝트 폴더 만들기
+mkdir my-voice-bot-py
+cd my-voice-bot-py
+
+# 가상환경 생성
+python3 -m venv venv
+
+# 가상환경 활성화
+# ─ macOS / Linux:
+source venv/bin/activate
+# ─ Windows (명령 프롬프트):
+venv\Scripts\activate.bat
+# ─ Windows (PowerShell):
+venv\Scripts\Activate.ps1
+
+# 활성화되면 프롬프트 앞에 (venv) 가 붙습니다:
+# (venv) user@computer:~/my-voice-bot-py$
+```
+
+> 가상환경에서 나오려면 `deactivate` 입력
+
+---
+
+#### B-3. SDK 및 필수 패키지 설치
+
+```bash
+# 가상환경이 활성화된 상태에서 실행
+pip install dvgateway dvgateway-adapters python-dotenv
+```
+
+---
+
+#### B-4. API 키 설정
+
+`.env` 파일 만들기 (Node.js 섹션 A-5와 동일):
+
+```ini
+DEEPGRAM_API_KEY=여기에_Deepgram_키_붙여넣기
+ELEVENLABS_API_KEY=여기에_ElevenLabs_키_붙여넣기
+ANTHROPIC_API_KEY=여기에_Anthropic_키_붙여넣기
+GATEWAY_API_KEY=여기에_게이트웨이_API_키
+```
+
+---
+
+#### B-5. 첫 번째 봇 코드 작성
+
+`bot.py` 파일 만들기:
+
+```python
+# bot.py — 가장 간단한 AI 음성 봇 (Python 버전)
+import asyncio
+import os
+from dotenv import load_dotenv
+
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.stt import DeepgramAdapter
+from dvgateway.adapters.llm import AnthropicAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter
+
+# .env 파일에서 API 키 읽기
+load_dotenv()
+
+async def main():
+    # 1. 게이트웨이 서버 연결
+    gw = DVGatewayClient(
+        base_url="http://localhost:8080",   # 서버 IP 주소
+        auth={
+            "type": "apiKey",
+            "api_key": os.environ["GATEWAY_API_KEY"],
+        },
+    )
+
+    # 2. AI 어댑터 설정
+    stt = DeepgramAdapter(
+        api_key=os.environ["DEEPGRAM_API_KEY"],
+        language="ko",
+        model="nova-3",
+    )
+
+    llm = AnthropicAdapter(
+        api_key=os.environ["ANTHROPIC_API_KEY"],
+        model="claude-haiku-4-5-20251001",
+        system_prompt="당신은 친절한 한국어 AI 안내원입니다. 짧고 명확하게 답변하세요.",
+    )
+
+    tts = ElevenLabsAdapter(
+        api_key=os.environ["ELEVENLABS_API_KEY"],
+        model="eleven_flash_v2_5",
+        voice_id="21m00Tcm4TlvDq8ikWAM",
+    )
+
+    # 3. 이벤트 핸들러 정의
+    def on_new_call(session):
+        print(f"📞 전화가 왔어요! ID: {session.linked_id}")
+
+    def on_transcript(result):
+        if result.is_final:
+            print(f"🎙️  고객이 말했어요: {result.text}")
+
+    def on_call_ended(linked_id, duration):
+        print(f"📴 통화 종료. 통화 시간: {duration}초")
+
+    def on_error(err):
+        print(f"❌ 오류 발생: {err}")
+
+    # 4. 파이프라인 시작
+    print("봇을 시작합니다...")
+
+    await (
+        gw.pipeline()
+        .stt(stt)
+        .llm(llm)
+        .tts(tts)
+        .on_new_call(on_new_call)
+        .on_transcript(on_transcript)
+        .on_call_ended(on_call_ended)
+        .on_error(on_error)
+        .start()
+    )
+
+    print("✅ 봇이 준비되었습니다. 전화를 기다리는 중...")
+
+# 프로그램 시작
+asyncio.run(main())
+```
+
+---
+
+#### B-6. 봇 실행
+
+```bash
+# 가상환경이 활성화된 상태에서
+python bot.py
+```
+
+---
+
+#### B-7. 봇을 항상 실행되게 하기 (systemd 사용 — Linux 서버)
+
+```bash
+# 서비스 파일 생성
+sudo tee /etc/systemd/system/voice-bot.service << 'EOF'
+[Unit]
+Description=My Voice Bot
+After=network.target dvgateway.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/my-voice-bot-py
+ExecStart=/home/ubuntu/my-voice-bot-py/venv/bin/python bot.py
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/ubuntu/my-voice-bot-py/.env
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 서비스 등록 및 시작
+sudo systemctl daemon-reload
+sudo systemctl enable voice-bot
+sudo systemctl start voice-bot
+
+# 상태 확인
+sudo systemctl status voice-bot
+
+# 로그 보기
+journalctl -u voice-bot -f
+```
+
+---
+
+### C. 자주 겪는 문제와 해결책 (초보자 버전)
+
+#### "ECONNREFUSED" 오류가 나요
+
+DVGateway 서버가 실행 중이지 않습니다.
+
+```bash
+# 서버 상태 확인
+sudo systemctl status dvgateway
+
+# 서버 시작
+sudo systemctl start dvgateway
+```
+
+#### "Invalid API key" 오류가 나요
+
+API 키가 잘못되었습니다.
+
+1. `.env` 파일을 열어서 키가 정확히 붙여넣어져 있는지 확인
+2. 키 앞뒤에 공백이 없는지 확인
+3. 따옴표(`"`)가 없어야 합니다:
+   - ✅ 올바름: `DEEPGRAM_API_KEY=dg_abcdef123456`
+   - ❌ 틀림: `DEEPGRAM_API_KEY="dg_abcdef123456"`
+
+#### Node.js에서 "Cannot find module" 오류가 나요
+
+패키지가 설치되지 않았습니다.
+
+```bash
+npm install dvgateway-sdk dvgateway-adapters dotenv
+```
+
+#### Python에서 "ModuleNotFoundError" 오류가 나요
+
+가상환경이 활성화되지 않았거나 패키지 미설치입니다.
+
+```bash
+# 가상환경 활성화
+source venv/bin/activate   # macOS/Linux
+venv\Scripts\activate.bat  # Windows
+
+# 패키지 재설치
+pip install dvgateway dvgateway-adapters python-dotenv
+```
+
+#### 전화가 와도 봇이 응답하지 않아요
+
+1. SIP 전화기 설정이 DVGateway 서버를 가리키는지 확인
+2. 방화벽에서 SIP(5060) 및 RTP(10000-20000) 포트가 열려 있는지 확인:
+
+```bash
+# Ubuntu 방화벽 포트 열기
+sudo ufw allow 5060/udp    # SIP
+sudo ufw allow 10000:20000/udp  # RTP
+sudo ufw allow 8080/tcp    # SDK API
+sudo ufw allow 8081/tcp    # 대시보드
+```
+
+#### Python `asyncio` 관련 오류가 나요 (Windows)
+
+Windows에서는 asyncio 이벤트 루프 정책이 다릅니다:
+
+```python
+# bot.py 맨 위에 추가
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+```
+
+---
+
+### D. 다음 단계 — 더 배우고 싶다면
+
+| 주제 | 읽을 섹션 |
+|------|---------|
+| AI 서비스 비교 및 선택 | [섹션 6](#6-연동-가능한-ai-서비스-전체-목록) |
+| 고급 파이프라인 설정 | [섹션 7–9](#7-파이프라인-패턴-1-일반-통화-sttllmtts) |
+| API 키 없이 무료로 쓰기 | [섹션 10 로컬 어댑터](#로컬-stt--whispercpp-오프라인-무료) |
+| 다중 사용자 서비스 만들기 | [섹션 13](#13-멀티테넌트-지원) |
+| 문제가 생겼을 때 | [섹션 16](#16-문제-해결) |
 
 ---
 
