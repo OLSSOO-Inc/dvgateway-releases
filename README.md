@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.2.7.5** | 업데이트: 2026-03-11
+> **최신 버전: 1.2.7.6** | 업데이트: 2026-03-11
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -15,6 +15,10 @@
 4. [API 키 준비](#4-api-키-준비)
 5. [5분 만에 시작하기 — 헬로 월드 봇](#5-5분-만에-시작하기--헬로-월드-봇)
 6. [연동 가능한 AI 서비스 전체 목록](#6-연동-가능한-ai-서비스-전체-목록)
+    - [클라우드 STT 서비스 — 내장 게이트웨이 어댑터](#클라우드-stt-서비스--내장-게이트웨이-어댑터)
+    - [클라우드 TTS 서비스 — 내장 게이트웨이 어댑터](#클라우드-tts-서비스--내장-게이트웨이-어댑터)
+    - [API Key 차이점 — Google Cloud vs Google Gemini](#api-key-차이점--google-cloud-vs-google-gemini)
+    - [한국 환경 — 용도별 추천 조합](#한국-환경--용도별-추천-조합)
 7. [파이프라인 패턴 1: 일반 통화 STT→LLM→TTS](#7-파이프라인-패턴-1-일반-통화-sttllmtts)
 8. [파이프라인 패턴 2: OpenAI 리얼타임 음성 직통 (Audio 1.5)](#8-파이프라인-패턴-2-openai-리얼타임-음성-직통-audio-15)
 9. [파이프라인 패턴 3: 컨퍼런스 자동 회의록](#9-파이프라인-패턴-3-컨퍼런스-자동-회의록)
@@ -468,6 +472,109 @@ npx tsc && node dist/bot.js
 |--------|------------|---------|------|
 | **OpenAI Realtime** | `OpenAIRealtimeAdapter` | `gpt-4o-realtime-preview` | STT+LLM+TTS 통합, 최저 지연 |
 | **OpenAI Realtime Mini** | `OpenAIRealtimeAdapter` | `gpt-4o-mini-realtime-preview` | 비용 효율적, Audio 1.5 엔진 |
+
+### 클라우드 STT 서비스 — 내장 게이트웨이 어댑터
+
+게이트웨이에 내장된 클라우드 STT 어댑터입니다. SDK 없이 대시보드에서 바로 사용할 수 있습니다.
+
+| 서비스 | 게이트웨이 어댑터 | 프로토콜 | API Key 형식 | 한국어 | 특징 |
+|--------|-----------------|---------|-------------|--------|------|
+| **Deepgram** | `deepgram` | WebSocket | 단일 API Key | ✅ `nova-3` | 최저 레이턴시, 화자 구분(diarization), 스트리밍 |
+| **OpenAI Whisper** | `openai` | WebSocket | API Key (`sk-...`) | ✅ `gpt-4o-transcribe` | 높은 정확도, VAD 내장, Realtime API 기반 |
+| **Google Cloud STT** | `google` | REST (청크) | 서비스 계정 JSON Key | ✅ `latest_long` | 서울 리전(`asia-northeast3`), 기업 안정성 |
+| **Azure Speech** | `azure` | WebSocket | 구독 키 + 리전 | ✅ | 한국 리전, 실시간 스트리밍 |
+| **Qwen-ASR (DashScope)** | `qwen` | WebSocket | DashScope API Key | ✅ `paraformer-realtime-v2` | 52개 언어, 중국 리전 최적 |
+
+### 클라우드 TTS 서비스 — 내장 게이트웨이 어댑터
+
+게이트웨이에 내장된 클라우드 TTS 어댑터입니다. 안내방송, 입장인사, AI 응답 음성 합성에 사용됩니다.
+
+| 서비스 | 게이트웨이 어댑터 | API Key 형식 | 한국어 | 특징 |
+|--------|-----------------|-------------|--------|------|
+| **ElevenLabs** | `elevenlabs` | API Key | ✅ | 자연스러운 음성, 최저 지연(<75ms), 감정 표현 |
+| **OpenAI TTS** | `openai` | API Key (`sk-...`) | ✅ | `tts-1` / `gpt-4o-mini-tts`, 안정적 |
+| **Google Cloud TTS** | `google` | 서비스 계정 JSON Key | ✅ | Neural2 / Studio 음성, 서울 리전 |
+| **Azure TTS** | `azure` | 구독 키 + 리전 | ✅ | 한국 리전, SSML 지원 |
+| **Qwen-TTS (CosyVoice)** | `qwen` | DashScope API Key | ✅ | 음성 복제, 중국 리전 최적 |
+
+### API Key 차이점 — Google Cloud vs Google Gemini
+
+> **주의**: Google Cloud API Key와 Google Gemini (AI Studio) API Key는 **별개의 인증 체계**입니다.
+
+| | Google Cloud Platform | Google AI Studio (Gemini) |
+|---|---|---|
+| **용도** | STT, TTS, Vertex AI | Gemini LLM, 멀티모달 |
+| **API Key 형식** | 서비스 계정 JSON 파일 (`.json`) | 단순 API Key (`AIza...`) |
+| **인증 방식** | OAuth2 / 서비스 계정 | API Key 헤더 |
+| **엔드포인트** | `{region}-aiplatform.googleapis.com` | `generativelanguage.googleapis.com` |
+| **한국 리전** | ✅ `asia-northeast3` (서울) | ❌ 리전 선택 불가 (US 기반) |
+| **과금** | GCP 프로젝트 빌링 계정 | Google AI Studio 별도 |
+| **게이트웨이 지원** | ✅ STT(`google`) + TTS(`google`) | ❌ (별도 어댑터 필요) |
+
+게이트웨이의 `google` STT/TTS 어댑터는 **Google Cloud Platform** API를 사용합니다.
+Gemini LLM을 사용하려면 SDK에서 OpenAI 호환 어댑터로 연동하거나 별도 커스텀 어댑터가 필요합니다.
+
+### 한국 환경 — 용도별 추천 조합
+
+#### 조합 1: 최저 레이턴시 (AI 음성 봇)
+
+```
+STT: Deepgram (nova-3)     — ~200ms, WebSocket 스트리밍
+LLM: Claude (haiku-4-5)    — ~80ms, 한국어 우수
+TTS: ElevenLabs (flash v2.5) — ~75ms, 자연스러운 음성
+────────────────────────────
+총 레이턴시: ~355ms (목표 500ms 이하 ✅)
+```
+
+```typescript
+// SDK 예시
+await gw.pipeline()
+  .stt(new DeepgramAdapter({ model: 'nova-3', language: 'ko' }))
+  .llm(new AnthropicAdapter({ model: 'claude-haiku-4-5-20251001' }))
+  .tts(new ElevenLabsAdapter({ model: 'eleven_flash_v2_5' }))
+  .start(callId);
+```
+
+#### 조합 2: 기업 안정성 (한국 리전)
+
+```
+STT: Google Cloud STT v2    — 서울 리전, SLA 99.9%
+LLM: Claude (sonnet-4-6)    — 고품질 응답
+TTS: Google Cloud TTS Neural2 — 서울 리전, 안정적
+────────────────────────────
+장점: 한국 리전 데이터 주권, 기업 SLA 보장
+```
+
+#### 조합 3: 올인원 최저비용 (OpenAI)
+
+```
+Realtime API: gpt-4o-mini-realtime-preview
+────────────────────────────
+STT+LLM+TTS 단일 WebSocket 연결
+장점: 연동 단순, 비용 효율적 ($0.60/1M input tokens)
+단점: 한국어 음성 품질이 전용 TTS 대비 낮음
+```
+
+#### 조합 4: 완전 무료 (로컬 AI)
+
+```
+STT: whisper.cpp (large-v3-turbo) — GPU 불필요, 오프라인
+LLM: Qwen3.5:9b (Ollama)         — CPU 가능, 한국어 지원
+TTS: espeak-ng (내장)             — 무료, 품질 낮음
+────────────────────────────
+장점: API 비용 0원, 인터넷 불필요
+단점: 음성 품질, GPU 없으면 레이턴시 높음
+```
+
+#### 조합 5: 컨퍼런스 회의록 (STT Only)
+
+```
+STT: OpenAI Whisper (gpt-4o-transcribe) — 높은 정확도
+  또는 Deepgram (nova-3, diarize=true)  — 화자 구분 포함
+────────────────────────────
+게이트웨이 대시보드에서 STT 시작 → 자동 회의록 생성
+화자별 실시간 자막 오버레이 (YouTube 라이브 스트리밍 지원)
+```
 
 ---
 
