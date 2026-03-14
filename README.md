@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.2.8.5** | 업데이트: 2026-03-11
+> **최신 버전: 1.2.8.6** | 업데이트: 2026-03-11
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -886,7 +886,49 @@ const tts = new ElevenLabsAdapter({
 });
 ```
 
-**한국어 음성 찾기:**
+**내장 한국어 네이티브 음성 (9개):**
+
+| 음성 ID | 이름 | 성별 |
+|---------|------|------|
+| `pjJMvFj0JGWi3mogOkHH` | Hyun Bin | 남성 |
+| `t0jbNlBVZ17f02VDIeMI` | 지영 / JiYoung | 여성 |
+| `zrHiDhphv9ZnVXBqCLjz` | Jennie | 여성 |
+| `ZJCNdOEhQGMOIbMuhBME` | Han Aim | 남성 |
+| `ova4yY2jqnnUdGOmTGbx` | KKC HQ | 남성 |
+| `Xb7hH8MSUJpSbSDYk0k2` | Anna Kim | 여성 |
+| `XrExE9yKIg1WjnnlVkGX` | Yuna | 여성 |
+| `ThT5KcBeYPX3keUQqHPh` | Jina | 여성 |
+| `Sita5M0jWFxPiECPABjR` | jjeong | 여성 |
+
+```typescript
+import { ELEVENLABS_KOREAN_VOICES } from 'dvgateway-adapters';
+
+// 내장 한국어 음성 사용
+const tts = new ElevenLabsAdapter({
+  apiKey: 'sk_xxxx',
+  voiceId: ELEVENLABS_KOREAN_VOICES[0].id,  // Hyun Bin
+});
+```
+
+**동적 음성 조회 & 클로닝:**
+
+```typescript
+// 사용 가능한 모든 음성 조회 (기본 + 클론 + 라이브러리)
+const voices = await ElevenLabsAdapter.fetchVoices('sk_xxxx');
+
+// 오디오 파일로 음성 복제
+const cloned = await ElevenLabsAdapter.cloneVoice(
+  'sk_xxxx', '내 목소리', audioData, 'sample.wav',
+);
+```
+
+**REST API:**
+```
+GET  /api/v1/config/apikeys/voices/elevenlabs/fetch  — 음성 목록 조회
+POST /api/v1/config/apikeys/voices/elevenlabs/clone  — 음성 복제 (multipart/form-data)
+```
+
+**추가 음성 찾기:**
 ElevenLabs 콘솔(https://elevenlabs.io/voice-library)에서 "Korean"으로 검색하거나,
 자신의 목소리를 클론하여 `voiceId`로 사용할 수 있습니다.
 
