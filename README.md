@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.2.8.9** | 업데이트: 2026-03-11
+> **최신 버전: 1.2.9.3** | 업데이트: 2026-03-11
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -38,16 +38,22 @@
 12. [폴백(Fallback) 설정 — 장애 자동 전환](#12-폴백fallback-설정--장애-자동-전환)
 13. [멀티테넌트 지원](#13-멀티테넌트-지원)
 14. [모니터링 대시보드](#14-모니터링-대시보드)
-15. [STT·TTS API 비용 절감 — 캐시 및 최적화 전략](#15-stttts-api-비용-절감--캐시-및-최적화-전략)
+15. [감정 분석 (Sentiment Analysis) — 실시간 회의 분위기 모니터링](#15-감정-분석-sentiment-analysis--실시간-회의-분위기-모니터링)
+    - [Deepgram Sentiment 활성화](#deepgram-sentiment-활성화)
+    - [실시간 회의 분위기 모니터링](#실시간-회의-분위기-모니터링)
+    - [회의록 감정 메타데이터](#회의록-감정-메타데이터)
+    - [화자별 감정 통계](#화자별-감정-통계)
+    - [Sentiment 응용 사례](#sentiment-응용-사례)
+16. [STT·TTS API 비용 절감 — 캐시 및 최적화 전략](#16-stttts-api-비용-절감--캐시-및-최적화-전략)
     - [TTS 캐시 어댑터 (CachedTtsAdapter)](#tts-캐시-어댑터-cachedttsadapter)
     - [안내 멘트 음원 풀 사전 생성 (warmup)](#안내-멘트-음원-풀-사전-생성-warmup)
     - [STT 비용 최적화 — VAD 필터링](#stt-비용-최적화--vad-필터링)
     - [프로바이더별 비용 비교표](#프로바이더별-비용-비교표)
     - [비용 최적화 체크리스트](#비용-최적화-체크리스트)
-16. [자주 묻는 질문 (FAQ)](#16-자주-묻는-질문-faq)
-17. [문제 해결](#17-문제-해결)
-18. [원라인 서버 업데이트](#18-원라인-서버-업데이트)
-19. [진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지](#19-진짜-초보자용-메뉴얼--nodejs-python-설치부터-봇-실행까지)
+17. [자주 묻는 질문 (FAQ)](#17-자주-묻는-질문-faq)
+18. [문제 해결](#18-문제-해결)
+19. [원라인 서버 업데이트](#19-원라인-서버-업데이트)
+20. [진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지](#20-진짜-초보자용-메뉴얼--nodejs-python-설치부터-봇-실행까지)
 
 ---
 
@@ -87,6 +93,24 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/download/v1
 | **8080** | SDK API 서버 (AI 클라이언트 연결) |
 | **8081** | 웹 대시보드 (모니터링) |
 | **8092** | 미디어 서버 내부 WebSocket |
+
+### 게이트웨이 API 키 확인
+
+설치가 완료되면 **게이트웨이 API 키**가 자동 생성됩니다.
+이 키는 SDK가 게이트웨이 서버에 인증할 때 사용됩니다.
+
+```bash
+# 설치 시 출력된 API 키 확인
+sudo cat /etc/dvgateway/api-key
+
+# 또는 대시보드에서 확인
+# http://서버IP주소:8081 접속 → 설정(Settings) → API Keys
+```
+
+이 키를 `.env` 파일의 `DV_API_KEY`에 저장하세요.
+
+> ⚠️ 게이트웨이 API 키는 외부 AI 서비스(Deepgram, ElevenLabs 등)의 키와는 별개입니다.
+> 게이트웨이 서버 자체에 접속하기 위한 인증 키입니다.
 
 
 ---
@@ -132,14 +156,8 @@ python3 -m venv venv
 source venv/bin/activate        # macOS / Linux
 # venv\Scripts\activate.bat    # Windows
 
-# SDK + 어댑터 설치
-pip install dvgateway dvgateway-adapters
-```
-
-환경 변수는 `python-dotenv` 로 관리합니다:
-
-```bash
-pip install python-dotenv
+# SDK + 어댑터 + dotenv 설치
+pip install "dvgateway[adapters]" python-dotenv
 ```
 
 `.env` 파일을 만들고 API 키를 저장합니다:
@@ -353,10 +371,14 @@ asyncio.run(main())
 | **Anthropic** | AI 대화 (LLM) | https://console.anthropic.com | ❌ 유료 |
 | **OpenAI** | AI 대화 / TTS / 리얼타임 | https://platform.openai.com | ❌ 유료 |
 
+> **참고:** 위 키 외에 **게이트웨이 API 키**도 필요합니다.
+> 이 키는 DVGateway 서버 설치 시 자동 생성되며, 확인 방법은 [섹션 2 — 게이트웨이 API 키 확인](#게이트웨이-api-키-확인)을 참고하세요.
+
 API 키는 코드에 직접 쓰지 말고 환경 변수로 관리하세요:
 
 ```bash
 # .env 파일 생성 (절대 git에 커밋하지 마세요!)
+DV_API_KEY=your-gateway-api-key   # DVGateway 서버 인증 키 (섹션 2 참고)
 DEEPGRAM_API_KEY=dg_xxxxxxxxxxxx
 ELEVENLABS_API_KEY=sk_xxxxxxxxxxxx
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
@@ -436,7 +458,7 @@ console.log('🤖 AI 음성 봇이 시작되었습니다. 전화를 기다리는
 실행:
 
 ```bash
-npx ts-node bot.ts
+npx tsx bot.ts
 # 또는 컴파일 후 실행
 npx tsc && node dist/bot.js
 ```
@@ -1651,7 +1673,451 @@ await gwB.pipeline().stt(sttB).llm(llmB).tts(ttsB).start();
 
 ---
 
-## 15. STT·TTS API 비용 절감 — 캐시 및 최적화 전략
+## 15. 감정 분석 (Sentiment Analysis) — 실시간 회의 분위기 모니터링
+
+Deepgram Nova-3의 **Sentiment Analysis** 기능을 활용하면, 각 발화(transcript segment)에 대해
+**positive / neutral / negative** 감정 분류와 신뢰도 점수(0.0~1.0)를 실시간으로 받을 수 있습니다.
+
+이를 통해 다음과 같은 기능이 가능합니다:
+
+| 기능 | 설명 |
+|------|------|
+| **실시간 회의 분위기 모니터링** | 스트리밍 화면 참여자 목록에 감정 상태 표시 |
+| **회의록 감정 메타데이터** | 회의 종료 후 회의록에 발화별 감정 데이터 포함 |
+| **화자별 감정 통계** | 회의 종료 시 화자별 감정 분포 요약 제공 |
+
+---
+
+### Deepgram Sentiment 활성화
+
+Deepgram STT 어댑터에서 `sentiment: true` 옵션을 추가하면 됩니다.
+**Nova-3 이상** 모델에서만 지원됩니다.
+
+**Node.js:**
+
+```typescript
+import { DeepgramAdapter } from 'dvgateway-adapters/stt';
+
+const stt = new DeepgramAdapter({
+  apiKey:   process.env.DEEPGRAM_API_KEY!,
+  language: 'ko',
+  model:    'nova-3',
+  diarize:  true,       // 화자 구분 (sentiment와 함께 사용 권장)
+  sentiment: true,      // ← 감정 분석 활성화
+});
+```
+
+**Python:**
+
+```python
+from dvgateway.adapters.stt import DeepgramAdapter
+
+stt = DeepgramAdapter(
+    api_key=os.environ["DEEPGRAM_API_KEY"],
+    language="ko",
+    model="nova-3",
+    diarize=True,
+    sentiment=True,      # ← 감정 분석 활성화
+)
+```
+
+활성화하면 `TranscriptResult` 에 `sentiment` 필드가 포함됩니다:
+
+```typescript
+interface SentimentResult {
+  sentiment: 'positive' | 'neutral' | 'negative';
+  sentimentScore: number;  // 0.0 ~ 1.0
+}
+
+// TranscriptResult.sentiment 에서 접근
+result.sentiment?.sentiment      // 'positive' | 'neutral' | 'negative'
+result.sentiment?.sentimentScore // 0.85
+```
+
+---
+
+### 실시간 회의 분위기 모니터링
+
+컨퍼런스 스트리밍 화면의 참여자 목록에 **실시간 감정 상태**를 표시할 수 있습니다.
+각 참여자의 최근 발화 감정을 실시간으로 추적하여 회의 분위기를 모니터링합니다.
+
+**Node.js:**
+
+```typescript
+// 참여자별 실시간 감정 상태 추적
+const participantMood = new Map<string, {
+  sentiment: string;
+  score: number;
+  lastUpdated: Date;
+}>();
+
+await gw.pipeline()
+  .stt(new DeepgramAdapter({
+    apiKey:    process.env.DEEPGRAM_API_KEY!,
+    language:  'ko',
+    model:     'nova-3',
+    diarize:   true,
+    sentiment: true,
+  }))
+  .forConference()
+  .onTranscript(async (result, session) => {
+    if (!result.isFinal) return;
+
+    // 감정 상태 업데이트
+    if (result.sentiment) {
+      const speakerId = result.speaker ?? session.linkedId;
+      participantMood.set(speakerId, {
+        sentiment: result.sentiment.sentiment,
+        score:     result.sentiment.sentimentScore,
+        lastUpdated: new Date(),
+      });
+
+      // 감정 이모지 매핑
+      const emoji = result.sentiment.sentiment === 'positive' ? '😊'
+                   : result.sentiment.sentiment === 'negative' ? '😟'
+                   : '😐';
+
+      console.log(
+        `${emoji} [${speakerId}] ${result.text} ` +
+        `(${result.sentiment.sentiment}, ${(result.sentiment.sentimentScore * 100).toFixed(0)}%)`
+      );
+    }
+
+    // 회의록에 저장
+    if (session.confId) {
+      await gw.submitTranscript(session.confId, result);
+    }
+  })
+  .start();
+
+// 전체 회의 분위기 요약 (주기적으로 호출)
+function getMeetingMoodSummary(): string {
+  const moods = [...participantMood.values()];
+  const positive = moods.filter(m => m.sentiment === 'positive').length;
+  const negative = moods.filter(m => m.sentiment === 'negative').length;
+  const neutral  = moods.filter(m => m.sentiment === 'neutral').length;
+
+  if (negative > moods.length / 2) return '⚠️ 부정적 분위기 감지';
+  if (positive > moods.length / 2) return '✅ 긍정적 분위기';
+  return '➡️ 보통';
+}
+```
+
+**Python:**
+
+```python
+from collections import defaultdict
+from datetime import datetime
+
+participant_mood: dict[str, dict] = {}
+
+async def on_transcript(result, session):
+    if not result.is_final:
+        return
+
+    if result.sentiment:
+        speaker_id = result.speaker or session.linked_id
+        participant_mood[speaker_id] = {
+            "sentiment": result.sentiment.sentiment,
+            "score": result.sentiment.sentiment_score,
+            "last_updated": datetime.now(),
+        }
+
+        emoji = {"positive": "😊", "neutral": "😐", "negative": "😟"}
+        print(
+            f"{emoji[result.sentiment.sentiment]} [{speaker_id}] {result.text} "
+            f"({result.sentiment.sentiment}, {result.sentiment.sentiment_score:.0%})"
+        )
+
+    if session.conf_id:
+        await gw.submit_transcript(session.conf_id, result)
+
+await (
+    gw.pipeline()
+    .stt(DeepgramAdapter(
+        api_key=os.environ["DEEPGRAM_API_KEY"],
+        language="ko",
+        model="nova-3",
+        diarize=True,
+        sentiment=True,
+    ))
+    .for_conference()
+    .on_transcript(on_transcript)
+    .start()
+)
+```
+
+---
+
+### 회의록 감정 메타데이터
+
+회의 종료 후 다운로드하는 회의록(JSON/TXT)에 **발화별 감정 데이터**가 포함됩니다.
+`sentiment: true`로 STT를 실행하면 `submitTranscript()` 시 감정 메타데이터가 자동으로 함께 저장됩니다.
+
+**JSON 회의록 예시:**
+
+```json
+{
+  "confId": "7001",
+  "startedAt": "2026-03-15T09:00:00Z",
+  "endedAt": "2026-03-15T09:45:00Z",
+  "utterances": [
+    {
+      "timestamp": "2026-03-15T09:01:23Z",
+      "linkedId": "ch-001",
+      "callerId": "김팀장",
+      "text": "이번 분기 실적이 목표를 초과했습니다.",
+      "isFinal": true,
+      "sentiment": "positive",
+      "sentimentScore": 0.92
+    },
+    {
+      "timestamp": "2026-03-15T09:02:45Z",
+      "linkedId": "ch-002",
+      "callerId": "이과장",
+      "text": "하지만 비용 초과가 우려됩니다.",
+      "isFinal": true,
+      "sentiment": "negative",
+      "sentimentScore": 0.78
+    }
+  ],
+  "sentimentSummary": {
+    "overall": "neutral",
+    "distribution": { "positive": 45, "neutral": 35, "negative": 20 },
+    "bySpeaker": {
+      "김팀장": { "positive": 60, "neutral": 30, "negative": 10, "avgScore": 0.72 },
+      "이과장": { "positive": 20, "neutral": 40, "negative": 40, "avgScore": 0.45 }
+    }
+  }
+}
+```
+
+**TXT 회의록 예시:**
+
+```
+=== Meeting Minutes ===
+Conference ID: 7001
+Start: 2026-03-15 09:00:00
+End: 2026-03-15 09:45:00
+Duration: 45m0s
+
+--- Utterance Log ---
+
+[09:01:23] 김팀장: 이번 분기 실적이 목표를 초과했습니다. [😊 positive 92%]
+[09:02:45] 이과장: 하지만 비용 초과가 우려됩니다. [😟 negative 78%]
+
+--- Sentiment Summary ---
+
+Overall: neutral
+Distribution: positive 45% | neutral 35% | negative 20%
+
+Speaker Stats:
+  김팀장: 😊 positive 60% | 😐 neutral 30% | 😟 negative 10% (avg: 0.72)
+  이과장: 😊 positive 20% | 😐 neutral 40% | 😟 negative 40% (avg: 0.45)
+```
+
+---
+
+### 화자별 감정 통계
+
+회의 종료 시 화자별로 감정 분포를 집계하여 요약 통계를 생성합니다.
+
+**Node.js:**
+
+```typescript
+// 화자별 감정 통계 수집기
+class SpeakerSentimentStats {
+  private stats = new Map<string, Array<{ sentiment: string; score: number }>>();
+
+  add(speaker: string, sentiment: string, score: number): void {
+    if (!this.stats.has(speaker)) {
+      this.stats.set(speaker, []);
+    }
+    this.stats.get(speaker)!.push({ sentiment, score });
+  }
+
+  getSummary(): Record<string, {
+    total: number;
+    positive: number;
+    neutral: number;
+    negative: number;
+    avgScore: number;
+    dominantMood: string;
+  }> {
+    const summary: Record<string, any> = {};
+    for (const [speaker, entries] of this.stats) {
+      const positive = entries.filter(e => e.sentiment === 'positive').length;
+      const neutral  = entries.filter(e => e.sentiment === 'neutral').length;
+      const negative = entries.filter(e => e.sentiment === 'negative').length;
+      const avgScore = entries.reduce((sum, e) => sum + e.score, 0) / entries.length;
+
+      let dominantMood = 'neutral';
+      if (positive >= neutral && positive >= negative) dominantMood = 'positive';
+      else if (negative >= neutral && negative >= positive) dominantMood = 'negative';
+
+      summary[speaker] = {
+        total: entries.length,
+        positive: Math.round((positive / entries.length) * 100),
+        neutral:  Math.round((neutral  / entries.length) * 100),
+        negative: Math.round((negative / entries.length) * 100),
+        avgScore: Math.round(avgScore * 100) / 100,
+        dominantMood,
+      };
+    }
+    return summary;
+  }
+}
+
+// 사용 예
+const sentimentStats = new SpeakerSentimentStats();
+
+await gw.pipeline()
+  .stt(new DeepgramAdapter({
+    apiKey: process.env.DEEPGRAM_API_KEY!,
+    language: 'ko', model: 'nova-3',
+    diarize: true, sentiment: true,
+  }))
+  .forConference()
+  .onTranscript(async (result, session) => {
+    if (!result.isFinal || !result.sentiment) return;
+
+    const speaker = result.speaker ?? session.linkedId;
+    sentimentStats.add(speaker, result.sentiment.sentiment, result.sentiment.sentimentScore);
+  })
+  .start();
+
+// 회의 종료 시
+process.on('SIGTERM', () => {
+  console.log('\n=== 화자별 감정 통계 ===');
+  const summary = sentimentStats.getSummary();
+  for (const [speaker, stats] of Object.entries(summary)) {
+    console.log(
+      `${speaker}: 😊${stats.positive}% 😐${stats.neutral}% 😟${stats.negative}% ` +
+      `(평균 점수: ${stats.avgScore}, 주요 분위기: ${stats.dominantMood})`
+    );
+  }
+});
+```
+
+**Python:**
+
+```python
+from collections import defaultdict
+
+class SpeakerSentimentStats:
+    def __init__(self):
+        self._stats: dict[str, list[dict]] = defaultdict(list)
+
+    def add(self, speaker: str, sentiment: str, score: float) -> None:
+        self._stats[speaker].append({"sentiment": sentiment, "score": score})
+
+    def get_summary(self) -> dict:
+        summary = {}
+        for speaker, entries in self._stats.items():
+            total = len(entries)
+            positive = sum(1 for e in entries if e["sentiment"] == "positive")
+            neutral  = sum(1 for e in entries if e["sentiment"] == "neutral")
+            negative = sum(1 for e in entries if e["sentiment"] == "negative")
+            avg_score = sum(e["score"] for e in entries) / total
+
+            dominant = max(
+                [("positive", positive), ("neutral", neutral), ("negative", negative)],
+                key=lambda x: x[1],
+            )[0]
+
+            summary[speaker] = {
+                "total": total,
+                "positive": round(positive / total * 100),
+                "neutral": round(neutral / total * 100),
+                "negative": round(negative / total * 100),
+                "avg_score": round(avg_score, 2),
+                "dominant_mood": dominant,
+            }
+        return summary
+
+# 사용 예
+stats = SpeakerSentimentStats()
+
+async def on_transcript(result, session):
+    if not result.is_final or not result.sentiment:
+        return
+    speaker = result.speaker or session.linked_id
+    stats.add(speaker, result.sentiment.sentiment, result.sentiment.sentiment_score)
+
+# 회의 종료 시
+summary = stats.get_summary()
+for speaker, s in summary.items():
+    print(f"{speaker}: 😊{s['positive']}% 😐{s['neutral']}% 😟{s['negative']}% "
+          f"(avg: {s['avg_score']}, mood: {s['dominant_mood']})")
+```
+
+---
+
+### Sentiment 응용 사례
+
+#### 1. 고객 상담 품질 모니터링
+
+실시간 감정 분석으로 **불만 고객 통화**를 자동 감지하여 상위 관리자에게 알림을 보냅니다.
+
+```typescript
+.onTranscript(async (result, session) => {
+  if (!result.isFinal || !result.sentiment) return;
+
+  // 부정 감정이 연속 3회 이상 감지되면 알림
+  if (result.sentiment.sentiment === 'negative' && result.sentiment.sentimentScore > 0.7) {
+    negativeCount++;
+    if (negativeCount >= 3) {
+      await sendAlert({
+        type: 'negative_sentiment',
+        linkedId: session.linkedId,
+        caller: session.caller,
+        message: '고객 불만 감지 — 관리자 개입 필요',
+      });
+    }
+  } else {
+    negativeCount = 0;
+  }
+})
+```
+
+#### 2. 교육·세미나 참여도 분석
+
+온라인 강의에서 학습자의 **반응(긍정/부정)** 을 실시간으로 추적합니다.
+
+```
+강사 발언 → 학습자 반응 자동 집계:
+  "이해했습니다" → positive (0.89)
+  "잘 모르겠어요" → negative (0.72)
+  "네" → neutral (0.51)
+────────────────────────────────
+실시간 참여도 대시보드: 😊 65% | 😐 25% | 😟 10%
+```
+
+#### 3. 면접·채용 인터뷰 분석
+
+면접 후 지원자의 발화 감정 흐름을 리포트로 생성합니다.
+
+```
+시간대별 감정 변화:
+  09:00–09:10 자기소개  → 😊 positive (자신감)
+  09:10–09:20 기술 질문 → 😐 neutral  (신중한 답변)
+  09:20–09:30 압박 질문 → 😟 negative (긴장)
+  09:30–09:35 마무리    → 😊 positive (회복)
+```
+
+#### 4. 의료 상담 감정 추적
+
+원격 진료에서 환자의 심리 상태를 자동으로 기록합니다.
+
+| 시간 | 환자 발화 | 감정 | 점수 |
+|------|---------|------|------|
+| 14:01 | "최근에 잠을 잘 못 자요" | negative | 0.82 |
+| 14:03 | "약을 먹으면 좀 나아져요" | positive | 0.67 |
+| 14:05 | "그런데 부작용이 걱정돼요" | negative | 0.75 |
+
+---
+
+## 16. STT·TTS API 비용 절감 — 캐시 및 최적화 전략
 
 운영 환경에서 STT·TTS API 비용은 통화량에 비례하여 빠르게 증가합니다.
 아래 전략을 조합하면 **TTS 비용을 50~90%**, **STT 비용을 20~40%** 절감할 수 있습니다.
@@ -1938,7 +2404,7 @@ const stt = new DeepgramAdapter({
 
 ---
 
-## 16. 자주 묻는 질문 (FAQ)
+## 17. 자주 묻는 질문 (FAQ)
 
 **Q: 한국어와 영어가 섞인 통화(코드 스위칭)는 어떻게 처리하나요?**
 A: Deepgram의 `language: 'multi'` 또는 `language: 'ko'`를 사용하세요. Nova-3 모델은 한국어+영어 혼용을 잘 처리합니다.
@@ -1947,7 +2413,7 @@ A: Deepgram의 `language: 'multi'` 또는 `language: 'ko'`를 사용하세요. N
 A: OpenAI Realtime 어댑터를 사용하는 경우 서버 VAD가 자동으로 처리합니다. 카스케이드 파이프라인에서는 `gw.stopTtsInjection(linkedId)`를 호출하세요.
 
 **Q: API 키 비용이 걱정됩니다.**
-A: [15. STT·TTS API 비용 절감](#15-stttts-api-비용-절감--캐시-및-최적화-전략) 섹션을 참고하세요. 주요 전략:
+A: [16. STT·TTS API 비용 절감](#16-stttts-api-비용-절감--캐시-및-최적화-전략) 섹션을 참고하세요. 주요 전략:
 - TTS 캐시: `CachedTtsAdapter`로 반복 안내 멘트 비용 $0 달성
 - STT 최적화: VAD 필터 + `endpointingMs` 조정으로 20~40% 절감
 - 저비용 프로바이더: Deepgram Nova-3 ($0.0043/분) + claude-haiku/gpt-4o-mini + OpenAI tts-1
@@ -1963,7 +2429,7 @@ A: DVGateway 서버 자체는 온프레미스로 설치 가능합니다. 단, AI
 
 ---
 
-## 17. 문제 해결
+## 18. 문제 해결
 
 ### 연결 오류: `ECONNREFUSED http://localhost:8080`
 
@@ -1979,6 +2445,69 @@ systemctl restart dvgateway
 # 로그 확인
 journalctl -u dvgateway -f
 ```
+
+### SSL 오류: `SSL: WRONG_VERSION_NUMBER`
+
+로컬 개발 환경에서 WebSocket 연결 시 아래와 같은 오류가 반복된다면:
+
+```
+"err": "Cannot connect to host localhost:8080 ssl:default [[SSL: WRONG_VERSION_NUMBER] wrong version number ...]"
+```
+
+**원인**: SDK의 `force_tls` 옵션이 기본값 `true`이므로, `http://` → `https://` → `wss://`로 자동 변환됩니다. 로컬 서버가 TLS를 사용하지 않으면 SSL 핸드셰이크가 실패합니다.
+
+**해결** — `DVGatewayClient` 생성 시 `force_tls`를 끄세요:
+
+```python
+# Python
+gw = DVGatewayClient(
+    base_url="http://localhost:8080",
+    security={"force_tls": False},   # ← 로컬 개발 시 필수
+)
+```
+
+```javascript
+// Node.js
+const gw = new DVGatewayClient({
+  baseUrl: 'http://localhost:8080',
+  security: { forceTls: false },     // ← 로컬 개발 시 필수
+});
+```
+
+> ⚠️ **운영(프로덕션) 환경에서는 반드시 TLS를 사용하세요.** `force_tls: false`는 로컬 개발 전용입니다.
+
+### 인증 오류: `HTTP 401: authentication required`
+
+SDK가 게이트웨이 서버에 연결할 때 API 키를 JWT로 교환하는데, 이 단계에서 인증이 실패한 경우입니다.
+
+**확인 순서:**
+
+1. `.env` 파일이 `bot.py` (또는 `bot.js`)와 **같은 폴더**에 있는지 확인
+2. `.env` 파일에서 `DV_API_KEY` 값이 플레이스홀더가 아닌 **실제 키**인지 확인
+3. 키 앞뒤에 따옴표(`"`)나 공백이 없는지 확인 (`.env` 파일에는 따옴표 없이 값만 넣으세요)
+4. 게이트웨이 서버에서 API 키를 다시 확인:
+
+```bash
+# DVGateway 서버에서 실행
+sudo cat /etc/dvgateway/api-key
+
+# 또는 대시보드(http://서버IP:8081) → 설정 → API Keys
+```
+
+5. API 키가 맞는지 직접 테스트:
+
+```bash
+# 서버에 직접 인증 요청 (your-api-key를 실제 키로 교체)
+curl -X POST http://localhost:8080/api/v1/auth/token \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{"apiKey": "your-api-key"}'
+
+# 성공 시 {"token": "eyJ..."} 형태의 JWT가 반환됩니다
+# 실패 시 {"error": "authentication required"} 가 반환됩니다
+```
+
+> 💡 **참고:** `DV_API_KEY`는 DVGateway 서버의 키이며, Deepgram·Anthropic·ElevenLabs 등 AI 서비스의 API 키와는 **완전히 다른 키**입니다. 혼동하지 마세요!
 
 ### STT가 인식을 못 함
 
@@ -2010,7 +2539,7 @@ journalctl -u dvgateway -f
 
 ---
 
-## 18. 원라인 서버 업데이트
+## 19. 원라인 서버 업데이트
 
 ```bash
 # 대시보드 UI에서 업데이트 버튼 클릭
@@ -2024,7 +2553,7 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/down
 
 ---
 
-## 19. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
+## 20. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
 
 > 이 섹션은 프로그래밍 경험이 없거나 처음 시작하는 분들을 위한 단계별 안내입니다.
 > 마치 옆에서 알려주듯이 하나씩 따라 하세요. 어렵지 않아요! 😊
@@ -2122,11 +2651,13 @@ systemctl status dvgateway
 ```bash
 # my-voice-bot 폴더 안에서 실행
 npm init -y                          # package.json 생성
+npm pkg set type=module              # ESM 모듈 방식 설정
 npm install dvgateway-sdk dvgateway-adapters dotenv
 ```
 
 > `npm init -y`는 프로젝트 설정 파일을 자동 생성합니다.
 > 여러 질문을 건너뛰고 싶을 때 `-y` 옵션을 씁니다.
+> `npm pkg set type=module`은 최신 `import` 문법을 사용하기 위해 필요합니다.
 
 ---
 
@@ -2143,6 +2674,16 @@ API 키는 "서비스를 쓰기 위한 비밀 암호"라고 생각하세요.
 
 가입 후 각 사이트의 "API Keys" 메뉴에서 키를 발급받으세요.
 
+**게이트웨이 API 키**는 위 AI 서비스와는 별개입니다.
+DVGateway 서버 설치 시 자동으로 생성되며, 아래 방법으로 확인합니다:
+
+```bash
+# DVGateway 서버에서 API 키 확인
+sudo cat /etc/dvgateway/api-key
+
+# 또는 대시보드(http://서버IP:8081) → 설정 → API Keys 에서 확인
+```
+
 `.env` 파일 만들기:
 
 ```bash
@@ -2153,12 +2694,18 @@ cat > .env << 'EOF'
 DEEPGRAM_API_KEY=여기에_Deepgram_키_붙여넣기
 ELEVENLABS_API_KEY=여기에_ElevenLabs_키_붙여넣기
 ANTHROPIC_API_KEY=여기에_Anthropic_키_붙여넣기
-GATEWAY_API_KEY=여기에_게이트웨이_API_키
+DV_API_KEY=여기에_게이트웨이_API_키_붙여넣기
 EOF
 ```
 
 > ⚠️ `.env` 파일은 절대 다른 사람에게 보여주거나 GitHub에 올리지 마세요!
 > API 키가 유출되면 요금이 나올 수 있습니다.
+
+> ⚠️ **흔한 실수 체크리스트:**
+> - `여기에_..._붙여넣기` 같은 플레이스홀더를 실제 키로 바꿨나요?
+> - 키 앞뒤에 **따옴표(`"`)나 공백**이 들어가지 않았나요? (`.env` 파일에는 따옴표 없이 값만 넣으세요)
+> - `.env` 파일이 `bot.js`와 **같은 폴더**에 있나요?
+> - 게이트웨이 API 키는 DVGateway **서버에서 발급받은 키**이며, Deepgram/Anthropic 등 AI 서비스 키와는 다릅니다
 
 ---
 
@@ -2168,22 +2715,35 @@ EOF
 
 ```javascript
 // bot.js — 가장 간단한 AI 음성 봇
-require('dotenv/config');  // .env 파일 읽기
+import 'dotenv/config';  // .env 파일 읽기
 
-const { DVGatewayClient } = require('dvgateway-sdk');
-const { DeepgramAdapter } = require('dvgateway-adapters/stt');
-const { AnthropicAdapter } = require('dvgateway-adapters/llm');
-const { ElevenLabsAdapter } = require('dvgateway-adapters/tts');
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { DeepgramAdapter } from 'dvgateway-adapters/stt';
+import { AnthropicAdapter } from 'dvgateway-adapters/llm';
+import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 
 async function main() {
+  // ── 0. API 키가 제대로 로드됐는지 확인 ──────────────────────
+  const requiredKeys = ['DV_API_KEY', 'DEEPGRAM_API_KEY', 'ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY'];
+  const missing = requiredKeys.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(`❌ .env 파일에 다음 키가 없습니다: ${missing.join(', ')}`);
+    console.error('   .env 파일을 확인하고 API 키를 넣어주세요.');
+    process.exit(1);
+  }
+
   // 1. 게이트웨이 서버 연결
   //    ↓ 서버 IP 주소를 입력하세요 (같은 컴퓨터면 localhost)
+  //    ⚠️ 로컬 개발 시 security.forceTls: false 필수!
+  //       이 옵션이 없으면 SDK가 자동으로 https/wss로 변환하여
+  //       "SSL: WRONG_VERSION_NUMBER" 오류가 발생합니다.
   const gw = new DVGatewayClient({
     baseUrl: 'http://localhost:8080',
     auth: {
       type: 'apiKey',
-      apiKey: process.env.GATEWAY_API_KEY,
+      apiKey: process.env.DV_API_KEY,
     },
+    security: { forceTls: false },  // 로컬 개발 시 필수 (TLS 미사용)
   });
 
   // 2. AI 어댑터 설정
@@ -2364,7 +2924,7 @@ venv\Scripts\Activate.ps1
 
 ```bash
 # 가상환경이 활성화된 상태에서 실행
-pip install dvgateway dvgateway-adapters python-dotenv
+pip install "dvgateway[adapters]" python-dotenv
 ```
 
 ---
@@ -2373,12 +2933,28 @@ pip install dvgateway dvgateway-adapters python-dotenv
 
 `.env` 파일 만들기 (Node.js 섹션 A-5와 동일):
 
+> **게이트웨이 API 키**는 DVGateway 서버 설치 시 자동 생성됩니다.
+> `sudo cat /etc/dvgateway/api-key` 또는 대시보드(http://서버IP:8081) → 설정 → API Keys 에서 확인하세요.
+
 ```ini
 DEEPGRAM_API_KEY=여기에_Deepgram_키_붙여넣기
 ELEVENLABS_API_KEY=여기에_ElevenLabs_키_붙여넣기
 ANTHROPIC_API_KEY=여기에_Anthropic_키_붙여넣기
-GATEWAY_API_KEY=여기에_게이트웨이_API_키
+DV_API_KEY=여기에_게이트웨이_API_키_붙여넣기
 ```
+
+> ⚠️ **흔한 실수 체크리스트:**
+> - `여기에_..._붙여넣기` 같은 플레이스홀더를 실제 키로 바꿨나요?
+> - 키 앞뒤에 **따옴표(`"`)나 공백**이 들어가지 않았나요? (`.env` 파일에는 따옴표 없이 값만 넣으세요)
+> - `.env` 파일이 `bot.py`와 **같은 폴더**에 있나요?
+> - 게이트웨이 API 키는 DVGateway **서버에서 발급받은 키**이며, Deepgram/Anthropic 등 AI 서비스 키와는 다릅니다
+>
+> 키가 올바른지 확인하는 방법:
+> ```bash
+> # .env 파일 내용 확인 (키 일부만 표시)
+> cat .env
+> # DV_API_KEY=dv_live_abc123... 처럼 실제 값이 보여야 합니다
+> ```
 
 ---
 
@@ -2401,13 +2977,26 @@ from dvgateway.adapters.tts import ElevenLabsAdapter
 load_dotenv()
 
 async def main():
+    # ── 0. API 키가 제대로 로드됐는지 확인 ──────────────────────
+    required_keys = ["DV_API_KEY", "DEEPGRAM_API_KEY", "ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"]
+    missing = [k for k in required_keys if not os.environ.get(k)]
+    if missing:
+        print(f"❌ .env 파일에 다음 키가 없습니다: {', '.join(missing)}")
+        print("   .env 파일을 확인하고 API 키를 넣어주세요.")
+        return
+
     # 1. 게이트웨이 서버 연결
+    #    ↓ 서버 IP 주소를 입력하세요 (같은 컴퓨터면 localhost)
+    #    ⚠️ 로컬 개발 시 security={"force_tls": False} 필수!
+    #       이 옵션이 없으면 SDK가 자동으로 https/wss로 변환하여
+    #       "SSL: WRONG_VERSION_NUMBER" 오류가 발생합니다.
     gw = DVGatewayClient(
         base_url="http://localhost:8080",   # 서버 IP 주소
         auth={
             "type": "apiKey",
-            "api_key": os.environ["GATEWAY_API_KEY"],
+            "api_key": os.environ["DV_API_KEY"],
         },
+        security={"force_tls": False},      # 로컬 개발 시 필수 (TLS 미사용)
     )
 
     # 2. AI 어댑터 설정
@@ -2553,7 +3142,7 @@ source venv/bin/activate   # macOS/Linux
 venv\Scripts\activate.bat  # Windows
 
 # 패키지 재설치
-pip install dvgateway dvgateway-adapters python-dotenv
+pip install "dvgateway[adapters]" python-dotenv
 ```
 
 #### 전화가 와도 봇이 응답하지 않아요
