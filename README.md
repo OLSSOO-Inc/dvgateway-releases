@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.2.9.6** | 업데이트: 2026-03-11
+> **최신 버전: 1.2.9.7** | 업데이트: 2026-03-11
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -36,24 +36,23 @@
     - [로컬 LLM — vLLM 서버 연동](#로컬-llm--vllm-서버-연동)
 11. [이벤트 후킹 — 통화 시작·종료·발화 감지](#11-이벤트-후킹--통화-시작종료발화-감지)
 12. [폴백(Fallback) 설정 — 장애 자동 전환](#12-폴백fallback-설정--장애-자동-전환)
-13. [멀티테넌트 지원](#13-멀티테넌트-지원)
-14. [모니터링 대시보드](#14-모니터링-대시보드)
-15. [감정 분석 (Sentiment Analysis) — 실시간 회의 분위기 모니터링](#15-감정-분석-sentiment-analysis--실시간-회의-분위기-모니터링)
+13. [모니터링 대시보드](#13-모니터링-대시보드)
+14. [감정 분석 (Sentiment Analysis) — 실시간 회의 분위기 모니터링](#14-감정-분석-sentiment-analysis--실시간-회의-분위기-모니터링)
     - [Deepgram Sentiment 활성화](#deepgram-sentiment-활성화)
     - [실시간 회의 분위기 모니터링](#실시간-회의-분위기-모니터링)
     - [회의록 감정 메타데이터](#회의록-감정-메타데이터)
     - [화자별 감정 통계](#화자별-감정-통계)
     - [Sentiment 응용 사례](#sentiment-응용-사례)
-16. [STT·TTS API 비용 절감 — 캐시 및 최적화 전략](#16-stttts-api-비용-절감--캐시-및-최적화-전략)
+15. [STT·TTS API 비용 절감 — 캐시 및 최적화 전략](#15-stttts-api-비용-절감--캐시-및-최적화-전략)
     - [TTS 캐시 어댑터 (CachedTtsAdapter)](#tts-캐시-어댑터-cachedttsadapter)
     - [안내 멘트 음원 풀 사전 생성 (warmup)](#안내-멘트-음원-풀-사전-생성-warmup)
     - [STT 비용 최적화 — VAD 필터링](#stt-비용-최적화--vad-필터링)
     - [프로바이더별 비용 비교표](#프로바이더별-비용-비교표)
     - [비용 최적화 체크리스트](#비용-최적화-체크리스트)
-17. [자주 묻는 질문 (FAQ)](#17-자주-묻는-질문-faq)
-18. [문제 해결](#18-문제-해결)
-19. [원라인 서버 업데이트](#19-원라인-서버-업데이트)
-20. [진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지](#20-진짜-초보자용-메뉴얼--nodejs-python-설치부터-봇-실행까지)
+16. [자주 묻는 질문 (FAQ)](#16-자주-묻는-질문-faq)
+17. [문제 해결](#17-문제-해결)
+18. [원라인 서버 업데이트](#18-원라인-서버-업데이트)
+19. [진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지](#19-진짜-초보자용-메뉴얼--nodejs-python-설치부터-봇-실행까지)
 
 ---
 
@@ -93,25 +92,6 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/download/v1
 | **8080** | SDK API 서버 (AI 클라이언트 연결) |
 | **8081** | 웹 대시보드 (모니터링) |
 | **8092** | 미디어 서버 내부 WebSocket |
-
-### 게이트웨이 API 키 확인
-
-설치가 완료되면 **게이트웨이 API 키**가 자동 생성됩니다.
-이 키는 SDK가 게이트웨이 서버에 인증할 때 사용됩니다.
-
-```bash
-# 설치 시 출력된 API 키 확인
-sudo cat /etc/dvgateway/api-key
-
-# 또는 대시보드에서 확인
-# http://서버IP주소:8081 접속 → 설정(Settings) → API Keys
-```
-
-이 키를 `.env` 파일의 `DV_API_KEY`에 저장하세요.
-
-> ⚠️ 게이트웨이 API 키는 외부 AI 서비스(Deepgram, ElevenLabs 등)의 키와는 별개입니다.
-> 게이트웨이 서버 자체에 접속하기 위한 인증 키입니다.
-
 
 ---
 
@@ -189,7 +169,6 @@ async def main():
     gw = DVGatewayClient(
         base_url="http://localhost:8080",
         auth={"type": "apiKey", "api_key": "your-gateway-api-key"},
-        tenant_id="tenant-a",  # (선택) 멀티테넌트 환경
     )
 
     # 2. AI 어댑터 준비
@@ -384,14 +363,10 @@ asyncio.run(main())
 | **OpenAI** | AI 대화 (LLM, 기본) / TTS / 리얼타임 | https://platform.openai.com | ❌ 유료 |
 | **Anthropic** | AI 대화 (LLM, 백업) | https://console.anthropic.com | ❌ 유료 (선택) |
 
-> **참고:** 위 키 외에 **게이트웨이 API 키**도 필요합니다.
-> 이 키는 DVGateway 서버 설치 시 자동 생성되며, 확인 방법은 [섹션 2 — 게이트웨이 API 키 확인](#게이트웨이-api-키-확인)을 참고하세요.
-
 API 키는 코드에 직접 쓰지 말고 환경 변수로 관리하세요:
 
 ```bash
 # .env 파일 생성 (절대 git에 커밋하지 마세요!)
-DV_API_KEY=your-gateway-api-key   # DVGateway 서버 인증 키 (섹션 2 참고)
 DEEPGRAM_API_KEY=dg_xxxxxxxxxxxx
 ELEVENLABS_API_KEY=sk_xxxxxxxxxxxx
 OPENAI_API_KEY=sk-xxxxxxxxxxxx
@@ -423,8 +398,6 @@ import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 const gw = new DVGatewayClient({
   baseUrl: 'http://localhost:8080',   // DVGateway 서버 주소
   auth: { type: 'apiKey', apiKey: 'your-gateway-api-key' },
-  tenantId: 'tenant-a',              // (선택) 멀티테넌트 환경에서 테넌트 ID 지정
-                                     //  설정 시 모든 요청에 X-Tenant-ID 헤더 자동 삽입
 });
 
 // 2. AI 어댑터 준비
@@ -1639,7 +1612,6 @@ gw.pipeline()
 | `agentNumber` / `agent_number` | `string?` | 상담원 내선번호 |
 | `dir` | `'in' \| 'out' \| 'both'` | 오디오 스트림 방향 |
 | `confId` / `conf_id` | `string?` | ConfBridge 컨퍼런스 ID |
-| `tenantId` / `tenant_id` | `string?` | 멀티테넌트 식별자 |
 | `startedAt` / `started_at` | `Date` / `datetime` | 통화 시작 시각 |
 | `streamUrl` / `stream_url` | `string` | 오디오 WebSocket URL |
 | `metadata` | `object` / `dict` | 커스텀 키-값 메타데이터 |
@@ -1675,66 +1647,7 @@ await gw.pipeline()
 
 ---
 
-## 13. 멀티테넌트 지원
-
-서버에 `TENANT_CREDENTIALS` 가 설정된 경우 SDK 클라이언트에 `tenantId` 를 지정하여 테넌트 범위로 격리된 운영이 가능합니다.
-
-### DVGatewayClient 옵션
-
-```typescript
-const gw = new DVGatewayClient({
-  baseUrl:  'http://your-gateway:8080',
-  auth:     { type: 'apiKey', apiKey: 'your-key' },
-  tenantId: 'tenant-a',   // 설정 시 모든 요청에 X-Tenant-ID 헤더 자동 삽입
-});
-```
-
-### 테넌트별 세션 목록 조회
-
-```typescript
-// 현재 tenantId에 속한 활성 세션만 반환
-const sessions = await gw.listSessionsByTenant('tenant-a');
-console.log(sessions);
-// [{ sessionId: '...', tenantId: 'tenant-a', linkedId: '...', state: 'active' }, ...]
-```
-
-### call:new 이벤트의 tenantId
-
-```typescript
-gw.on('call:new', (event) => {
-  const { session } = event;
-  console.log(`tenantId: ${session.tenantId}`);    // 통화에 연결된 테넌트 ID
-  console.log(`linkedId: ${session.linkedId}`);
-});
-```
-
-### 멀티테넌트 파이프라인 예시
-
-```typescript
-// 테넌트별 독립된 DVGatewayClient 인스턴스 생성
-const gwA = new DVGatewayClient({
-  baseUrl:  'http://your-gateway:8080',
-  auth:     { type: 'apiKey', apiKey: 'key-a' },
-  tenantId: 'tenant-a',
-});
-
-const gwB = new DVGatewayClient({
-  baseUrl:  'http://your-gateway:8080',
-  auth:     { type: 'apiKey', apiKey: 'key-b' },
-  tenantId: 'tenant-b',
-});
-
-// 각 파이프라인은 해당 테넌트의 통화만 처리
-await gwA.pipeline().stt(sttA).llm(llmA).tts(ttsA).start();
-await gwB.pipeline().stt(sttB).llm(llmB).tts(ttsB).start();
-```
-
-> **참고**: 서버의 `TENANT_LIMITS` 환경변수로 테넌트별 동시통화 한도를 개별 설정할 수 있습니다.
-> 예: `TENANT_LIMITS="tenant-a:10,tenant-b:30"`
-
----
-
-## 14. 모니터링 대시보드
+## 13. 모니터링 대시보드
 
 서버 설치 후 웹 브라우저에서 `http://your-server:8081` 에 접속하면
 실시간 모니터링 대시보드를 볼 수 있습니다.
@@ -1752,7 +1665,7 @@ await gwB.pipeline().stt(sttB).llm(llmB).tts(ttsB).start();
 
 ---
 
-## 15. 감정 분석 (Sentiment Analysis) — 실시간 회의 분위기 모니터링
+## 14. 감정 분석 (Sentiment Analysis) — 실시간 회의 분위기 모니터링
 
 Deepgram Nova-3의 **Sentiment Analysis** 기능을 활용하면, 각 발화(transcript segment)에 대해
 **positive / neutral / negative** 감정 분류와 신뢰도 점수(0.0~1.0)를 실시간으로 받을 수 있습니다.
@@ -2196,7 +2109,7 @@ for speaker, s in summary.items():
 
 ---
 
-## 16. STT·TTS API 비용 절감 — 캐시 및 최적화 전략
+## 15. STT·TTS API 비용 절감 — 캐시 및 최적화 전략
 
 운영 환경에서 STT·TTS API 비용은 통화량에 비례하여 빠르게 증가합니다.
 아래 전략을 조합하면 **TTS 비용을 50~90%**, **STT 비용을 20~40%** 절감할 수 있습니다.
@@ -2483,7 +2396,7 @@ const stt = new DeepgramAdapter({
 
 ---
 
-## 17. 자주 묻는 질문 (FAQ)
+## 16. 자주 묻는 질문 (FAQ)
 
 **Q: 한국어와 영어가 섞인 통화(코드 스위칭)는 어떻게 처리하나요?**
 A: Deepgram의 `language: 'multi'` 또는 `language: 'ko'`를 사용하세요. Nova-3 모델은 한국어+영어 혼용을 잘 처리합니다.
@@ -2508,7 +2421,7 @@ A: DVGateway 서버 자체는 온프레미스로 설치 가능합니다. 단, AI
 
 ---
 
-## 18. 문제 해결
+## 17. 문제 해결
 
 ### 연결 오류: `ECONNREFUSED http://localhost:8080`
 
@@ -2618,7 +2531,7 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 
 ---
 
-## 19. 원라인 서버 업데이트
+## 18. 원라인 서버 업데이트
 
 ```bash
 # 대시보드 UI에서 업데이트 버튼 클릭
@@ -2632,7 +2545,7 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/down
 
 ---
 
-## 20. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
+## 19. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
 
 > 이 섹션은 프로그래밍 경험이 없거나 처음 시작하는 분들을 위한 단계별 안내입니다.
 > 마치 옆에서 알려주듯이 하나씩 따라 하세요. 어렵지 않아요! 😊
@@ -2754,16 +2667,6 @@ API 키는 "서비스를 쓰기 위한 비밀 암호"라고 생각하세요.
 
 가입 후 각 사이트의 "API Keys" 메뉴에서 키를 발급받으세요.
 
-**게이트웨이 API 키**는 위 AI 서비스와는 별개입니다.
-DVGateway 서버 설치 시 자동으로 생성되며, 아래 방법으로 확인합니다:
-
-```bash
-# DVGateway 서버에서 API 키 확인
-sudo cat /etc/dvgateway/api-key
-
-# 또는 대시보드(http://서버IP:8081) → 설정 → API Keys 에서 확인
-```
-
 `.env` 파일 만들기:
 
 ```bash
@@ -2786,7 +2689,6 @@ EOF
 > - `여기에_..._붙여넣기` 같은 플레이스홀더를 실제 키로 바꿨나요?
 > - 키 앞뒤에 **따옴표(`"`)나 공백**이 들어가지 않았나요? (`.env` 파일에는 따옴표 없이 값만 넣으세요)
 > - `.env` 파일이 `bot.js`와 **같은 폴더**에 있나요?
-> - 게이트웨이 API 키는 DVGateway **서버에서 발급받은 키**이며, Deepgram/Anthropic 등 AI 서비스 키와는 다릅니다
 
 ---
 
@@ -3357,9 +3259,6 @@ pip install "dvgateway[adapters]" python-dotenv
 
 `.env` 파일 만들기 (Node.js 섹션 A-5와 동일):
 
-> **게이트웨이 API 키**는 DVGateway 서버 설치 시 자동 생성됩니다.
-> `sudo cat /etc/dvgateway/api-key` 또는 대시보드(http://서버IP:8081) → 설정 → API Keys 에서 확인하세요.
-
 ```ini
 DEEPGRAM_API_KEY=여기에_Deepgram_키_붙여넣기
 ELEVENLABS_API_KEY=여기에_ElevenLabs_키_붙여넣기
@@ -3372,7 +3271,6 @@ DV_API_KEY=여기에_게이트웨이_API_키_붙여넣기
 > - `여기에_..._붙여넣기` 같은 플레이스홀더를 실제 키로 바꿨나요?
 > - 키 앞뒤에 **따옴표(`"`)나 공백**이 들어가지 않았나요? (`.env` 파일에는 따옴표 없이 값만 넣으세요)
 > - `.env` 파일이 `bot.py`와 **같은 폴더**에 있나요?
-> - 게이트웨이 API 키는 DVGateway **서버에서 발급받은 키**이며, Deepgram/Anthropic 등 AI 서비스 키와는 다릅니다
 >
 > 키가 올바른지 확인하는 방법:
 > ```bash
@@ -3942,11 +3840,9 @@ if sys.platform == "win32":
 | AI 서비스 비교 및 선택 | [섹션 6](#6-연동-가능한-ai-서비스-전체-목록) |
 | 고급 파이프라인 설정 | [섹션 7–9](#7-파이프라인-패턴-1-일반-통화-sttllmtts) |
 | API 키 없이 무료로 쓰기 | [섹션 10 로컬 어댑터](#로컬-stt--whispercpp-오프라인-무료) |
-| 키워드 부스팅·감정 분석 상세 | [섹션 10](#deepgram-stt-음성-인식), [섹션 15](#15-감정-분석-sentiment-analysis--실시간-회의-분위기-모니터링) |
-| 다중 사용자 서비스 만들기 | [섹션 13](#13-멀티테넌트-지원) |
-| 테넌트(Tenant) API 상세 | [섹션 13](#13-멀티테넌트-지원) |
-| TTS 캐시·비용 절감 | [섹션 16](#16-stttts-api-비용-절감--캐시-및-최적화-전략) |
-| 문제가 생겼을 때 | [섹션 18](#18-문제-해결) |
+| 키워드 부스팅·감정 분석 상세 | [섹션 10](#deepgram-stt-음성-인식), [섹션 14](#14-감정-분석-sentiment-analysis--실시간-회의-분위기-모니터링) |
+| TTS 캐시·비용 절감 | [섹션 15](#15-stttts-api-비용-절감--캐시-및-최적화-전략) |
+| 문제가 생겼을 때 | [섹션 17](#17-문제-해결) |
 
 ---
 
