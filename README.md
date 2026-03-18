@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.2.9.5** | 업데이트: 2026-03-11
+> **최신 버전: 1.2.9.6** | 업데이트: 2026-03-11
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -224,7 +224,13 @@ async def main():
         .llm(llm)
         .fallback(llm_fallback)
         .tts(tts)
-        .on_new_call(lambda session: print(f"📞 새 통화: {session.linked_id}"))
+        .on_new_call(lambda session: print(
+            f"📞 새 통화\n"
+            f"   linked_id : {session.linked_id}\n"
+            f"   발신자번호 : {session.caller or '알 수 없음'}\n"
+            f"   발신자이름 : {session.caller_name or '알 수 없음'}\n"
+            f"   DID 번호   : {session.did or '알 수 없음'}"
+        ))
         .on_transcript(lambda result, session: print(f"🎙️  발화: {result.text}") if result.is_final else None)
         .on_call_ended(lambda linked_id, duration: print(f"📴 통화 종료: {linked_id} ({duration}초)"))
         .on_error(lambda err, linked_id: print(f"오류: {err}"))
@@ -453,7 +459,13 @@ await gw.pipeline()
   .fallback(llmFallback)
   .tts(tts)
   .onNewCall((session) => {
-    console.log(`📞 새 통화: ${session.linkedId}`);
+    console.log(
+      `📞 새 통화\n` +
+      `   linkedId   : ${session.linkedId}\n` +
+      `   발신자번호  : ${session.caller ?? '알 수 없음'}\n` +
+      `   발신자이름  : ${session.callerName ?? '알 수 없음'}\n` +
+      `   DID 번호    : ${session.did ?? '알 수 없음'}`
+    );
   })
   .onTranscript((result, session) => {
     if (result.isFinal) console.log(`🎙️  발화: ${result.text}`);
@@ -668,7 +680,7 @@ await gw.pipeline()
   .fallback(new AnthropicAdapter({
     apiKey:       process.env.ANTHROPIC_API_KEY!,
     model:        'claude-sonnet-4-6',
-    systemPrompt: `당신은 OLSSOO Inc.의 고객 상담 AI입니다.
+    systemPrompt: `당신은 주식회사 얼쑤팩토리의 고객 상담 AI입니다.
 - 짧고 명확하게 답변하세요 (2–3문장).
 - 항상 한국어로 응답하세요.
 - 모르는 내용은 솔직히 모른다고 하세요.`,
@@ -685,7 +697,13 @@ await gw.pipeline()
   // 인바운드 오디오만 처리 (고객 발화만 AI로 전달)
   .audioFilter({ dir: 'in' })
   .onNewCall(async (session) => {
-    console.log(`통화 시작 | linkedId=${session.linkedId} | 발신자=${session.caller}`);
+    console.log(
+      `📞 통화 시작\n` +
+      `   linkedId   : ${session.linkedId}\n` +
+      `   발신자번호  : ${session.caller ?? '알 수 없음'}\n` +
+      `   발신자이름  : ${session.callerName ?? '알 수 없음'}\n` +
+      `   DID 번호    : ${session.did ?? '알 수 없음'}`
+    );
   })
   .onTranscript(async (result, session) => {
     if (result.isFinal) {
@@ -1559,9 +1577,23 @@ gw.pipeline()
 
   // 새 통화가 시작될 때 호출
   .onNewCall(async (session) => {
-    console.log(`통화 시작: ${session.linkedId}`);
-    console.log(`발신자: ${session.caller}, 수신자: ${session.callee}`);
-    console.log(`방향: ${session.dir}`); // 'in' | 'out' | 'both'
+    console.log(
+      `📞 새 콜 수신\n` +
+      `   linkedId   : ${session.linkedId}\n` +
+      `   발신자번호  : ${session.caller ?? '알 수 없음'}\n` +
+      `   발신자이름  : ${session.callerName ?? '알 수 없음'}\n` +
+      `   DID 번호    : ${session.did ?? '알 수 없음'}\n` +
+      `   착신번호    : ${session.callee ?? '알 수 없음'}`
+      // ── session에서 추가로 출력할 수 있는 필드 ──
+      // + `\n   콜 ID      : ${session.callId}`
+      // + `\n   상담원내선  : ${session.agentNumber}`
+      // + `\n   방향        : ${session.dir}`           // 'in' | 'out' | 'both'
+      // + `\n   컨퍼런스ID  : ${session.confId}`
+      // + `\n   테넌트 ID   : ${session.tenantId}`
+      // + `\n   시작시각    : ${session.startedAt}`
+      // + `\n   스트림 URL  : ${session.streamUrl}`
+      // + `\n   메타데이터  : ${JSON.stringify(session.metadata)}`
+    );
     // 예: DB에 통화 기록 저장, 인사말 재생 등
   })
 
@@ -1591,6 +1623,29 @@ gw.pipeline()
 
   .start();
 ```
+
+### session 객체 전체 필드 참조
+
+`onNewCall` / `on_new_call` 콜백에 전달되는 `session` 객체의 전체 필드 목록입니다.
+
+| 필드 (TS / Python) | 타입 | 설명 |
+|---|---|---|
+| `linkedId` / `linked_id` | `string` | Asterisk Linked ID (통화 그룹 식별자) |
+| `caller` | `string?` | 발신자 전화번호 (`CALLERID(num)`) |
+| `callerName` / `caller_name` | `string?` | 발신자 표시 이름 (`CALLERID(name)`) |
+| `callee` | `string?` | 착신번호 (B-leg / EXTEN) |
+| `did` | `string?` | DID (Direct Inward Dialing) 대표번호 |
+| `callId` / `call_id` | `string?` | 업무 시스템 통화 ID (CRM 등 ARI args) |
+| `agentNumber` / `agent_number` | `string?` | 상담원 내선번호 |
+| `dir` | `'in' \| 'out' \| 'both'` | 오디오 스트림 방향 |
+| `confId` / `conf_id` | `string?` | ConfBridge 컨퍼런스 ID |
+| `tenantId` / `tenant_id` | `string?` | 멀티테넌트 식별자 |
+| `startedAt` / `started_at` | `Date` / `datetime` | 통화 시작 시각 |
+| `streamUrl` / `stream_url` | `string` | 오디오 WebSocket URL |
+| `metadata` | `object` / `dict` | 커스텀 키-값 메타데이터 |
+
+> 💡 `caller_name`, `did`, `callee`, `call_id`, `agent_number`는 Asterisk ARI에서 전달되는 값이며,
+> PBX 설정에 따라 비어 있을 수 있습니다.
 
 ---
 
@@ -2282,7 +2337,7 @@ removed = await tts.clear_cache()
 ```typescript
 // 서버 시작 시 실행
 const ANNOUNCEMENTS = [
-  { text: '안녕하세요. OLSSOO 고객센터에 전화해 주셔서 감사합니다.' },
+  { text: '안녕하세요. 얼쑤팩토리 고객센터에 전화해 주셔서 감사합니다.' },
   { text: '잠시만 기다려 주세요. 상담사에게 연결하겠습니다.' },
   { text: '현재 상담 대기 중입니다. 잠시만 기다려 주세요.' },
   { text: '통화가 종료되었습니다. 이용해 주셔서 감사합니다.' },
@@ -2300,7 +2355,7 @@ console.log(`${newCount}개 새로 생성, ${ANNOUNCEMENTS.length - newCount}개
 
 ```python
 ANNOUNCEMENTS = [
-    {"text": "안녕하세요. OLSSOO 고객센터입니다."},
+    {"text": "안녕하세요. 얼쑤팩토리 고객센터입니다."},
     {"text": "잠시만 기다려 주세요."},
     {"text": "상담사에게 연결하겠습니다."},
 ]
@@ -2806,7 +2861,23 @@ async function main() {
     .fallback(llmFallback)
     .tts(tts)
     .onNewCall((session) => {
-      console.log('📞 전화가 왔어요! ID:', session.linkedId);
+      console.log(
+        `📞 전화가 왔어요!\n` +
+        `   linkedId    : ${session.linkedId}\n` +
+        `   발신자번호  : ${session.caller ?? '알 수 없음'}\n` +
+        `   발신자이름  : ${session.callerName ?? '알 수 없음'}\n` +
+        `   DID 번호    : ${session.did ?? '알 수 없음'}\n` +
+        `   상담원내선  : ${session.agentNumber ?? '알 수 없음'}`
+        // ── session에서 추가로 출력할 수 있는 필드 ──
+        // + `\n   착신번호    : ${session.callee}`
+        // + `\n   콜 ID      : ${session.callId}`
+        // + `\n   방향        : ${session.dir}`
+        // + `\n   컨퍼런스ID  : ${session.confId}`
+        // + `\n   테넌트 ID   : ${session.tenantId}`
+        // + `\n   시작시각    : ${session.startedAt}`
+        // + `\n   스트림 URL  : ${session.streamUrl}`
+        // + `\n   메타데이터  : ${JSON.stringify(session.metadata)}`
+      );
     })
     .onTranscript((result, session) => {
       if (result.isFinal) {
@@ -2885,7 +2956,7 @@ async function main() {
     model: 'nova-3',
     keywords: [                       // ← 도메인 용어 부스팅
       '게이트웨이', 'DVGateway',      //   제품명
-      'OLSSOO', '올쏘',              //   회사명
+      'OLSSOO', '얼쑤',              //   회사명
       'SIP', 'RTP', 'WebRTC',        //   기술 용어
       '인바운드', '아웃바운드',         //   업무 용어
     ],
@@ -2912,12 +2983,28 @@ async function main() {
     .tts(tts)
     // ── 전화가 오면 TTS로 인사말 재생 ────────────────────────
     .onNewCall(async (session) => {
-      console.log('📞 전화가 왔어요! ID:', session.linkedId);
+      console.log(
+        `📞 전화가 왔어요!\n` +
+        `   linkedId    : ${session.linkedId}\n` +
+        `   발신자번호  : ${session.caller ?? '알 수 없음'}\n` +
+        `   발신자이름  : ${session.callerName ?? '알 수 없음'}\n` +
+        `   DID 번호    : ${session.did ?? '알 수 없음'}\n` +
+        `   상담원내선  : ${session.agentNumber ?? '알 수 없음'}`
+        // ── session에서 추가로 출력할 수 있는 필드 ──
+        // + `\n   착신번호    : ${session.callee}`
+        // + `\n   콜 ID      : ${session.callId}`
+        // + `\n   방향        : ${session.dir}`
+        // + `\n   컨퍼런스ID  : ${session.confId}`
+        // + `\n   테넌트 ID   : ${session.tenantId}`
+        // + `\n   시작시각    : ${session.startedAt}`
+        // + `\n   스트림 URL  : ${session.streamUrl}`
+        // + `\n   메타데이터  : ${JSON.stringify(session.metadata)}`
+      );
 
       // TTS로 환영 인사를 먼저 재생합니다
       await gw.say(
         session.linkedId,
-        '안녕하세요, OLSSOO AI 안내 서비스입니다. 무엇을 도와드릴까요?',
+        '안녕하세요, MAKECALL AI 안내 서비스입니다. 무엇을 도와드릴까요?',
         tts,
       );
       console.log('🔊 인사말 재생 완료');
@@ -3364,7 +3451,23 @@ async def main():
 
     # 3. 이벤트 핸들러 정의
     def on_new_call(session):
-        print(f"📞 전화가 왔어요! ID: {session.linked_id}")
+        print(
+            f"📞 전화가 왔어요!\n"
+            f"   linked_id  : {session.linked_id}\n"
+            f"   발신자번호 : {session.caller or '알 수 없음'}\n"
+            f"   발신자이름 : {session.caller_name or '알 수 없음'}\n"
+            f"   DID 번호   : {session.did or '알 수 없음'}\n"
+            f"   상담원내선 : {session.agent_number or '알 수 없음'}"
+            # ── session에서 추가로 출력할 수 있는 필드 ──
+            # f"\n   착신번호   : {session.callee}"
+            # f"\n   콜 ID     : {session.call_id}"
+            # f"\n   방향       : {session.dir}"
+            # f"\n   컨퍼런스ID : {session.conf_id}"
+            # f"\n   테넌트 ID  : {session.tenant_id}"
+            # f"\n   시작시각   : {session.started_at}"
+            # f"\n   스트림 URL : {session.stream_url}"
+            # f"\n   메타데이터 : {session.metadata}"
+        )
 
     def on_transcript(result, session):
         if result.is_final:
@@ -3447,7 +3550,7 @@ async def main():
         model="nova-3",
         keywords=[                        # ← 도메인 용어 부스팅
             "게이트웨이", "DVGateway",     #   제품명
-            "OLSSOO", "올쏘",             #   회사명
+            "OLSSOO", "얼쑤",             #   회사명
             "SIP", "RTP", "WebRTC",       #   기술 용어
             "인바운드", "아웃바운드",        #   업무 용어
         ],
@@ -3466,14 +3569,32 @@ async def main():
         voice_id="21m00Tcm4TlvDq8ikWAM",  # Rachel 음성
     )
 
-    # ── 전화가 오면 TTS로 인사말 재생 ────────────────────────
+    SENTIMENT_EMOJI = {"positive": "😊", "neutral": "😐", "negative": "😠"}
+
+    # ── 전화가 오면 발신자 정보 출력 + TTS 인사말 재생 ─────────
     async def on_new_call(session):
-        print(f"📞 전화가 왔어요! ID: {session.linked_id}")
+        print(
+            f"📞 전화가 왔어요!\n"
+            f"   linked_id  : {session.linked_id}\n"
+            f"   발신자번호 : {session.caller or '알 수 없음'}\n"
+            f"   발신자이름 : {session.caller_name or '알 수 없음'}\n"
+            f"   DID 번호   : {session.did or '알 수 없음'}\n"
+            f"   상담원내선 : {session.agent_number or '알 수 없음'}"
+            # ── session에서 추가로 출력할 수 있는 필드 ──
+            # f"\n   착신번호   : {session.callee}"
+            # f"\n   콜 ID     : {session.call_id}"
+            # f"\n   방향       : {session.dir}"
+            # f"\n   컨퍼런스ID : {session.conf_id}"
+            # f"\n   테넌트 ID  : {session.tenant_id}"
+            # f"\n   시작시각   : {session.started_at}"
+            # f"\n   스트림 URL : {session.stream_url}"
+            # f"\n   메타데이터 : {session.metadata}"
+        )
 
         # TTS로 환영 인사를 먼저 재생합니다
         await gw.say(
             session.linked_id,
-            "안녕하세요, OLSSOO AI 안내 서비스입니다. 무엇을 도와드릴까요?",
+            "안녕하세요, MAKECALL AI 안내 서비스입니다. 무엇을 도와드릴까요?",
             tts,
         )
         print("🔊 인사말 재생 완료")
@@ -3483,16 +3604,17 @@ async def main():
         if not result.is_final:
             return
 
-        print(f"🎙️  고객: {result.text}")
-
-        # 감정 분석 결과가 있으면 함께 출력
+        sentiment_str = ""
         if result.sentiment:
-            emoji = {"positive": "😊", "neutral": "😐", "negative": "😟"}
-            print(
-                f"   {emoji[result.sentiment.sentiment]} 감정: "
-                f"{result.sentiment.sentiment} "
-                f"({result.sentiment.sentiment_score:.0%} 확신)"
-            )
+            emoji = SENTIMENT_EMOJI.get(result.sentiment.sentiment, "")
+            score_pct = round(result.sentiment.sentiment_score * 100)
+            sentiment_str = f" {emoji} {result.sentiment.sentiment}({score_pct}%)"
+
+        confidence_pct = round((result.confidence or 0) * 100)
+        print(
+            f"🎙️  고객: {result.text}"
+            f"  [신뢰도:{confidence_pct}%{sentiment_str}]"
+        )
 
     def on_call_ended(linked_id, duration):
         print(f"📴 통화 종료. 통화 시간: {duration}초")
@@ -3501,6 +3623,8 @@ async def main():
         print(f"❌ 오류: {err}")
 
     print("확장 봇을 시작합니다...")
+    print(f"게이트웨이: {os.environ.get('DV_BASE_URL', 'http://localhost:8080')}")
+    print("콜을 기다리는 중...\n")
 
     await (
         gw.pipeline()
@@ -3513,8 +3637,6 @@ async def main():
         .on_error(on_error)
         .start()
     )
-
-    print("✅ 확장 봇 준비 완료. 전화를 기다리는 중...")
 
 asyncio.run(main())
 ```
