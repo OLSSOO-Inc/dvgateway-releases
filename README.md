@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.2.9.7** | 업데이트: 2026-03-11
+> **최신 버전: 1.2.9.8** | 업데이트: 2026-03-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -259,7 +259,13 @@ async def main():
         temperature=0.8,
     )
 
-    realtime.on_audio_output(lambda chunk, linked_id: gw.inject_audio(linked_id, chunk))
+    async def inject_chunk(chunk: bytes, linked_id: str) -> None:
+        await gw.inject_tts(linked_id, _single(chunk))
+
+    async def _single(chunk: bytes):
+        yield chunk
+
+    realtime.on_audio_output(inject_chunk)
     realtime.on_transcript(lambda result: print(
         f"{'🤖 AI' if result.speaker == 'agent' else '👤 고객'}: {result.text}"
     ))
@@ -268,7 +274,7 @@ async def main():
     async def on_new_call(event):
         session = event["session"]
         print(f"📞 리얼타임 세션 시작: {session.linked_id}")
-        audio_stream = gw.audio_stream(session.linked_id, dir="in")
+        audio_stream = gw.stream_audio(session.linked_id, dir="in")
         await realtime.start_session(session.linked_id, audio_stream)
 
     @gw.on("call:ended")
@@ -276,7 +282,7 @@ async def main():
         print(f"📴 리얼타임 세션 종료: {event['linked_id']}")
         await realtime.stop(event["linked_id"])
 
-    await gw.connect()
+    # 이벤트 루프 유지 (pipeline이 아닌 이벤트 기반 패턴에서는 프로세스 종료 방지)
     print("🎙️ OpenAI Realtime 봇이 준비되었습니다.")
     await asyncio.Event().wait()  # 무한 대기
 
@@ -745,7 +751,7 @@ const realtimeAdapter = new OpenAIRealtimeAdapter({
 
 // 오디오 출력 → DVGateway TTS 주입
 realtimeAdapter.onAudioOutput(async (audioChunk, linkedId) => {
-  await gw.injectAudio(linkedId, audioChunk);
+  await gw.injectTts(linkedId, (async function*() { yield audioChunk; })());
 });
 
 // 전사 결과 처리
@@ -765,7 +771,7 @@ gw.on('call:new', async (event) => {
   console.log(`📞 리얼타임 세션 시작: ${session.linkedId}`);
 
   // 통화 오디오 스트림을 리얼타임 어댑터로 연결
-  const audioStream = gw.audioStream(session.linkedId, { dir: 'in' });
+  const audioStream = gw.streamAudio(session.linkedId, { dir: 'in' });
   await realtimeAdapter.startSession(session.linkedId, audioStream);
 });
 
@@ -774,7 +780,7 @@ gw.on('call:ended', async (event) => {
   await realtimeAdapter.stop(event.linkedId);
 });
 
-await gw.connect();
+// 이벤트 루프 유지 (pipeline이 아닌 이벤트 기반 패턴에서는 프로세스 종료 방지)
 console.log('🎙️ OpenAI Realtime 봇이 준비되었습니다.');
 ```
 
@@ -2402,7 +2408,7 @@ const stt = new DeepgramAdapter({
 A: Deepgram의 `language: 'multi'` 또는 `language: 'ko'`를 사용하세요. Nova-3 모델은 한국어+영어 혼용을 잘 처리합니다.
 
 **Q: 통화 중 AI 음성을 중단시킬 수 있나요?**
-A: OpenAI Realtime 어댑터를 사용하는 경우 서버 VAD가 자동으로 처리합니다. 카스케이드 파이프라인에서는 `gw.stopTtsInjection(linkedId)`를 호출하세요.
+A: OpenAI Realtime 어댑터를 사용하는 경우 서버 VAD가 자동으로 처리합니다. 카스케이드 파이프라인에서는 `DELETE /api/v1/tts/{linkedId}` REST API를 호출하여 진행 중인 TTS 재생을 중단할 수 있습니다.
 
 **Q: API 키 비용이 걱정됩니다.**
 A: [16. STT·TTS API 비용 절감](#16-stttts-api-비용-절감--캐시-및-최적화-전략) 섹션을 참고하세요. 주요 전략:
