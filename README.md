@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.3.0.1** | 업데이트: 2026-03-18
+> **최신 버전: 1.3.0.2** | 업데이트: 2026-03-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -13,6 +13,7 @@
 2. [서버 설치](#2-서버-설치)
 3. [SDK 설치](#3-sdk-설치)
 4. [프로바이더 API 키 준비](#4-프로바이더-api-키-준비)
+    - [내 게이트웨이 API 키 확인하는 방법](#내-게이트웨이-api-키-확인하는-방법)
 5. [5분 만에 시작하기 — 헬로 월드 봇](#5-5분-만에-시작하기--헬로-월드-봇)
 6. [연동 가능한 AI 서비스 전체 목록](#6-연동-가능한-ai-서비스-전체-목록)
     - [클라우드 STT 서비스 — 내장 게이트웨이 어댑터](#클라우드-stt-서비스--내장-게이트웨이-어댑터)
@@ -49,10 +50,17 @@
     - [STT 비용 최적화 — VAD 필터링](#stt-비용-최적화--vad-필터링)
     - [프로바이더별 비용 비교표](#프로바이더별-비용-비교표)
     - [비용 최적화 체크리스트](#비용-최적화-체크리스트)
-16. [자주 묻는 질문 (FAQ)](#16-자주-묻는-질문-faq)
-17. [문제 해결](#17-문제-해결)
-18. [원라인 서버 업데이트](#18-원라인-서버-업데이트)
-19. [진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지](#19-진짜-초보자용-메뉴얼--nodejs-python-설치부터-봇-실행까지)
+16. [Comfort Noise — AI 처리 중 무음 방지](#16-comfort-noise--ai-처리-중-무음-방지)
+    - [서버 설정](#comfort-noise-서버-설정)
+    - [자동 모드 — 파이프라인 빌더 (권장)](#자동-모드--파이프라인-빌더-권장)
+    - [수동 모드 — WebSocket 시그널](#수동-모드--websocket-시그널)
+    - [수동 모드 — REST API](#수동-모드--rest-api)
+    - [커스텀 배경음 파일](#커스텀-배경음-파일)
+    - [고급 활용 — TTS 필러 프레이즈](#고급-활용--tts-필러-프레이즈)
+17. [자주 묻는 질문 (FAQ)](#17-자주-묻는-질문-faq)
+18. [문제 해결](#18-문제-해결)
+19. [원라인 서버 업데이트](#19-원라인-서버-업데이트)
+20. [진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지](#20-진짜-초보자용-메뉴얼--nodejs-python-설치부터-봇-실행까지)
 
 ---
 
@@ -385,6 +393,41 @@ import 'dotenv/config'; // npm install dotenv
 
 const DEEPGRAM_KEY = process.env.DEEPGRAM_API_KEY!;
 ```
+
+### 내 게이트웨이 API 키 확인하는 방법
+
+DVGateway 서버에 연결할 때 사용하는 **게이트웨이 API 키(`DV_API_KEY`)**를 확인하는 방법은 세 가지입니다.
+
+> 💡 게이트웨이 API 키(`DV_API_KEY`)는 Deepgram·OpenAI 등 AI 서비스 키와 **완전히 다른 키**입니다.
+> 게이트웨이 서버 자체에 인증하기 위한 키이므로 혼동하지 마세요.
+
+#### 방법 1. 대시보드에서 확인 (가장 간편)
+
+브라우저에서 `http://서버IP:8081` 에 접속한 뒤 **설정 → SDK API Key** 패널을 확인하세요.
+
+- 보안을 위해 키가 마스킹 표시됩니다: `dvgw_••••••••••••••••__abcd`
+- **복사** 버튼을 누르면 전체 키가 클립보드에 복사됩니다.
+- **재발급** 버튼을 누르면 새 키가 생성되며, 이때만 전체 키가 한 번 표시됩니다.
+
+#### 방법 2. REST API로 조회
+
+```bash
+# 1) 기존 API 키로 JWT 토큰 발급
+TOKEN=$(curl -s -X POST http://서버IP:8080/api/v1/auth/token \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: 현재_API_키" \
+  -d '{"apiKey": "현재_API_키"}' | jq -r '.token')
+
+# 2) SDK API 키 조회 (마스킹된 키 반환)
+curl -s http://서버IP:8080/api/v1/config/sdk-key \
+  -H "Authorization: Bearer $TOKEN"
+
+# 3) 키 재발급 (전체 키가 1회 표시됨)
+curl -s -X POST http://서버IP:8080/api/v1/config/sdk-key \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+> ⚠️ API 키는 외부에 절대 노출하지 마세요. 키가 유출되었다고 판단되면 대시보드 또는 API에서 즉시 **재발급**하세요.
 
 ---
 
@@ -1569,6 +1612,9 @@ gw.pipeline()
       // + `\n   방향        : ${session.dir}`           // 'in' | 'out' | 'both'
       // + `\n   컨퍼런스ID  : ${session.confId}`
       // + `\n   테넌트 ID   : ${session.tenantId}`
+      // + `\n   커스텀 1    : ${session.customValue1}`  // 다이얼플랜에서 전달한 사용자 정의 변수
+      // + `\n   커스텀 2    : ${session.customValue2}`
+      // + `\n   커스텀 3    : ${session.customValue3}`
       // + `\n   시작시각    : ${session.startedAt}`
       // + `\n   스트림 URL  : ${session.streamUrl}`
       // + `\n   메타데이터  : ${JSON.stringify(session.metadata)}`
@@ -1609,7 +1655,7 @@ gw.pipeline()
 
 | 필드 (TS / Python) | 타입 | 설명 |
 |---|---|---|
-| `linkedId` / `linked_id` | `string` | Asterisk Linked ID (통화 그룹 식별자) |
+| `linkedId` / `linked_id` | `string` | Dynamic VoIP Linked ID (통화 그룹 식별자) |
 | `caller` | `string?` | 발신자 전화번호 (`CALLERID(num)`) |
 | `callerName` / `caller_name` | `string?` | 발신자 표시 이름 (`CALLERID(name)`) |
 | `callee` | `string?` | 착신번호 (B-leg / EXTEN) |
@@ -1618,12 +1664,69 @@ gw.pipeline()
 | `agentNumber` / `agent_number` | `string?` | 상담원 내선번호 |
 | `dir` | `'in' \| 'out' \| 'both'` | 오디오 스트림 방향 |
 | `confId` / `conf_id` | `string?` | ConfBridge 컨퍼런스 ID |
+| `tenantId` / `tenant_id` | `string?` | 멀티테넌트 ID |
+| `customValue1` / `custom_value_1` | `string?` | 사용자 정의 변수 1 (다이얼플랜 `CUSTOM_VALUE_01`) |
+| `customValue2` / `custom_value_2` | `string?` | 사용자 정의 변수 2 (다이얼플랜 `CUSTOM_VALUE_02`) |
+| `customValue3` / `custom_value_3` | `string?` | 사용자 정의 변수 3 (다이얼플랜 `CUSTOM_VALUE_03`) |
 | `startedAt` / `started_at` | `Date` / `datetime` | 통화 시작 시각 |
 | `streamUrl` / `stream_url` | `string` | 오디오 WebSocket URL |
 | `metadata` | `object` / `dict` | 커스텀 키-값 메타데이터 |
 
-> 💡 `caller_name`, `did`, `callee`, `call_id`, `agent_number`는 Asterisk ARI에서 전달되는 값이며,
+> 💡 `caller_name`, `did`, `callee`, `call_id`, `agent_number`는 Dynamic VoIP ARI에서 전달되는 값이며,
 > PBX 설정에 따라 비어 있을 수 있습니다.
+
+### 커스텀 변수 (custom_value) — 다이얼플랜에서 AI 파이프라인으로 전달
+
+Dynamic VoIP 다이얼플랜에서 `CUSTOM_VALUE_01` ~ `CUSTOM_VALUE_03` 변수를 설정하면, AI 파이프라인의 `session` 객체에서 접근할 수 있습니다. CRM 연동, 고객 등급, 캠페인 코드 등 비즈니스 로직에 필요한 정보를 전달하는 데 사용합니다.
+
+**다이얼플랜 예제 (Dynamic VoIP extensions.conf):**
+
+```ini
+; 인바운드 통화에 커스텀 변수를 설정하는 예
+[from-trunk]
+exten => _X.,1,NoOp(인바운드 콜 처리)
+ same => n,Set(CUSTOM_VALUE_01=vip)            ; 고객 등급
+ same => n,Set(CUSTOM_VALUE_02=campaign-2026Q1) ; 캠페인 코드
+ same => n,Set(CUSTOM_VALUE_03=${CDR(uniqueid)}) ; 외부 시스템 고유 ID
+ same => n,Stasis(dvgateway,mode=both,role=monitor,did=${DID_NUMBER},callernum=${CALLERID(num)},callername=${CALLERID(name)},callednum=${EXTEN},custom_value_01=${CUSTOM_VALUE_01},custom_value_02=${CUSTOM_VALUE_02},custom_value_03=${CUSTOM_VALUE_03})
+ same => n,Dial(SIP/${EXTEN},30)
+```
+
+**SDK에서 활용 — TypeScript:**
+
+```typescript
+gw.pipeline()
+  .stt(stt).llm(llm).tts(tts)
+  .onNewCall(async (session) => {
+    const grade = session.customValue1;     // "vip"
+    const campaign = session.customValue2;  // "campaign-2026Q1"
+    const extId = session.customValue3;     // CDR uniqueid
+
+    // 고객 등급에 따라 LLM 프롬프트를 다르게 설정
+    if (grade === 'vip') {
+      llm.setSystemPrompt('VIP 고객입니다. 최우선으로 응대해 주세요.');
+    }
+    console.log(`캠페인: ${campaign}, 외부 ID: ${extId}`);
+  })
+  .start();
+```
+
+**SDK에서 활용 — Python:**
+
+```python
+@gw.on("call:new")
+async def on_new_call(event):
+    session = event["session"]
+    grade    = session.custom_value_1    # "vip"
+    campaign = session.custom_value_2    # "campaign-2026Q1"
+    ext_id   = session.custom_value_3    # CDR uniqueid
+
+    if grade == "vip":
+        llm.set_system_prompt("VIP 고객입니다. 최우선으로 응대해 주세요.")
+    print(f"캠페인: {campaign}, 외부 ID: {ext_id}")
+```
+
+**CDR (통화 기록)에도 저장:** 커스텀 변수는 CDR에 자동 기록되며, CSV/JSON 내보내기와 REST API 조회 시 `customValue1`, `customValue2`, `customValue3` 필드로 포함됩니다.
 
 ---
 
@@ -2402,7 +2505,381 @@ const stt = new DeepgramAdapter({
 
 ---
 
-## 16. 자주 묻는 질문 (FAQ)
+## 16. Comfort Noise — AI 처리 중 무음 방지
+
+AI 음성 봇은 사용자 발화 후 응답을 생성하는 동안(STT → LLM → TTS) 0.5~3초의 무음(dead air)이 발생합니다.
+이 침묵은 사용자가 "전화가 끊어졌나?" 또는 "봇이 멈췄나?"라고 느끼게 만들어 통화 포기율을 높입니다.
+
+**Comfort Noise** 기능은 이 문제를 해결합니다:
+- 게이트웨이가 저수준 배경 소음을 통화 채널에 자동 주입
+- SDK가 "지금 AI 처리 중이다" 시그널을 보내면 즉시 활성화
+- TTS 응답 재생이 시작되면 자동으로 fade-out 후 중단
+
+### Comfort Noise 서버 설정
+
+게이트웨이 환경변수(`.env` 또는 `/etc/dvgateway/env`)에 추가하세요:
+
+```bash
+# 기본: 합성 배경 노이즈 (-50 dBFS)
+GW_COMFORT_NOISE_ENABLED=true
+GW_COMFORT_NOISE_LEVEL=-50
+```
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `GW_COMFORT_NOISE_ENABLED` | `false` | comfort noise 기능 활성화 |
+| `GW_COMFORT_NOISE_LEVEL` | `-50` | 합성 노이즈 레벨 (dBFS). -60=거의 안 들림, -50=미묘한 배경음, -40=인지 가능 |
+| `GW_COMFORT_NOISE_FILE` | (없음) | 커스텀 배경음 PCM 파일 경로 (아래 "커스텀 배경음" 섹션 참조) |
+
+설정 변경 후 게이트웨이를 재시작하세요:
+
+```bash
+sudo systemctl restart dvgateway
+```
+
+### 자동 모드 — 파이프라인 빌더 (권장)
+
+파이프라인 빌더를 사용하면 **별도 코드 없이 자동으로 동작합니다.**
+SDK가 내부적으로 STT 완료 → `thinking:start`, TTS 시작 전 → `thinking:stop` 시그널을 전송합니다.
+
+**Node.js:**
+
+```javascript
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { DeepgramAdapter } from 'dvgateway-adapters/stt';
+import { AnthropicAdapter } from 'dvgateway-adapters/llm';
+import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+
+const gw = new DVGatewayClient({
+  baseUrl: 'https://your-gateway.example.com',
+  auth: { type: 'apiKey', apiKey: process.env.DV_API_KEY },
+});
+
+// 파이프라인만 설정하면 comfort noise는 자동 동작!
+// STT 완료 → thinking:start (배경음 시작)
+// LLM 응답 완료 → thinking:stop (배경음 중단)
+// TTS 재생 시작 (자연스러운 전환)
+await gw.pipeline()
+  .stt(new DeepgramAdapter({
+    apiKey: process.env.DEEPGRAM_KEY,
+    language: 'ko',
+  }))
+  .llm(new AnthropicAdapter({
+    apiKey: process.env.ANTHROPIC_KEY,
+    model: 'claude-sonnet-4-20250514',
+    systemPrompt: '한국어로 친절하게 응답하세요.',
+  }))
+  .tts(new ElevenLabsAdapter({
+    apiKey: process.env.ELEVENLABS_KEY,
+    voiceId: 'pNInz6obpgDQGcFmaJgB',  // Korean voice
+  }))
+  .onNewCall((session) => {
+    console.log(`📞 새 통화: ${session.linkedId}`);
+  })
+  .onTranscript((result, session) => {
+    console.log(`🗣️ [${session.linkedId}] "${result.text}"`);
+    // 이 시점에서 comfort noise가 자동으로 시작됩니다
+  })
+  .start();
+```
+
+**Python:**
+
+```python
+import asyncio
+import os
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.stt import DeepgramAdapter
+from dvgateway.adapters.llm import AnthropicAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter
+
+gw = DVGatewayClient(
+    base_url="https://your-gateway.example.com",
+    auth={"type": "apiKey", "api_key": os.environ["DV_API_KEY"]},
+)
+
+# 파이프라인 빌더 사용 시 comfort noise 자동 동작
+await (
+    gw.pipeline()
+    .stt(DeepgramAdapter(api_key=os.environ["DEEPGRAM_KEY"], language="ko"))
+    .llm(AnthropicAdapter(
+        api_key=os.environ["ANTHROPIC_KEY"],
+        model="claude-sonnet-4-20250514",
+        system_prompt="한국어로 친절하게 응답하세요.",
+    ))
+    .tts(ElevenLabsAdapter(
+        api_key=os.environ["ELEVENLABS_KEY"],
+        voice_id="pNInz6obpgDQGcFmaJgB",
+    ))
+    .on_new_call(lambda s: print(f"📞 새 통화: {s.linked_id}"))
+    .on_transcript(lambda r, s: print(f'🗣️ [{s.linked_id}] "{r.text}"'))
+    .start()
+)
+```
+
+### 수동 모드 — WebSocket 시그널
+
+오디오 스트림 WebSocket을 직접 사용하는 경우, 생각 시그널을 수동으로 보낼 수 있습니다.
+
+**Node.js:**
+
+```javascript
+// 1. 오디오 스트림 연결
+const audioStream = gw.streamAudio(linkedId);
+
+// 2. STT 어댑터로 오디오 전달
+sttAdapter.startStream(linkedId, audioStream);
+
+// 3. 발화 감지 시 thinking 시그널 전송
+sttAdapter.onTranscript(async (result) => {
+  if (!result.isFinal) return;
+
+  // comfort noise 시작 (게이트웨이가 배경음 주입)
+  audioStream.sendThinkingStart();
+
+  try {
+    // LLM 호출
+    const response = await callLLM(result.text);
+
+    // comfort noise 중단 (TTS 시작 전)
+    audioStream.sendThinkingStop();
+
+    // TTS 재생
+    await gw.say(linkedId, response, ttsAdapter);
+  } catch (err) {
+    // 에러 시에도 반드시 중단
+    audioStream.sendThinkingStop();
+    console.error('Pipeline error:', err);
+  }
+});
+```
+
+**Python:**
+
+```python
+# 1. 오디오 스트림 연결
+audio_stream = gw.stream_audio(linked_id)
+
+# 2. STT 어댑터로 오디오 전달
+await stt_adapter.start_stream(linked_id, audio_stream)
+
+# 3. 발화 감지 시 thinking 시그널 전송
+async def on_transcript(result):
+    if not result.is_final:
+        return
+
+    # comfort noise 시작
+    await audio_stream.send_thinking_start()
+
+    try:
+        # LLM 호출
+        response = await call_llm(result.text)
+
+        # comfort noise 중단
+        await audio_stream.send_thinking_stop()
+
+        # TTS 재생
+        await gw.say(linked_id, response, tts_adapter)
+    except Exception as e:
+        await audio_stream.send_thinking_stop()
+        print(f"Pipeline error: {e}")
+
+stt_adapter.on_transcript(on_transcript)
+```
+
+**Raw WebSocket (프레임워크 없이 직접 연동):**
+
+```
+오디오 스트림 연결: ws://gateway:8080/api/v1/ws/stream?linkedid=XXX
+
+// 게이트웨이 → AI 서비스: Binary frames (640 bytes slin16 PCM)
+// AI 서비스 → 게이트웨이: Text frames (JSON 시그널)
+
+// AI 처리 시작 시 (text frame 전송):
+{"type":"thinking:start"}
+
+// AI 처리 완료 시 (text frame 전송):
+{"type":"thinking:stop"}
+```
+
+### 수동 모드 — REST API
+
+WebSocket을 사용하지 않는 환경(HTTP-only)에서도 REST API로 제어할 수 있습니다.
+
+**Node.js:**
+
+```javascript
+// REST API 방식 (HTTP POST)
+await gw.startThinking(linkedId);   // comfort noise 시작
+// ... AI 처리 중 ...
+await gw.stopThinking(linkedId);    // comfort noise 중단
+```
+
+**Python:**
+
+```python
+# REST API 방식
+await gw.start_thinking(linked_id)  # comfort noise 시작
+# ... AI 처리 중 ...
+await gw.stop_thinking(linked_id)   # comfort noise 중단
+```
+
+**cURL:**
+
+```bash
+# 시작
+curl -X POST http://gateway:8080/api/v1/comfort/LINKED_ID/start \
+  -H "Authorization: Bearer YOUR_JWT"
+
+# 중단
+curl -X POST http://gateway:8080/api/v1/comfort/LINKED_ID/stop \
+  -H "Authorization: Bearer YOUR_JWT"
+
+# 세션 상태 확인
+curl http://gateway:8080/api/v1/comfort/LINKED_ID/status \
+  -H "Authorization: Bearer YOUR_JWT"
+# 응답: {"linkedId":"LINKED_ID","enabled":true,"active":true}
+
+# 글로벌 상태 확인
+curl http://gateway:8080/api/v1/comfort/status \
+  -H "Authorization: Bearer YOUR_JWT"
+# 응답: {"enabled":true,"activeCount":3}
+```
+
+### 커스텀 배경음 파일
+
+합성 노이즈 대신 사무실 배경음, 자연 소리 등의 녹음 파일을 루프 재생할 수 있습니다.
+
+**PCM 파일 요구사항:**
+- 포맷: 헤더 없는 raw PCM (WAV 헤더 없음)
+- 샘플레이트: 16kHz
+- 비트 깊이: 16-bit signed
+- 채널: mono
+- 바이트 순서: little-endian
+
+**WAV 파일을 PCM으로 변환:**
+
+```bash
+# ffmpeg으로 변환 (가장 권장)
+ffmpeg -i office-background.wav \
+  -f s16le -ar 16000 -ac 1 \
+  /etc/dvgateway/audio/office-ambient.pcm
+
+# sox로 변환
+sox office-background.wav \
+  -r 16000 -b 16 -c 1 -e signed-integer -L \
+  /etc/dvgateway/audio/office-ambient.pcm
+```
+
+**게이트웨이 설정:**
+
+```bash
+GW_COMFORT_NOISE_ENABLED=true
+GW_COMFORT_NOISE_FILE=/etc/dvgateway/audio/office-ambient.pcm
+# GW_COMFORT_NOISE_LEVEL은 파일 모드에서 무시됩니다
+```
+
+> **팁**: 5~30초 길이의 자연스러운 환경음을 준비하세요. 게이트웨이가 자동으로 무한 루프 재생합니다.
+
+### 고급 활용 — TTS 필러 프레이즈
+
+comfort noise와 함께 "잠시만요", "확인해볼게요" 같은 자연어 필러를 사용하면
+더 자연스러운 대화 경험을 제공할 수 있습니다.
+
+**Node.js:**
+
+```javascript
+import { CachedTtsAdapter, ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+
+// 필러 프레이즈를 미리 캐시
+const tts = new CachedTtsAdapter(
+  new ElevenLabsAdapter({ apiKey: process.env.ELEVENLABS_KEY }),
+  { provider: 'elevenlabs', cacheDir: './tts-cache' },
+);
+await tts.warmup([
+  { text: '잠시만요.' },
+  { text: '확인해볼게요.' },
+  { text: '네, 알겠습니다. 잠시만 기다려주세요.' },
+]);
+
+sttAdapter.onTranscript(async (result) => {
+  if (!result.isFinal) return;
+
+  // 방법 1: comfort noise + TTS 필러 조합
+  audioStream.sendThinkingStart();
+  // "잠시만요" 재생 (캐시 히트 — API 호출 없음, <5ms)
+  await gw.say(linkedId, '잠시만요.', tts);
+
+  // LLM 처리 중에는 배경 소음이 계속 재생됩니다
+  const response = await callLLM(result.text);
+
+  audioStream.sendThinkingStop();
+  await gw.say(linkedId, response, tts);
+});
+```
+
+**Python:**
+
+```python
+from dvgateway.adapters.tts import CachedTtsAdapter, ElevenLabsAdapter
+
+# 필러 프레이즈 캐시
+tts = CachedTtsAdapter(
+    ElevenLabsAdapter(api_key=os.environ["ELEVENLABS_KEY"]),
+    provider="elevenlabs",
+    cache_dir="./tts-cache",
+)
+await tts.warmup([
+    {"text": "잠시만요."},
+    {"text": "확인해볼게요."},
+    {"text": "네, 알겠습니다. 잠시만 기다려주세요."},
+])
+
+async def on_transcript(result):
+    if not result.is_final:
+        return
+
+    # comfort noise + 필러 프레이즈
+    await audio_stream.send_thinking_start()
+    await gw.say(linked_id, "잠시만요.", tts)
+
+    response = await call_llm(result.text)
+
+    await audio_stream.send_thinking_stop()
+    await gw.say(linked_id, response, tts)
+```
+
+### 동작 흐름 다이어그램
+
+```
+사용자: "내일 서울 날씨 알려줘"
+  ↓
+[STT 처리] ────────────────── 200ms
+  ↓
+[thinking:start] ─── comfort noise 주입 시작 (fade-in 200ms) ──
+  ↓                                                            │
+[LLM 처리] "서울 내일 날씨를 검색합니다..." ─── 300ms          │ 배경 소음 재생
+  ↓                                                            │ (dead air 방지)
+[TTS 합성 시작] ─────────────── 150ms                          │
+  ↓                                                            │
+[thinking:stop] ──── comfort noise 중단 (fade-out 300ms) ──────┘
+  ↓
+[TTS 재생] "내일 서울은 맑고 최고 기온 22도입니다."
+  ↓
+사용자에게 자연스러운 응답 전달 (체감 무음 시간: 0ms)
+```
+
+### 제어 방법 비교표
+
+| 방법 | 언어 | 장점 | 단점 |
+|------|------|------|------|
+| 파이프라인 빌더 (자동) | JS/Python | 코드 변경 없음, 가장 간편 | 타이밍 커스터마이즈 불가 |
+| WebSocket 시그널 (수동) | JS/Python | 정밀한 타이밍 제어, 저레이턴시 | 직접 start/stop 관리 필요 |
+| REST API (수동) | Any | 언어 무관, HTTP만으로 제어 | HTTP 오버헤드 (~10ms) |
+
+---
+
+## 17. 자주 묻는 질문 (FAQ)
 
 **Q: 한국어와 영어가 섞인 통화(코드 스위칭)는 어떻게 처리하나요?**
 A: Deepgram의 `language: 'multi'` 또는 `language: 'ko'`를 사용하세요. Nova-3 모델은 한국어+영어 혼용을 잘 처리합니다.
@@ -2410,8 +2887,11 @@ A: Deepgram의 `language: 'multi'` 또는 `language: 'ko'`를 사용하세요. N
 **Q: 통화 중 AI 음성을 중단시킬 수 있나요?**
 A: OpenAI Realtime 어댑터를 사용하는 경우 서버 VAD가 자동으로 처리합니다. 카스케이드 파이프라인에서는 `DELETE /api/v1/tts/{linkedId}` REST API를 호출하여 진행 중인 TTS 재생을 중단할 수 있습니다.
 
+**Q: AI 응답 대기 중 통화가 무음이 되어 고객이 끊습니다.**
+A: `GW_COMFORT_NOISE_ENABLED=true`를 설정하세요. 파이프라인 빌더 사용 시 별도 코드 없이 자동으로 comfort noise가 주입됩니다. 자세한 내용은 [16. Comfort Noise](#16-comfort-noise--ai-처리-중-무음-방지) 섹션을 참고하세요.
+
 **Q: API 키 비용이 걱정됩니다.**
-A: [16. STT·TTS API 비용 절감](#16-stttts-api-비용-절감--캐시-및-최적화-전략) 섹션을 참고하세요. 주요 전략:
+A: [15. STT·TTS API 비용 절감](#15-stttts-api-비용-절감--캐시-및-최적화-전략) 섹션을 참고하세요. 주요 전략:
 - TTS 캐시: `CachedTtsAdapter`로 반복 안내 멘트 비용 $0 달성
 - STT 최적화: VAD 필터 + `endpointingMs` 조정으로 20~40% 절감
 - 저비용 프로바이더: Deepgram Nova-3 ($0.0043/분) + claude-haiku/gpt-4o-mini + OpenAI tts-1
@@ -2427,7 +2907,7 @@ A: DVGateway 서버 자체는 온프레미스로 설치 가능합니다. 단, AI
 
 ---
 
-## 17. 문제 해결
+## 18. 문제 해결
 
 ### 연결 오류: `ECONNREFUSED http://localhost:8080`
 
@@ -2537,7 +3017,7 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 
 ---
 
-## 18. 원라인 서버 업데이트
+## 19. 원라인 서버 업데이트
 
 ```bash
 # 대시보드 UI에서 업데이트 버튼 클릭
@@ -2551,7 +3031,7 @@ curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/down
 
 ---
 
-## 19. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
+## 20. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
 
 > 이 섹션은 프로그래밍 경험이 없거나 처음 시작하는 분들을 위한 단계별 안내입니다.
 > 마치 옆에서 알려주듯이 하나씩 따라 하세요. 어렵지 않아요! 😊
@@ -2695,6 +3175,29 @@ EOF
 > - `여기에_..._붙여넣기` 같은 플레이스홀더를 실제 키로 바꿨나요?
 > - 키 앞뒤에 **따옴표(`"`)나 공백**이 들어가지 않았나요? (`.env` 파일에는 따옴표 없이 값만 넣으세요)
 > - `.env` 파일이 `bot.js`와 **같은 폴더**에 있나요?
+
+---
+
+#### A-5-1. 내 게이트웨이 API 키(`DV_API_KEY`) 확인하는 방법
+
+`.env` 파일에 넣을 `DV_API_KEY` 값을 모르겠다면 아래 방법으로 확인하세요.
+이 키는 Deepgram·OpenAI 등 AI 서비스 키와 **다른 키**입니다 — DVGateway 서버 자체에 접속하기 위한 키입니다.
+
+**방법 1. 대시보드에서 확인 (가장 쉬움)**
+
+1. 브라우저를 열고 주소창에 `http://서버IP:8081` 을 입력합니다.
+2. 왼쪽 메뉴에서 **설정**을 클릭합니다.
+3. **SDK API Key** 항목에서 키를 확인합니다.
+4. **복사** 버튼을 누르면 키가 복사됩니다 → `.env` 파일의 `DV_API_KEY=` 뒤에 붙여넣으세요.
+
+> 처음 접속하면 키가 자동으로 생성됩니다. 별도 신청이 필요 없습니다.
+
+**방법 2. 키를 분실했거나 재발급이 필요할 때**
+
+대시보드(`http://서버IP:8081`)의 **설정 → SDK API Key** 에서 **재발급** 버튼을 누르세요.
+새 키가 화면에 한 번 표시됩니다 — 이때 반드시 복사해 두세요!
+
+> ⚠️ 재발급하면 이전 키는 즉시 무효화됩니다. 기존 봇의 `.env` 파일도 새 키로 업데이트하세요.
 
 ---
 
@@ -3147,6 +3650,430 @@ TTS> 담당자를 연결해 드리겠습니다.
 
 ---
 
+#### A-7⅞. 커스텀 변수 활용 — 해피콜 · 주문확인 · 설문조사 봇
+
+Dynamic VoIP 다이얼플랜에서 `CUSTOM_VALUE_01/02/03` 변수를 설정하면, SDK의 `session.customValue1/2/3`으로 전달됩니다. 이를 활용해 **고객 이름으로 인사하는 봇**, **주문번호를 확인하는 봇** 등을 만들 수 있습니다.
+
+**원리 요약:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Dynamic VoIP 다이얼플랜                                          │
+│   Set(CUSTOM_VALUE_01=홍길동)      ← 고객 이름               │
+│   Set(CUSTOM_VALUE_02=ORD-20260321-001)  ← 주문번호          │
+│   Set(CUSTOM_VALUE_03=happycall)  ← 용도 구분                │
+│   Stasis(dvgateway, ..., custom_value_01=${CUSTOM_VALUE_01}, │
+│     custom_value_02=${CUSTOM_VALUE_02},                      │
+│     custom_value_03=${CUSTOM_VALUE_03})                      │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ SDK (Node.js / Python)                                      │
+│   session.customValue1  →  "홍길동"                          │
+│   session.customValue2  →  "ORD-20260321-001"               │
+│   session.customValue3  →  "happycall"                      │
+│                                                             │
+│   → TTS: "안녕하세요 홍길동 고객님, 주문 ORD-20260321-001    │
+│           건에 대해 안내드리겠습니다."                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**다이얼플랜 예제 (Dynamic VoIP extensions.conf):**
+
+해피콜, 주문확인, 설문조사 등 각 용도별로 커스텀 변수를 설정합니다.
+CRM 시스템에서 Dynamic VoIP Originate API를 호출할 때 변수를 전달하면 됩니다.
+
+```ini
+; ── 해피콜 발신 컨텍스트 ──────────────────────────────────────
+; CRM에서 Originate 호출 시 CUSTOM_VALUE_01~03 변수를 전달합니다.
+; 예: AMI Action: Originate
+;     Channel: SIP/trunk/01012345678
+;     Context: outbound-happycall
+;     Variable: CUSTOM_VALUE_01=홍길동,CUSTOM_VALUE_02=ORD-20260321-001,CUSTOM_VALUE_03=happycall
+[outbound-happycall]
+exten => _X.,1,NoOp(해피콜 발신: ${CUSTOM_VALUE_01})
+ same => n,Set(DID_NUMBER=${CALLERID(num)})
+ same => n,Stasis(dvgateway,mode=both,role=monitor,did=${DID_NUMBER},callernum=${CALLERID(num)},callednum=${EXTEN},custom_value_01=${CUSTOM_VALUE_01},custom_value_02=${CUSTOM_VALUE_02},custom_value_03=${CUSTOM_VALUE_03})
+ same => n,Dial(SIP/trunk/${EXTEN},60)
+ same => n,Hangup()
+
+; ── 설문조사 발신 컨텍스트 ────────────────────────────────────
+; CUSTOM_VALUE_01=고객이름, CUSTOM_VALUE_02=설문ID, CUSTOM_VALUE_03=survey
+[outbound-survey]
+exten => _X.,1,NoOp(설문조사 발신: ${CUSTOM_VALUE_01})
+ same => n,Set(DID_NUMBER=${CALLERID(num)})
+ same => n,Stasis(dvgateway,mode=both,role=monitor,did=${DID_NUMBER},callernum=${CALLERID(num)},callednum=${EXTEN},custom_value_01=${CUSTOM_VALUE_01},custom_value_02=${CUSTOM_VALUE_02},custom_value_03=${CUSTOM_VALUE_03})
+ same => n,Dial(SIP/trunk/${EXTEN},60)
+ same => n,Hangup()
+```
+
+##### 예제 1. 해피콜 봇 (Node.js)
+
+`bot-happycall.js` — 고객 이름으로 인사하고, 주문 만족도를 확인하는 봇:
+
+```javascript
+// bot-happycall.js — 해피콜 봇 (커스텀 변수 활용)
+import 'dotenv/config';
+
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { DeepgramAdapter } from 'dvgateway-adapters/stt';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
+import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+
+async function main() {
+  const gw = new DVGatewayClient({
+    baseUrl: 'http://localhost:8080',
+    auth: { type: 'apiKey', apiKey: process.env.DV_API_KEY },
+    security: { forceTls: false },
+  });
+
+  const stt = new DeepgramAdapter({
+    apiKey: process.env.DEEPGRAM_API_KEY,
+    language: 'ko',
+    model: 'nova-3',
+    keywords: ['만족', '불만족', '교환', '환불', '배송'],
+  });
+
+  const tts = new ElevenLabsAdapter({
+    apiKey: process.env.ELEVENLABS_API_KEY,
+    model: 'eleven_flash_v2_5',
+    voiceId: '21m00Tcm4TlvDq8ikWAM',
+  });
+
+  console.log('🎯 해피콜 봇을 시작합니다...');
+
+  await gw.pipeline()
+    .stt(stt)
+    .llm(null)  // LLM 없이 시나리오 기반 동작
+    .tts(tts)
+
+    .onNewCall(async (session) => {
+      // ── 커스텀 변수에서 고객 정보 추출 ──────────────────
+      const customerName = session.customValue1 ?? '고객';    // "홍길동"
+      const orderId      = session.customValue2 ?? '';        // "ORD-20260321-001"
+      const callType     = session.customValue3 ?? 'general'; // "happycall"
+
+      console.log(`📞 해피콜 시작`);
+      console.log(`   고객명   : ${customerName}`);
+      console.log(`   주문번호 : ${orderId}`);
+      console.log(`   콜 유형  : ${callType}`);
+
+      // ── 고객 이름을 넣어 TTS 인사말 재생 ────────────────
+      // customValue1(고객 이름)을 인사말에 직접 사용합니다!
+      const greeting = orderId
+        ? `안녕하세요 ${customerName} 고객님, 인공지능 상담원 토리입니다. ` +
+          `주문번호 ${orderId} 건에 대해 만족도 확인차 연락드렸습니다. ` +
+          `서비스에 만족하셨나요?`
+        : `안녕하세요 ${customerName} 고객님, 인공지능 상담원 토리입니다. ` +
+          `최근 이용하신 서비스에 대해 만족도 확인차 연락드렸습니다. ` +
+          `서비스에 만족하셨나요?`;
+
+      await gw.say(session.linkedId, greeting, tts);
+      console.log('🔊 인사말 재생 완료');
+    })
+
+    .onTranscript(async (result, session) => {
+      if (!result.isFinal) return;
+
+      const text = result.text;
+      const customerName = session.customValue1 ?? '고객';
+      console.log(`🎙️  ${customerName} 고객: ${text}`);
+
+      // ── 간단한 키워드 기반 응답 ─────────────────────────
+      if (text.includes('만족') || text.includes('좋') || text.includes('네')) {
+        await gw.say(session.linkedId,
+          `감사합니다 ${customerName} 고객님. ` +
+          `만족하셨다니 다행입니다. 앞으로도 좋은 서비스로 보답하겠습니다. ` +
+          `좋은 하루 되세요!`, tts);
+      } else if (text.includes('불만') || text.includes('별로') || text.includes('아니')) {
+        await gw.say(session.linkedId,
+          `${customerName} 고객님, 불편을 드려 죄송합니다. ` +
+          `담당자에게 전달하여 개선하도록 하겠습니다. ` +
+          `추가로 말씀해 주실 내용이 있으신가요?`, tts);
+      }
+    })
+
+    .onCallEnded((id, duration) => {
+      console.log(`📴 해피콜 종료 (${duration}초)`);
+    })
+    .start();
+
+  console.log('✅ 해피콜 봇 준비 완료. 발신을 기다리는 중...');
+}
+
+main().catch(console.error);
+```
+
+실행:
+```bash
+node bot-happycall.js
+```
+
+##### 예제 2. 주문확인 봇 (Node.js)
+
+`bot-order-confirm.js` — 주문 내용을 안내하고 배송일을 확인하는 봇:
+
+```javascript
+// bot-order-confirm.js — 주문확인 전화 봇
+import 'dotenv/config';
+
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { DeepgramAdapter } from 'dvgateway-adapters/stt';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
+import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+
+async function main() {
+  const gw = new DVGatewayClient({
+    baseUrl: 'http://localhost:8080',
+    auth: { type: 'apiKey', apiKey: process.env.DV_API_KEY },
+    security: { forceTls: false },
+  });
+
+  const stt = new DeepgramAdapter({
+    apiKey: process.env.DEEPGRAM_API_KEY,
+    language: 'ko',
+    model: 'nova-3',
+    keywords: ['주문', '배송', '확인', '취소', '변경'],
+  });
+
+  const tts = new ElevenLabsAdapter({
+    apiKey: process.env.ELEVENLABS_API_KEY,
+    model: 'eleven_flash_v2_5',
+    voiceId: '21m00Tcm4TlvDq8ikWAM',
+  });
+
+  // LLM에 주문 정보를 컨텍스트로 전달
+  // onNewCall에서 session.customValue2(주문번호)를 시스템 프롬프트에 주입합니다
+  const llm = new OpenAILlmAdapter({
+    apiKey: process.env.OPENAI_API_KEY,
+    model: 'gpt-4o-mini',
+    systemPrompt: '당신은 주문 확인 전화를 하는 AI 상담원 토리입니다. 짧고 명확하게 답변하세요.',
+  });
+
+  console.log('📦 주문확인 봇을 시작합니다...');
+
+  await gw.pipeline()
+    .stt(stt)
+    .llm(llm)
+    .tts(tts)
+
+    .onNewCall(async (session) => {
+      const customerName = session.customValue1 ?? '고객';
+      const orderId      = session.customValue2 ?? '주문번호 미확인';
+      const orderDetail  = session.customValue3 ?? '';  // 예: "무선이어폰 1개, 3월 25일 배송예정"
+
+      console.log(`📦 주문확인 전화 시작`);
+      console.log(`   고객명   : ${customerName}`);
+      console.log(`   주문번호 : ${orderId}`);
+      console.log(`   주문내용 : ${orderDetail}`);
+
+      // LLM 시스템 프롬프트에 주문 정보 주입
+      // → LLM이 주문 내용을 알고 대화할 수 있습니다
+      llm.setSystemPrompt(
+        `당신은 주문 확인 전화를 하는 AI 상담원 토리입니다.\n` +
+        `현재 통화 중인 고객: ${customerName}\n` +
+        `주문번호: ${orderId}\n` +
+        `주문내용: ${orderDetail}\n` +
+        `고객이 주문 내용을 확인하면 감사 인사를 하고, ` +
+        `변경이나 취소를 원하면 담당자 연결을 안내하세요.`
+      );
+
+      // 고객 이름 + 주문번호로 개인화된 인사
+      await gw.say(session.linkedId,
+        `안녕하세요 ${customerName} 고객님, 인공지능 상담원 토리입니다. ` +
+        `주문번호 ${orderId} 건에 대해 안내드리겠습니다. ` +
+        (orderDetail
+          ? `고객님의 주문 내용은 ${orderDetail} 입니다. 맞으신가요?`
+          : `주문 내용을 확인해 드릴까요?`),
+        tts
+      );
+    })
+
+    .onTranscript((result, session) => {
+      if (result.isFinal) {
+        console.log(`🎙️  ${session.customValue1 ?? '고객'}: ${result.text}`);
+      }
+    })
+
+    .onCallEnded((id, duration) => {
+      console.log(`📴 주문확인 종료 (${duration}초)`);
+    })
+    .start();
+
+  console.log('✅ 주문확인 봇 준비 완료.');
+}
+
+main().catch(console.error);
+```
+
+##### 예제 3. 해피콜 봇 (Python)
+
+`bot_happycall.py` — Python으로 동일한 해피콜 봇:
+
+```python
+# bot_happycall.py — 해피콜 봇 (커스텀 변수 활용)
+import os
+import asyncio
+from dotenv import load_dotenv
+
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.stt import DeepgramAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter
+
+load_dotenv()  # .env 파일 읽기
+
+
+async def main():
+    gw = DVGatewayClient(
+        base_url="http://localhost:8080",
+        api_key=os.environ["DV_API_KEY"],
+        force_tls=False,
+    )
+
+    stt = DeepgramAdapter(
+        api_key=os.environ["DEEPGRAM_API_KEY"],
+        language="ko",
+        model="nova-3",
+        keywords=["만족", "불만족", "교환", "환불", "배송"],
+    )
+
+    tts = ElevenLabsAdapter(
+        api_key=os.environ["ELEVENLABS_API_KEY"],
+        model="eleven_flash_v2_5",
+        voice_id="21m00Tcm4TlvDq8ikWAM",
+    )
+
+    print("🎯 해피콜 봇을 시작합니다...")
+
+    @gw.on("call:new")
+    async def on_new_call(event):
+        session = event["session"]
+
+        # ── 커스텀 변수에서 고객 정보 추출 ────────────────
+        customer_name = session.custom_value_1 or "고객"
+        order_id      = session.custom_value_2 or ""
+        call_type     = session.custom_value_3 or "general"
+
+        print(f"📞 해피콜 시작")
+        print(f"   고객명   : {customer_name}")
+        print(f"   주문번호 : {order_id}")
+        print(f"   콜 유형  : {call_type}")
+
+        # ── 고객 이름을 넣어 TTS 인사말 재생 ──────────────
+        if order_id:
+            greeting = (
+                f"안녕하세요 {customer_name} 고객님, "
+                f"인공지능 상담원 토리입니다. "
+                f"주문번호 {order_id} 건에 대해 "
+                f"만족도 확인차 연락드렸습니다. "
+                f"서비스에 만족하셨나요?"
+            )
+        else:
+            greeting = (
+                f"안녕하세요 {customer_name} 고객님, "
+                f"인공지능 상담원 토리입니다. "
+                f"최근 이용하신 서비스에 대해 "
+                f"만족도 확인차 연락드렸습니다. "
+                f"서비스에 만족하셨나요?"
+            )
+
+        await gw.say(session.linked_id, greeting, tts)
+        print("🔊 인사말 재생 완료")
+
+    @gw.on("transcript")
+    async def on_transcript(event):
+        result = event["result"]
+        session = event["session"]
+        if not result.is_final:
+            return
+
+        customer_name = session.custom_value_1 or "고객"
+        text = result.text
+        print(f"🎙️  {customer_name} 고객: {text}")
+
+        # ── 간단한 키워드 기반 응답 ───────────────────────
+        if any(w in text for w in ["만족", "좋", "네"]):
+            await gw.say(
+                session.linked_id,
+                f"감사합니다 {customer_name} 고객님. "
+                f"만족하셨다니 다행입니다. "
+                f"앞으로도 좋은 서비스로 보답하겠습니다. "
+                f"좋은 하루 되세요!",
+                tts,
+            )
+        elif any(w in text for w in ["불만", "별로", "아니"]):
+            await gw.say(
+                session.linked_id,
+                f"{customer_name} 고객님, 불편을 드려 죄송합니다. "
+                f"담당자에게 전달하여 개선하도록 하겠습니다. "
+                f"추가로 말씀해 주실 내용이 있으신가요?",
+                tts,
+            )
+
+    @gw.on("call:ended")
+    async def on_call_ended(event):
+        print(f"📴 해피콜 종료 ({event.get('duration', 0)}초)")
+
+    await gw.start(stt=stt, tts=tts)
+    print("✅ 해피콜 봇 준비 완료.")
+
+
+asyncio.run(main())
+```
+
+실행:
+```bash
+python bot_happycall.py
+```
+
+##### 커스텀 변수 활용 요약
+
+| 변수 | SDK 필드 (TS / Python) | 활용 예시 |
+|------|----------------------|----------|
+| `CUSTOM_VALUE_01` | `customValue1` / `custom_value_1` | 고객 이름 → TTS 인사말에 삽입 |
+| `CUSTOM_VALUE_02` | `customValue2` / `custom_value_2` | 주문번호 / 설문 ID → 업무 컨텍스트 |
+| `CUSTOM_VALUE_03` | `customValue3` / `custom_value_3` | 용도 구분 (happycall / survey / order) |
+
+**핵심 패턴 — TTS에 변수 삽입:**
+
+```javascript
+// ✅ customValue1을 TTS 인사말에 삽입하는 핵심 코드
+const name = session.customValue1 ?? '고객';
+await gw.say(session.linkedId,
+  `안녕하세요 ${name} 고객님, 인공지능 상담원 토리입니다.`,
+  tts
+);
+```
+
+```python
+# ✅ Python 버전 — custom_value_1을 TTS 인사말에 삽입
+name = session.custom_value_1 or "고객"
+await gw.say(
+    session.linked_id,
+    f"안녕하세요 {name} 고객님, 인공지능 상담원 토리입니다.",
+    tts,
+)
+```
+
+**핵심 패턴 — LLM에 컨텍스트 주입:**
+
+```javascript
+// ✅ 커스텀 변수로 LLM에 업무 맥락을 전달
+llm.setSystemPrompt(
+  `현재 통화 고객: ${session.customValue1}\n` +
+  `주문번호: ${session.customValue2}\n` +
+  `통화 목적: ${session.customValue3}\n` +
+  `위 정보를 바탕으로 고객을 응대하세요.`
+);
+```
+
+> 💡 **CRM 연동 팁:** Dynamic VoIP AMI `Originate` API로 전화를 걸 때
+> `Variable` 파라미터에 `CUSTOM_VALUE_01=홍길동,CUSTOM_VALUE_02=ORD-001`을 전달하면,
+> 자동으로 다이얼플랜 → 게이트웨이 → SDK로 전달됩니다.
+
+---
+
 #### A-8. 봇을 항상 실행되게 하기 (PM2 사용)
 
 컴퓨터가 재시작되어도 봇이 자동으로 켜지게 하려면:
@@ -3284,6 +4211,9 @@ DV_API_KEY=여기에_게이트웨이_API_키_붙여넣기
 > cat .env
 > # DV_API_KEY=dv_live_abc123... 처럼 실제 값이 보여야 합니다
 > ```
+
+**`DV_API_KEY` 값을 모르겠다면?** → 위의 [A-5-1. 내 게이트웨이 API 키 확인하는 방법](#a-5-1-내-게이트웨이-api-키dv_api_key-확인하는-방법) 섹션을 참고하세요.
+대시보드(`http://서버IP:8081`) → 설정 → SDK API Key에서 복사하는 것이 가장 쉽습니다.
 
 ---
 
