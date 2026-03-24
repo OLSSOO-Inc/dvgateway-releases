@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.3.1.0** | 업데이트: 2026-03-18
+> **최신 버전: 1.3.1.1** | 업데이트: 2026-03-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -3907,35 +3907,66 @@ async function main() {
 main().catch(console.error);
 ```
 
-##### 예제 3. 해피콜 봇 (Python)
+##### 예제 3. 해피콜 봇 (Python) — custom_value_1을 TTS 인사말에 삽입
 
-`bot_happycall.py` — Python으로 동일한 해피콜 봇:
+`05_happycall_bot.py` — 고객 이름(`custom_value_1`)과 주문번호(`custom_value_2`)를 TTS 인사말에 삽입하고,
+통화별로 LLM 시스템 프롬프트에 고객 컨텍스트를 주입하는 실전 해피콜 봇:
 
 ```python
-# bot_happycall.py — 해피콜 봇 (커스텀 변수 활용)
+# examples/python/05_happycall_bot.py — 해피콜 봇 (커스텀 변수 활용)
+#
+# 핵심 포인트:
+#   1. on_new_call에서 gw.say()로 고객 이름을 넣은 개인화 TTS 인사말 재생
+#   2. 통화별로 LLM system_prompt에 고객 정보(이름, 주문번호) 주입
+#   3. STT → LLM → TTS 전체 파이프라인으로 자연스러운 대화 처리
+#
+# 환경변수 (.env 파일 또는 export):
+#   DV_BASE_URL=http://<gateway-host>:8080
+#   DV_API_KEY=dvgw_xxxx...
+#   DEEPGRAM_API_KEY=...
+#   ANTHROPIC_API_KEY=...
+#   ELEVENLABS_API_KEY=...
+#
+# 설치: pip install dvgateway-python python-dotenv
+# 실행: python examples/python/05_happycall_bot.py
 import os
 import asyncio
 from dotenv import load_dotenv
 
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
+from dvgateway.adapters.llm import AnthropicAdapter
 from dvgateway.adapters.tts import ElevenLabsAdapter
 
-load_dotenv()  # .env 파일 읽기
+load_dotenv()
 
 
 async def main():
     gw = DVGatewayClient(
-        base_url="http://localhost:8080",
-        api_key=os.environ["DV_API_KEY"],
-        force_tls=False,
+        base_url=os.environ.get("DV_BASE_URL", "http://localhost:8080"),
+        auth={
+            "type": "apiKey",
+            "api_key": os.environ.get("DV_API_KEY", "dev-no-auth"),
+        },
+        reconnect={"max_attempts": 10, "initial_delay_ms": 2000},
     )
 
     stt = DeepgramAdapter(
         api_key=os.environ["DEEPGRAM_API_KEY"],
         language="ko",
         model="nova-3",
+        interim_results=True,
+        endpointing_ms=400,
+        smart_format=True,
         keywords=["만족", "불만족", "교환", "환불", "배송"],
+    )
+
+    llm = AnthropicAdapter(
+        api_key=os.environ["ANTHROPIC_API_KEY"],
+        model="claude-sonnet-4-6",
+        system_prompt="당신은 해피콜 AI 상담원 토리입니다.",
+        max_tokens=200,
+        temperature=0.7,
     )
 
     tts = ElevenLabsAdapter(
@@ -3944,23 +3975,27 @@ async def main():
         voice_id="21m00Tcm4TlvDq8ikWAM",
     )
 
-    print("🎯 해피콜 봇을 시작합니다...")
+    # ── on_new_call: 고객 이름으로 TTS 인사말 + LLM 컨텍스트 주입 ──
 
-    @gw.on("call:new")
-    async def on_new_call(event):
-        session = event["session"]
-
-        # ── 커스텀 변수에서 고객 정보 추출 ────────────────
+    async def on_new_call(session):
         customer_name = session.custom_value_1 or "고객"
-        order_id      = session.custom_value_2 or ""
-        call_type     = session.custom_value_3 or "general"
+        order_id = session.custom_value_2 or ""
 
-        print(f"📞 해피콜 시작")
-        print(f"   고객명   : {customer_name}")
-        print(f"   주문번호 : {order_id}")
-        print(f"   콜 유형  : {call_type}")
+        print(f"[해피콜] 통화 시작")
+        print(f"  고객명   : {customer_name}")
+        print(f"  주문번호 : {order_id or '(없음)'}")
 
-        # ── 고객 이름을 넣어 TTS 인사말 재생 ──────────────
+        # ✅ 통화별 LLM 시스템 프롬프트에 고객 정보 주입
+        llm.system_prompt = (
+            f"당신은 해피콜 전문 AI 상담원 '토리'입니다.\n"
+            f"현재 통화 고객: {customer_name}\n"
+            + (f"주문번호: {order_id}\n" if order_id else "")
+            + "친절하고 간결하게 1-2문장으로 응대하세요.\n"
+            "만족 응답 시 감사 인사 후 종료 안내, "
+            "불만 응답 시 공감하고 담당자 연결을 안내하세요."
+        )
+
+        # ✅ 핵심: custom_value_1(고객 이름)을 TTS 인사말에 삽입
         if order_id:
             greeting = (
                 f"안녕하세요 {customer_name} 고객님, "
@@ -3979,44 +4014,28 @@ async def main():
             )
 
         await gw.say(session.linked_id, greeting, tts)
-        print("🔊 인사말 재생 완료")
+        print(f"[해피콜] 인사말 재생 완료")
 
-    @gw.on("transcript")
-    async def on_transcript(event):
-        result = event["result"]
-        session = event["session"]
-        if not result.is_final:
-            return
+    print("해피콜 봇 시작...\n전화를 기다리는 중...\n")
 
-        customer_name = session.custom_value_1 or "고객"
-        text = result.text
-        print(f"🎙️  {customer_name} 고객: {text}")
-
-        # ── 간단한 키워드 기반 응답 ───────────────────────
-        if any(w in text for w in ["만족", "좋", "네"]):
-            await gw.say(
-                session.linked_id,
-                f"감사합니다 {customer_name} 고객님. "
-                f"만족하셨다니 다행입니다. "
-                f"앞으로도 좋은 서비스로 보답하겠습니다. "
-                f"좋은 하루 되세요!",
-                tts,
-            )
-        elif any(w in text for w in ["불만", "별로", "아니"]):
-            await gw.say(
-                session.linked_id,
-                f"{customer_name} 고객님, 불편을 드려 죄송합니다. "
-                f"담당자에게 전달하여 개선하도록 하겠습니다. "
-                f"추가로 말씀해 주실 내용이 있으신가요?",
-                tts,
-            )
-
-    @gw.on("call:ended")
-    async def on_call_ended(event):
-        print(f"📴 해피콜 종료 ({event.get('duration', 0)}초)")
-
-    await gw.start(stt=stt, tts=tts)
-    print("✅ 해피콜 봇 준비 완료.")
+    await (
+        gw.pipeline()
+        .stt(stt)
+        .llm(llm)
+        .tts(tts)
+        .on_new_call(on_new_call)
+        .on_transcript(lambda result, session: (
+            print(f"  {session.custom_value_1 or '고객'}: \"{result.text}\"")
+            if result.is_final else None
+        ))
+        .on_call_ended(lambda linked_id, duration:
+            print(f"[해피콜] 통화 종료 ({duration}초)\n")
+        )
+        .on_error(lambda err, linked_id=None:
+            print(f"[해피콜] 오류: {err}")
+        )
+        .start()
+    )
 
 
 asyncio.run(main())
@@ -4024,7 +4043,7 @@ asyncio.run(main())
 
 실행:
 ```bash
-python bot_happycall.py
+python examples/python/05_happycall_bot.py
 ```
 
 ##### 커스텀 변수 활용 요약
