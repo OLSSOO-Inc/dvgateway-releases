@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.3.1.5** | 업데이트: 2026-03-18
+> **최신 버전: 1.3.1.6** | 업데이트: 2026-03-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -942,57 +942,108 @@ const stt = new DeepgramAdapter({
 
 ### ElevenLabs TTS (음성 합성)
 
+#### 모델 비교 (2026-03 기준)
+
+| 모델 ID | 설명 | 지연 | 언어 | 요청당 글자 | 크레딧/자 | 용도 |
+|---------|------|------|------|------------|----------|------|
+| `eleven_flash_v2_5` | 최저 지연, 실시간 최적 **(기본값)** | ~75ms | 32개 | 40,000 | 0.5 | 실시간 대화, 챗봇, 음성 에이전트 |
+| `eleven_turbo_v2_5` | 품질/속도 균형 | ~200ms | 32개 | 40,000 | 0.5 | 준실시간 응답 |
+| `eleven_multilingual_v2` | 고품질 다국어 (humanVoice 기본) | ~300ms | 29개 | 40,000 | 1.0 | 자연스러운 한국어, 나레이션 |
+| `eleven_v3` | **최신 플래그십** — 최고 표현력, Audio Tags | 높음 | **74개** | **5,000** | 1.0 | 감정 연기, 오디오북, 다자 대화 |
+
+> **실시간 음성 에이전트**: `eleven_flash_v2_5` 권장 (최저 지연, WebSocket 스트리밍 지원)
+> **최고 한국어 품질**: `eleven_multilingual_v2` 또는 `eleven_v3` 선택
+> **감정 표현 필요**: `eleven_v3` + Audio Tags 사용
+
+#### eleven_v3 주요 특징
+
+- **Audio Tags**: 텍스트에 `[감정]` 태그를 삽입하여 음성 감정/행동 제어
+  ```
+  [whispers] 누군가 온 것 같아요. [pause] 조용히 하세요.
+  [excited] 정말요? 축하합니다! [laughs]
+  [sighs] 14시간째 일하고 있어요. [nervous] 이게 될까요?
+  ```
+- **지원 태그**: `[whispers]`, `[shouts]`, `[laughs]`, `[sighs]`, `[gasps]`, `[crying]`,
+  `[excited]`, `[nervous]`, `[calm]`, `[pause]`, `[hesitates]`, `[cheerfully]`, `[deadpan]` 등
+- **Text to Dialogue API**: 다자간 대화 생성 (화자 전환, 감정 변화, 끼어들기 자동 처리)
+- **제한사항**: WebSocket 스트리밍 미지원, `optimize_streaming_latency` 미지원, 요청당 5,000자 제한
+
+#### 설정 예시
+
 ```typescript
 import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 
+// ── 실시간 음성 에이전트 (권장) ──────────────────────────────
+const realtimeTts = new ElevenLabsAdapter({
+  apiKey:  'sk_xxxx',
+  model:   'eleven_flash_v2_5',       // 실시간 최적 (~75ms)
+  voiceId: 'XrExE9yKIg1WjnnlVkGX',   // Yuna (한국어 여성, 추천 1위)
+});
+
+// ── 고품질 한국어 (humanVoice 기본 활성) ─────────────────────
+const naturalTts = new ElevenLabsAdapter({
+  apiKey:  'sk_xxxx',
+  model:   'eleven_multilingual_v2',  // 자연스러운 한국어 억양
+  voiceId: 't0jbNlBVZ17f02VDIeMI',   // 지영 / JiYoung (한국어 여성)
+  stability:       0.3,               // 낮을수록 자연스러운 변화
+  similarityBoost: 0.75,
+  style:           0.6,               // 표현력 향상
+});
+
+// ── eleven_v3 감정 연기 ──────────────────────────────────────
+const expressiveTts = new ElevenLabsAdapter({
+  apiKey:  'sk_xxxx',
+  model:   'eleven_v3',               // 최고 표현력, Audio Tags 지원
+  voiceId: 'XrExE9yKIg1WjnnlVkGX',   // Yuna
+  humanVoice: false,                  // v3는 자체 감정 엔진 사용
+});
+// Audio Tags 사용 예시:
+// await expressiveTts.synthesize('[cheerfully] 안녕하세요! [pause] 무엇을 도와드릴까요?');
+```
+
+**음성 품질 옵션:**
+
+```typescript
 const tts = new ElevenLabsAdapter({
   apiKey:  'sk_xxxx',
-
-  // ── 모델 선택 ─────────────────────────────────────────────
-  model: 'eleven_flash_v2_5',
-  // 옵션:
-  //   'eleven_flash_v2_5'      — 최저 지연 (~75ms), 실시간 최적 (기본값)
-  //   'eleven_turbo_v2_5'      — 품질/속도 균형 (~200ms)
-  //   'eleven_multilingual_v2' — 최고 다국어 품질 (지연 높음)
-  //   'eleven_multilingual_v3' — 차세대 다국어, 향상된 억양 (2026)
-
-  // ── 음성 선택 ─────────────────────────────────────────────
-  // ElevenLabs Voice Library에서 한국어 음성 ID를 찾아 입력하세요
   voiceId: 'YOUR_VOICE_ID',
 
-  // ── 음성 품질 설정 ────────────────────────────────────────
   stability:               0.5,   // 안정성 (0.0–1.0, 높을수록 일관됨)
   similarityBoost:         0.75,  // 원본 음성 유사도 (0.0–1.0)
   style:                   0.0,   // 표현력 (0.0–1.0, 높으면 지연 증가)
   useSpeakerBoost:         true,  // 음성 선명도 향상
 
-  // ── 스트리밍 최적화 ───────────────────────────────────────
+  // v2 모델 전용 (v3에서는 무시됨)
   optimizeStreamingLatency: 4,    // 0(품질 최대) ~ 4(지연 최소, 기본값)
   outputFormat: 'pcm_24000',      // 내부 포맷 (변경 불필요)
 });
 ```
 
-**내장 한국어 네이티브 음성 (9개):**
+#### 한국어 네이티브 음성 — 인기순 추천
 
-| 음성 ID | 이름 | 성별 |
-|---------|------|------|
-| `pjJMvFj0JGWi3mogOkHH` | Hyun Bin | 남성 |
-| `t0jbNlBVZ17f02VDIeMI` | 지영 / JiYoung | 여성 |
-| `zrHiDhphv9ZnVXBqCLjz` | Jennie | 여성 |
-| `ZJCNdOEhQGMOIbMuhBME` | Han Aim | 남성 |
-| `ova4yY2jqnnUdGOmTGbx` | KKC HQ | 남성 |
-| `Xb7hH8MSUJpSbSDYk0k2` | Anna Kim | 여성 |
-| `XrExE9yKIg1WjnnlVkGX` | Yuna | 여성 |
-| `ThT5KcBeYPX3keUQqHPh` | Jina | 여성 |
-| `Sita5M0jWFxPiECPABjR` | jjeong | 여성 |
+| 순위 | 음성 ID | 이름 | 성별 | 추천 용도 |
+|:---:|---------|------|:----:|----------|
+| 1 | `XrExE9yKIg1WjnnlVkGX` | **Yuna** | 여성 | 상담 에이전트, 안내 음성 (가장 자연스러운 한국어 발화) |
+| 2 | `t0jbNlBVZ17f02VDIeMI` | **지영 / JiYoung** | 여성 | 고객 상담, 따뜻한 톤 (뉴스/나레이션에도 적합) |
+| 3 | `ThT5KcBeYPX3keUQqHPh` | **Jina** | 여성 | 밝고 명확한 발음 (ARS, 정보 안내) |
+| 4 | `pjJMvFj0JGWi3mogOkHH` | **Hyun Bin** | 남성 | 남성 에이전트 (안정적이고 신뢰감 있는 톤) |
+| 5 | `Xb7hH8MSUJpSbSDYk0k2` | **Anna Kim** | 여성 | 차분한 톤 (교육, 설명 콘텐츠) |
+| 6 | `zrHiDhphv9ZnVXBqCLjz` | **Jennie** | 여성 | 젊고 활기찬 톤 (마케팅, 프로모션) |
+| 7 | `ZJCNdOEhQGMOIbMuhBME` | **Han Aim** | 남성 | 깊은 남성 음성 (브랜드 나레이션) |
+| 8 | `ova4yY2jqnnUdGOmTGbx` | **KKC HQ** | 남성 | 스토리텔링, 유튜브 나레이션 |
+| 9 | `Sita5M0jWFxPiECPABjR` | **jjeong** | 여성 | 캐주얼한 톤 (팟캐스트, 일상 대화) |
+
+> **팁**: 더 자연스러운 한국어 음성을 원하면 [ElevenLabs Voice Library](https://elevenlabs.io/voice-library)에서
+> "Korean" 필터 → 인기순 정렬로 검색하세요. 한국인 사용자가 만든 **Professional Voice Clone(PVC)**이
+> 기본 제공 음성보다 품질이 뛰어납니다.
 
 ```typescript
 import { ELEVENLABS_KOREAN_VOICES } from 'dvgateway-adapters';
 
-// 내장 한국어 음성 사용
+// 내장 한국어 음성 사용 (인기순)
 const tts = new ElevenLabsAdapter({
   apiKey: 'sk_xxxx',
-  voiceId: ELEVENLABS_KOREAN_VOICES[0].id,  // Hyun Bin
+  voiceId: ELEVENLABS_KOREAN_VOICES[0].id,  // Yuna (추천 1위)
 });
 ```
 
