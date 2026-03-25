@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.3.2.2** | 업데이트: 2026-03-24
+> **최신 버전: 1.3.2.3** | 업데이트: 2026-03-24
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -72,10 +72,6 @@ python examples/python/01_basic_voice_bot.py
 
 ## 🔗 관련 링크
 
-- [REST API 레퍼런스](../api.md) — 전체 엔드포인트 문서
-- [통합 가이드](../go-gateway/docs/integration-guide.md) — Dynamic VoIP 연동 가이드
-- [보안 가이드](security.md) — API 키, JWT, 테넌트 격리
-- [라이선스 관리](license-management.md) — Ed25519 서명 기반 라이선스
 - [GitHub Releases](https://github.com/OLSSOO-Inc/dvgateway-releases/releases) — 최신 바이너리 다운로드
 
 ---
