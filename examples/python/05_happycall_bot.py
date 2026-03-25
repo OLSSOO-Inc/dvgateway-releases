@@ -23,7 +23,7 @@ Environment variables (.env):
   DV_BASE_URL=http://<gateway-host>:8080
   DV_API_KEY=dvgw_xxxx...
   DEEPGRAM_API_KEY=...
-  ANTHROPIC_API_KEY=...
+  OPENAI_API_KEY=...
   ELEVENLABS_API_KEY=...
 
 Run:
@@ -38,7 +38,7 @@ from dotenv import load_dotenv
 
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
-from dvgateway.adapters.llm import AnthropicAdapter
+from dvgateway.adapters.llm import OpenAILlmAdapter
 from dvgateway.adapters.tts import ElevenLabsAdapter
 
 load_dotenv()
@@ -69,9 +69,9 @@ async def main() -> None:
         keywords=["만족", "불만족", "교환", "환불", "배송"],
     )
 
-    llm = AnthropicAdapter(
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        model="claude-sonnet-4-6",
+    llm = OpenAILlmAdapter(
+        api_key=os.environ["OPENAI_API_KEY"],
+        model="gpt-4o-mini",
         # system_prompt is overridden per call in on_new_call
         system_prompt="당신은 해피콜 AI 상담원 토리입니다.",
         max_tokens=200,

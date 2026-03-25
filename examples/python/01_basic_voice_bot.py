@@ -1,9 +1,9 @@
 """
 Example 1: Basic AI Voice Bot (Korean)
 
-Answers incoming calls with a Claude-powered AI assistant.
+Answers incoming calls with an OpenAI GPT-powered AI assistant.
 STT: Deepgram Nova-3 (Korean)
-LLM: Claude Sonnet 4.6 (streaming)
+LLM: OpenAI GPT-4o-mini (streaming)
 TTS: ElevenLabs Flash v2.5 (Korean voice)
 
 Target E2E latency: < 500ms
@@ -20,7 +20,7 @@ Environment variables (set in .env or export):
   DV_BASE_URL=http://<gateway-host>:8080
   DV_API_KEY=dvgw_xxxx...   # SDK API key from dashboard
   DEEPGRAM_API_KEY=...
-  ANTHROPIC_API_KEY=...
+  OPENAI_API_KEY=...
   ELEVENLABS_API_KEY=...
 
 Run:
@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
-from dvgateway.adapters.llm import AnthropicAdapter
+from dvgateway.adapters.llm import OpenAILlmAdapter
 from dvgateway.adapters.tts import ElevenLabsAdapter
 
 load_dotenv()
@@ -68,9 +68,9 @@ async def main() -> None:
         smart_format=True,
     )
 
-    llm = AnthropicAdapter(
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        model="claude-sonnet-4-6",
+    llm = OpenAILlmAdapter(
+        api_key=os.environ["OPENAI_API_KEY"],
+        model="gpt-4o-mini",
         system_prompt=(
             "당신은 OLSSOO Inc.의 친절한 AI 고객 상담원입니다. "
             "답변은 TTS에 적합하게 짧고 자연스러운 구어체로 해주세요. "
@@ -113,6 +113,12 @@ async def main() -> None:
             # f"   시작시각   : {session.started_at}"     # 통화 시작 시각 (datetime)
             # f"   스트림 URL : {session.stream_url}"     # 오디오 WebSocket URL
             # f"   메타데이터 : {session.metadata}"       # 커스텀 키-값 메타데이터
+            # ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+            # Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+            # 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+            f"   커스텀값1   : {session.custom_value_1 or '없음'}\n"
+            f"   커스텀값2   : {session.custom_value_2 or '없음'}\n"
+            f"   커스텀값3   : {session.custom_value_3 or '없음'}"
         ))
         .on_call_ended(lambda linked_id, duration: (
             print(f"[{linked_id}] 통화 종료 ({duration}초)"),

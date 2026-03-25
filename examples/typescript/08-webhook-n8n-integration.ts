@@ -31,7 +31,7 @@
  *   또는 plain text body
  *
  * STT: Deepgram Nova-3
- * LLM: WebhookAdapter → n8n (fallback: Claude)
+ * LLM: WebhookAdapter → n8n (fallback: OpenAI GPT)
  * TTS: ElevenLabs Flash v2.5
  *
  * Run:
@@ -42,7 +42,7 @@
 import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
-import { AnthropicAdapter, WebhookAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter, WebhookAdapter } from 'dvgateway-adapters/llm';
 import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────
@@ -63,9 +63,9 @@ const stt = new DeepgramAdapter({
 });
 
 // Fallback LLM — Webhook 장애 시 자동 전환
-const fallbackLlm = new AnthropicAdapter({
-  apiKey: process.env['ANTHROPIC_API_KEY']!,
-  model: 'claude-haiku-4-5-20251001',  // 가장 빠른 모델 (fallback용)
+const fallbackLlm = new OpenAILlmAdapter({
+  apiKey: process.env['OPENAI_API_KEY']!,
+  model: 'gpt-4o-mini',  // 빠르고 경제적인 모델 (fallback용)
   systemPrompt: '간단히 답변해주세요. 시스템 장애로 상세 응답이 어렵습니다.',
   maxTokens: 128,
 });
@@ -94,7 +94,7 @@ const webhookLlm = new WebhookAdapter({
   // HMAC-SHA256 서명: webhook 요청의 위변조 방지
   secret: process.env['WEBHOOK_SECRET'] ?? '',
 
-  // Webhook 장애 시 Claude로 자동 전환
+  // Webhook 장애 시 OpenAI GPT로 자동 전환
   fallback: fallbackLlm,
 
   // 시스템 프롬프트 (webhook에도 전달됨)
@@ -118,7 +118,7 @@ const tts = new ElevenLabsAdapter({
 
 console.log('🔗 Webhook 연동 AI 음성 봇 시작...');
 console.log(`   Webhook URL: ${process.env['WEBHOOK_URL'] ?? '(환경변수 미설정)'}`);
-console.log(`   Fallback:    Claude Haiku (5초 타임아웃 시 자동 전환)`);
+console.log(`   Fallback:    OpenAI GPT-4o-mini (5초 타임아웃 시 자동 전환)`);
 console.log('');
 
 await gw.pipeline()
@@ -126,7 +126,15 @@ await gw.pipeline()
   .llm(webhookLlm)
   .tts(tts)
   .onNewCall((session) => {
-    console.log(`📞 [${session.linkedId}] 콜 수신: ${session.caller ?? '비공개'}`);
+    console.log(
+      `📞 [${session.linkedId}] 콜 수신: ${session.caller ?? '비공개'}\n` +
+      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+      // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+      `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +
+      `   커스텀값2   : ${session.customValue2 ?? '없음'}\n` +
+      `   커스텀값3   : ${session.customValue3 ?? '없음'}`
+    );
   })
   .onTranscript((result, session) => {
     if (result.isFinal) {

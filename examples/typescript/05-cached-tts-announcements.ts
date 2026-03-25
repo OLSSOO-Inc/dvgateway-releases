@@ -18,7 +18,7 @@
 import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
-import { AnthropicAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
 import { ElevenLabsAdapter, CachedTtsAdapter } from 'dvgateway-adapters';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────
@@ -39,9 +39,9 @@ const stt = new DeepgramAdapter({
   model:    'nova-3',
 });
 
-const llm = new AnthropicAdapter({
-  apiKey:       process.env['ANTHROPIC_API_KEY']!,
-  model:        'claude-sonnet-4-6',
+const llm = new OpenAILlmAdapter({
+  apiKey:       process.env['OPENAI_API_KEY']!,
+  model:        'gpt-4o-mini',
   systemPrompt: '당신은 친절한 AI 상담원입니다. 짧고 자연스럽게 답하세요.',
   maxTokens:    256,
 });
@@ -91,7 +91,15 @@ await gw.pipeline()
   .llm(llm)
   .tts(tts)   // CachedTtsAdapter — 동일 텍스트는 캐시에서 즉시 반환
   .onNewCall(async (session) => {
-    console.log(`📞 [${session.linkedId}] 새 콜 수신`);
+    console.log(
+      `📞 [${session.linkedId}] 새 콜 수신\n` +
+      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+      // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+      `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +
+      `   커스텀값2   : ${session.customValue2 ?? '없음'}\n` +
+      `   커스텀값3   : ${session.customValue3 ?? '없음'}`
+    );
 
     // 캐시된 안내 멘트를 즉시 재생 (API 호출 없음!)
     await gw.injectTts(

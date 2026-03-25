@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
-from dvgateway.adapters.llm import AnthropicAdapter
+from dvgateway.adapters.llm import OpenAILlmAdapter
 from dvgateway.adapters.tts import ElevenLabsAdapter
 from dvgateway.types import HookContext, HistoryOptions, Message
 
@@ -191,9 +191,9 @@ async def main() -> None:
         smart_format=True,
     )
 
-    llm = AnthropicAdapter(
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        model="claude-sonnet-4-6",
+    llm = OpenAILlmAdapter(
+        api_key=os.environ["OPENAI_API_KEY"],
+        model="gpt-4o-mini",
         system_prompt=(
             "당신은 OLSSOO Inc.의 AI 고객 상담원입니다. "
             "제공된 [참고 문서]와 [고객 정보]를 활용하여 정확하게 답변하세요. "
@@ -228,7 +228,12 @@ async def main() -> None:
 
 async def _on_new_call(session) -> None:
     """통화 시작: 고객 정보 사전 조회"""
-    print(f"📞 [{session.linked_id}] 새 콜: {session.caller or '비공개'}")
+    print(
+        f"📞 [{session.linked_id}] 새 콜: {session.caller or '비공개'}\n"
+        f"   커스텀값1   : {session.custom_value_1 or '없음'}\n"
+        f"   커스텀값2   : {session.custom_value_2 or '없음'}\n"
+        f"   커스텀값3   : {session.custom_value_3 or '없음'}"
+    )
     customer = await lookup_customer(session.caller or "")
     _customer_cache[session.linked_id] = customer
     if customer:

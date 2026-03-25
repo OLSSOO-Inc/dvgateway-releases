@@ -35,6 +35,11 @@ const stt = new DeepgramAdapter({
   endpointingMs: 500,
 });
 
+// ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+// Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+// 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+// session.customValue1, session.customValue2, session.customValue3 으로 접근 가능
+
 // 화자별 감정 통계 추적
 const speakerSentiments = new Map<string, Array<{ sentiment: string; score: number }>>();
 

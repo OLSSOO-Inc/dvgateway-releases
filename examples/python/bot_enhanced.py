@@ -92,7 +92,13 @@ async def main() -> None:
             f"   linked_id : {session.linked_id}\n"
             f"   발신자번호 : {session.caller or '알 수 없음'}\n"
             f"   발신자이름 : {session.caller_name or '알 수 없음'}\n"
-            f"   DID 번호   : {session.did or '알 수 없음'}"
+            f"   DID 번호   : {session.did or '알 수 없음'}\n"
+            # ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+            # Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+            # 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+            f"   커스텀값1   : {session.custom_value_1 or '없음'}\n"
+            f"   커스텀값2   : {session.custom_value_2 or '없음'}\n"
+            f"   커스텀값3   : {session.custom_value_3 or '없음'}"
             # ── session에서 추가로 출력할 수 있는 필드 ──
             # f"\n   착신번호   : {session.callee}"        # 착신번호 (B-leg / EXTEN)
             # f"\n   콜 ID     : {session.call_id}"        # 업무 시스템 통화 ID (CRM 등)

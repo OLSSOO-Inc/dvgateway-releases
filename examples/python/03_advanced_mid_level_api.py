@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 from dvgateway import DVGatewayClient, Message, detect_voice_activity
 from dvgateway.adapters.stt import DeepgramAdapter
-from dvgateway.adapters.llm import AnthropicAdapter
+from dvgateway.adapters.llm import OpenAILlmAdapter
 from dvgateway.adapters.tts import ElevenLabsAdapter
 from dvgateway.types import CallNewEvent, CallEndedEvent
 
@@ -44,7 +44,15 @@ async def main() -> None:
         # ── 새 콜 ────────────────────────────────────────────────────────
         if isinstance(event, CallNewEvent):
             session = event.session
-            print(f"[{session.linked_id}] 새 콜: {session.caller}")
+            print(
+                f"[{session.linked_id}] 새 콜: {session.caller}\n"
+                f"   커스텀값1   : {session.custom_value_1 or '없음'}\n"
+                f"   커스텀값2   : {session.custom_value_2 or '없음'}\n"
+                f"   커스텀값3   : {session.custom_value_3 or '없음'}"
+            )
+            # ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+            # Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+            # 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
 
             sessions[session.linked_id] = {
                 "session": session,
@@ -93,9 +101,9 @@ async def main() -> None:
 
         state["history"].append(Message(role="user", content=result.text))
 
-        llm = AnthropicAdapter(
-            api_key=os.environ["ANTHROPIC_API_KEY"],
-            model="claude-haiku-4-5-20251001",
+        llm = OpenAILlmAdapter(
+            api_key=os.environ["OPENAI_API_KEY"],
+            model="gpt-4o-mini",
         )
 
         response = ""

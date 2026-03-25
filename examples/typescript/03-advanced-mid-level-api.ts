@@ -15,7 +15,7 @@
 import 'dotenv/config';
 import { DVGatewayClient, detectVoiceActivity } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
-import { AnthropicAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
 import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 import type { CallSession, Message } from 'dvgateway-sdk';
 
@@ -38,7 +38,15 @@ gw.onCallEvent(async (event) => {
   // ── 새 콜 ──────────────────────────────────────────────────────────────
   if (event.type === 'call:new') {
     const { session } = event;
-    console.log(`📞 [${session.linkedId}] 새 콜: ${session.caller}`);
+    console.log(
+      `📞 [${session.linkedId}] 새 콜: ${session.caller}\n` +
+      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+      // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+      `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +
+      `   커스텀값2   : ${session.customValue2 ?? '없음'}\n` +
+      `   커스텀값3   : ${session.customValue3 ?? '없음'}`
+    );
 
     sessions.set(session.linkedId, {
       session,
@@ -83,9 +91,9 @@ gw.onCallEvent(async (event) => {
       state.history.push({ role: 'user', content: result.text });
 
       // LLM 호출
-      const llm = new AnthropicAdapter({
-        apiKey: process.env['ANTHROPIC_API_KEY']!,
-        model: 'claude-haiku-4-5-20251001', // 최저 지연
+      const llm = new OpenAILlmAdapter({
+        apiKey: process.env['OPENAI_API_KEY']!,
+        model: 'gpt-4o-mini', // 최저 지연
       });
 
       let response = '';

@@ -61,7 +61,15 @@ gw.onCallEvent((event) => {
       caller: session.caller,
       startedAt: session.startedAt,
     });
-    console.log(`\n📞 새 콜 수신: [${session.linkedId}] ${session.caller ?? '알 수 없음'}`);
+    // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+    // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+    // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+    console.log(
+      `\n📞 새 콜 수신: [${session.linkedId}] ${session.caller ?? '알 수 없음'}\n` +
+      `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +
+      `   커스텀값2   : ${session.customValue2 ?? '없음'}\n` +
+      `   커스텀값3   : ${session.customValue3 ?? '없음'}`
+    );
 
     // 첫 번째 콜이면 자동 선택
     if (activeCalls.size === 1) {

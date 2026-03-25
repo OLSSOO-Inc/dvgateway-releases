@@ -9,7 +9,7 @@ Webhook 요청/응답 형식:
   ← {"text": "응답 텍스트"}  (또는 plain text)
 
 STT: Deepgram Nova-3
-LLM: WebhookAdapter → n8n (fallback: Claude Haiku)
+LLM: WebhookAdapter → n8n (fallback: OpenAI GPT-4o-mini)
 TTS: ElevenLabs Flash v2.5
 
 Run:
@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
-from dvgateway.adapters.llm import AnthropicAdapter, WebhookAdapter
+from dvgateway.adapters.llm import OpenAILlmAdapter, WebhookAdapter
 from dvgateway.adapters.tts import ElevenLabsAdapter
 
 load_dotenv()
@@ -44,10 +44,10 @@ async def main() -> None:
         smart_format=True,
     )
 
-    # Fallback: Webhook 장애 시 Claude Haiku로 자동 전환
-    fallback_llm = AnthropicAdapter(
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        model="claude-haiku-4-5-20251001",
+    # Fallback: Webhook 장애 시 OpenAI GPT로 자동 전환
+    fallback_llm = OpenAILlmAdapter(
+        api_key=os.environ["OPENAI_API_KEY"],
+        model="gpt-4o-mini",
         system_prompt="간단히 답변해주세요. 시스템 장애로 상세 응답이 어렵습니다.",
         max_tokens=128,
     )
@@ -68,7 +68,7 @@ async def main() -> None:
 
     print("🔗 Webhook 연동 AI 음성 봇 시작...")
     print(f"   Webhook URL: {os.environ.get('WEBHOOK_URL', '(환경변수 미설정)')}")
-    print("   Fallback:    Claude Haiku (5초 타임아웃 시 자동 전환)")
+    print("   Fallback:    OpenAI GPT-4o-mini (5초 타임아웃 시 자동 전환)")
     print()
 
     await (
@@ -76,7 +76,12 @@ async def main() -> None:
         .stt(stt)
         .llm(webhook_llm)
         .tts(tts)
-        .on_new_call(lambda s: print(f"📞 [{s.linked_id}] 콜 수신: {s.caller or '비공개'}"))
+        .on_new_call(lambda s: print(
+            f"📞 [{s.linked_id}] 콜 수신: {s.caller or '비공개'}\n"
+            f"   커스텀값1   : {s.custom_value_1 or '없음'}\n"
+            f"   커스텀값2   : {s.custom_value_2 or '없음'}\n"
+            f"   커스텀값3   : {s.custom_value_3 or '없음'}"
+        ))
         .on_transcript(
             lambda r, s: print(f'💬 [{s.linked_id}] "{r.text}"') if r.is_final else None
         )

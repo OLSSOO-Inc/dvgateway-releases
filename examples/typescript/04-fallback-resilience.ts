@@ -3,7 +3,7 @@
  *
  * AI 서비스 장애 시 자동으로 대체 서비스로 전환합니다:
  *   Deepgram 장애 → OpenAI Whisper
- *   Claude 장애 → OpenAI GPT-4o-mini
+ *   OpenAI GPT 장애 → Claude Sonnet (fallback)
  *   ElevenLabs 장애 → OpenAI TTS
  *
  * Run:
@@ -13,7 +13,7 @@
 import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
-import { AnthropicAdapter, OpenAILlmAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter, AnthropicAdapter } from 'dvgateway-adapters/llm';
 import { ElevenLabsAdapter, OpenAITtsAdapter } from 'dvgateway-adapters/tts';
 import type { SttAdapter, AudioChunk, TranscriptResult } from 'dvgateway-sdk';
 
@@ -122,21 +122,31 @@ const gw = new DVGatewayClient({
 
 console.log('🛡️  Fallback 체인 음성 봇 시작...');
 console.log('   STT:  Deepgram → Whisper (fallback)');
-console.log('   LLM:  Claude Sonnet → GPT-4o-mini (fallback)');
+console.log('   LLM:  GPT-4o-mini → Claude Sonnet (fallback)');
 console.log('   TTS:  ElevenLabs → OpenAI TTS (fallback)\n');
 
 await gw.pipeline()
   .stt(new DeepgramAdapter({ apiKey: process.env['DEEPGRAM_API_KEY']!, language: 'ko' }))
     // .fallback(new WhisperFallbackAdapter(process.env['OPENAI_API_KEY']!))  // Deepgram 장애 시
-  .llm(new AnthropicAdapter({
-    apiKey: process.env['ANTHROPIC_API_KEY']!,
-    model: 'claude-sonnet-4-6',
+  .llm(new OpenAILlmAdapter({
+    apiKey: process.env['OPENAI_API_KEY']!,
+    model: 'gpt-4o-mini',
     systemPrompt: '친절한 AI 상담원입니다. 짧게 답변하세요.',
   }))
-    // .fallback(new OpenAILlmAdapter({ apiKey: process.env['OPENAI_API_KEY']! }))  // Claude 장애 시
+    // .fallback(new AnthropicAdapter({ apiKey: process.env['ANTHROPIC_API_KEY']! }))  // GPT 장애 시
   .tts(new ElevenLabsAdapter({ apiKey: process.env['ELEVENLABS_API_KEY']!, model: 'eleven_flash_v2_5' }))
     // .fallback(new OpenAITtsAdapter({ apiKey: process.env['OPENAI_API_KEY']! }))  // ElevenLabs 장애 시
-  .onNewCall((s) => console.log(`📞 [${s.linkedId}] 콜 수신`))
+  .onNewCall((s) => {
+    console.log(
+      `📞 [${s.linkedId}] 콜 수신\n` +
+      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+      // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+      `   커스텀값1   : ${s.customValue1 ?? '없음'}\n` +
+      `   커스텀값2   : ${s.customValue2 ?? '없음'}\n` +
+      `   커스텀값3   : ${s.customValue3 ?? '없음'}`
+    );
+  })
   .onError((err, id) => console.error(`❌ [${id}]`, err.message))
   .start();
 

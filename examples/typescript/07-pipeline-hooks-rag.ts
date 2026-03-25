@@ -8,7 +8,7 @@
  *   4. maxTurns로 대화 히스토리 자동 관리
  *
  * STT: Deepgram Nova-3 (Korean)
- * LLM: Claude Sonnet 4.6 (streaming) + RAG context injection
+ * LLM: OpenAI GPT-4o-mini (streaming) + RAG context injection (Changed from Claude)
  * TTS: ElevenLabs Flash v2.5
  *
  * Architecture:
@@ -30,7 +30,8 @@ import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import type { Message, HookContext } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
-import { AnthropicAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
+// NOTE: AnthropicAdapter → OpenAILlmAdapter 변경 (GPT-4o-mini 사용)
 import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 0. 사내 시스템 시뮬레이션 ──────────────────────────────────────────────
@@ -172,9 +173,9 @@ const stt = new DeepgramAdapter({
   smartFormat: true,
 });
 
-const llm = new AnthropicAdapter({
-  apiKey: process.env['ANTHROPIC_API_KEY']!,
-  model: 'claude-sonnet-4-6',
+const llm = new OpenAILlmAdapter({
+  apiKey: process.env['OPENAI_API_KEY']!,
+  model: 'gpt-4o-mini',
   systemPrompt:
     '당신은 OLSSOO Inc.의 AI 고객 상담원입니다. ' +
     '제공된 [참고 문서]와 [고객 정보]를 활용하여 정확하게 답변하세요. ' +
@@ -204,7 +205,15 @@ await gw.pipeline()
 
   // ── onNewCall: 통화 시작 시 고객 정보 사전 조회 (1번만) ──
   .onNewCall(async (session) => {
-    console.log(`📞 [${session.linkedId}] 새 콜: ${session.caller ?? '비공개'}`);
+    console.log(
+      `📞 [${session.linkedId}] 새 콜: ${session.caller ?? '비공개'}\n` +
+      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+      // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+      `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +
+      `   커스텀값2   : ${session.customValue2 ?? '없음'}\n` +
+      `   커스텀값3   : ${session.customValue3 ?? '없음'}`
+    );
 
     // CRM에서 고객 정보 조회 (미리 캐시)
     const customer = await lookupCustomer(session.caller ?? '');

@@ -1,9 +1,9 @@
 /**
  * Example 1: Basic AI Voice Bot (Korean)
  *
- * Answers incoming calls with a Claude-powered AI assistant.
+ * Answers incoming calls with an OpenAI GPT-powered AI assistant.
  * STT: Deepgram Nova-3 (Korean)
- * LLM: Claude Sonnet 4.6 (streaming)
+ * LLM: OpenAI GPT-4o-mini (streaming)
  * TTS: ElevenLabs Flash v2.5 (Korean voice)
  *
  * Target E2E latency: < 500ms
@@ -21,7 +21,7 @@
 import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
-import { AnthropicAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
 import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────
@@ -50,9 +50,9 @@ const stt = new DeepgramAdapter({
   smartFormat:    true,               // 자동 구두점/숫자 포맷팅
 });
 
-const llm = new AnthropicAdapter({
-  apiKey:       process.env['ANTHROPIC_API_KEY']!,
-  model:        'claude-sonnet-4-6',  // 음성 봇 최적 균형
+const llm = new OpenAILlmAdapter({
+  apiKey:       process.env['OPENAI_API_KEY']!,
+  model:        'gpt-4o-mini',        // 음성 봇 최적 균형
   systemPrompt:
     '당신은 OLSSOO Inc.의 친절한 AI 고객 상담원입니다. ' +
     '답변은 TTS에 적합하게 짧고 자연스러운 구어체로 해주세요. ' +
@@ -83,7 +83,13 @@ await gw.pipeline()
       `   linkedId  : ${session.linkedId}\n` +
       `   발신자번호 : ${session.caller ?? '알 수 없음'}\n` +
       `   발신자이름 : ${session.callerName ?? '알 수 없음'}\n` +
-      `   DID 번호   : ${session.did ?? '알 수 없음'}`
+      `   DID 번호   : ${session.did ?? '알 수 없음'}\n` +
+      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
+      // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
+      `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +
+      `   커스텀값2   : ${session.customValue2 ?? '없음'}\n` +
+      `   커스텀값3   : ${session.customValue3 ?? '없음'}`
       // ── session에서 추가로 출력할 수 있는 필드 ──
       // + `\n   착신번호   : ${session.callee}`       // 착신번호 (B-leg / EXTEN)
       // + `\n   콜 ID     : ${session.callId}`        // 업무 시스템 통화 ID (CRM 등)

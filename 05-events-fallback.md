@@ -90,6 +90,68 @@ gw.pipeline()
 
 Dynamic VoIP 다이얼플랜에서 `CUSTOM_VALUE_01` ~ `CUSTOM_VALUE_03` 변수를 설정하면, AI 파이프라인의 `session` 객체에서 접근할 수 있습니다. CRM 연동, 고객 등급, 캠페인 코드 등 비즈니스 로직에 필요한 정보를 전달하는 데 사용합니다.
 
+**전체 데이터 흐름:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Dynamic VoIP Dialplan                                                  │
+│                                                                         │
+│  Set(CUSTOM_VALUE_01=홍길동)     ← 고객명 (CRM 조회 결과)               │
+│  Set(CUSTOM_VALUE_02=ORD-001)   ← 주문번호 (Originate 시 전달)         │
+│  Set(CUSTOM_VALUE_03=happycall) ← 통화 목적 (캠페인 코드)              │
+│                                                                         │
+│  Stasis(dvgateway, ..., custom_value_01=${CUSTOM_VALUE_01},             │
+│         custom_value_02=${CUSTOM_VALUE_02},                             │
+│         custom_value_03=${CUSTOM_VALUE_03})                             │
+└─────────────────┬───────────────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  DVGateway (Go 미디어 게이트웨이)                                        │
+│                                                                         │
+│  ARI ParseArgs() → CallArgs.CustomValue1/2/3                           │
+│       │                                                                 │
+│       ├─→ Registry.CallMeta  (세션 메타데이터에 저장)                    │
+│       │                                                                 │
+│       ├─→ CallInfo Hub ──→ call:new 이벤트에 포함                       │
+│       │   {                                                             │
+│       │     "event": "call:new",                                        │
+│       │     "customValue1": "홍길동",                                    │
+│       │     "customValue2": "ORD-001",                                  │
+│       │     "customValue3": "happycall"                                 │
+│       │   }                                                             │
+│       │                                                                 │
+│       ├─→ CDR Record ──→ JSON Lines / SQLite 영속 저장                  │
+│       │                                                                 │
+│       └─→ Session API ──→ GET /api/v1/sessions/{linkedId} 응답          │
+└─────────────────┬───────────────────────────────────────────────────────┘
+                  │  WebSocket (call:new 이벤트)
+                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  SDK (TypeScript / Python)                                              │
+│                                                                         │
+│  .onNewCall(async (session) => {                                        │
+│      session.customValue1   // "홍길동"      (TypeScript)               │
+│      session.customValue2   // "ORD-001"     (TypeScript)               │
+│      session.customValue3   // "happycall"   (TypeScript)               │
+│                                                                         │
+│      session.custom_value_1 // "홍길동"      (Python)                   │
+│      session.custom_value_2 // "ORD-001"     (Python)                   │
+│      session.custom_value_3 // "happycall"   (Python)                   │
+│  })                                                                     │
+│                                                                         │
+│  활용 예시:                                                              │
+│  ┌──────────────────────┬────────────────────────────────────────┐      │
+│  │ 활용 패턴             │ 코드 예시                               │      │
+│  ├──────────────────────┼────────────────────────────────────────┤      │
+│  │ TTS 인사말에 고객명    │ gw.say(id, `${cv1}님 안녕하세요`)     │      │
+│  │ LLM 프롬프트 주입     │ llm.setSystemPrompt(`고객: ${cv1}`)   │      │
+│  │ 통화 목적별 분기      │ if (cv3 === 'happycall') { ... }      │      │
+│  │ 외부 API 조회 키      │ crm.lookup(cv2) // 주문번호로 조회     │      │
+│  └──────────────────────┴────────────────────────────────────────┘      │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 **다이얼플랜 예제 (Dynamic VoIP extensions.conf):**
 
 ```ini
