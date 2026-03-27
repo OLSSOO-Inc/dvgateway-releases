@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
 from dvgateway.adapters.llm import OpenAILlmAdapter
-from dvgateway.adapters.tts import ElevenLabsAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter, GeminiTtsAdapter
 
 load_dotenv()
 
@@ -80,11 +80,18 @@ async def main() -> None:
         temperature=0.7,
     )
 
-    tts = ElevenLabsAdapter(
-        api_key=os.environ["ELEVENLABS_API_KEY"],
-        voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
-        model="eleven_flash_v2_5",
-    )
+    tts_provider = os.environ.get("TTS_PROVIDER", "gemini")
+
+    if tts_provider == "elevenlabs":
+        tts = ElevenLabsAdapter(
+            api_key=os.environ["ELEVENLABS_API_KEY"],
+            voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+            model="eleven_flash_v2_5",
+        )
+    else:
+        tts = GeminiTtsAdapter(
+            api_key=os.environ["GEMINI_API_KEY"],
+        )
 
     # ─── 3. 파이프라인 시작 ──────────────────────────────────────────────
 

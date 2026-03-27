@@ -19,7 +19,7 @@ import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
 import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
-import { ElevenLabsAdapter, CachedTtsAdapter } from 'dvgateway-adapters';
+import { ElevenLabsAdapter, GeminiTtsAdapter, CachedTtsAdapter } from 'dvgateway-adapters';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────
 
@@ -47,18 +47,26 @@ const llm = new OpenAILlmAdapter({
 });
 
 // 기본 TTS 어댑터
-const baseTts = new ElevenLabsAdapter({
-  apiKey:  process.env['ELEVENLABS_API_KEY']!,
-  voiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
-  model:   'eleven_flash_v2_5',
-});
+const ttsProvider = process.env['TTS_PROVIDER'] ?? 'gemini';
+
+const baseTts = ttsProvider === 'elevenlabs'
+  ? new ElevenLabsAdapter({
+      apiKey:  process.env['ELEVENLABS_API_KEY']!,
+      voiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
+      model:   'eleven_flash_v2_5',
+    })
+  : new GeminiTtsAdapter({
+      apiKey: process.env['GEMINI_API_KEY']!,
+    });
 
 // CachedTtsAdapter로 감싸기 — 디스크 캐시 활성화
 const tts = new CachedTtsAdapter(baseTts, {
-  provider:       'elevenlabs',
+  provider:       ttsProvider,
   cacheDir:       './tts-cache',         // 캐시 디렉토리 (재시작 후에도 유지)
-  defaultVoiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
-  defaultModel:   'eleven_flash_v2_5',
+  defaultVoiceId: ttsProvider === 'elevenlabs'
+    ? (process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM')
+    : 'Kore',
+  defaultModel:   ttsProvider === 'elevenlabs' ? 'eleven_flash_v2_5' : 'gemini-2.5-flash-tts',
   ttlMs:          7 * 24 * 60 * 60 * 1000, // 7일 TTL
   maxEntries:     500,                     // 최대 500개 캐시 항목
 });

@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
 from dvgateway.adapters.llm import OpenAILlmAdapter
-from dvgateway.adapters.tts import ElevenLabsAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter, GeminiTtsAdapter
 
 load_dotenv()
 
@@ -77,11 +77,18 @@ async def main() -> None:
     )
 
     # ── 4. TTS ───────────────────────────────────────────────────
-    tts = ElevenLabsAdapter(
-        api_key=os.environ["ELEVENLABS_API_KEY"],
-        model="eleven_flash_v2_5",
-        voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
-    )
+    tts_provider = os.environ.get("TTS_PROVIDER", "gemini")
+
+    if tts_provider == "elevenlabs":
+        tts = ElevenLabsAdapter(
+            api_key=os.environ["ELEVENLABS_API_KEY"],
+            model="eleven_flash_v2_5",
+            voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+        )
+    else:
+        tts = GeminiTtsAdapter(
+            api_key=os.environ["GEMINI_API_KEY"],
+        )
 
     # ── 5. 이벤트 핸들러 ─────────────────────────────────────────
 

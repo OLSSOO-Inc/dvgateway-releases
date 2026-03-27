@@ -32,7 +32,7 @@ import type { Message, HookContext } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
 import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
 // NOTE: AnthropicAdapter → OpenAILlmAdapter 변경 (GPT-4o-mini 사용)
-import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+import { ElevenLabsAdapter, GeminiTtsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 0. 사내 시스템 시뮬레이션 ──────────────────────────────────────────────
 
@@ -185,10 +185,16 @@ const llm = new OpenAILlmAdapter({
   temperature: 0.3, // RAG 용도로 낮은 temperature
 });
 
-const tts = new ElevenLabsAdapter({
-  apiKey: process.env['ELEVENLABS_API_KEY']!,
-  model: 'eleven_flash_v2_5',
-});
+const ttsProvider = process.env['TTS_PROVIDER'] ?? 'gemini';
+
+const tts = ttsProvider === 'elevenlabs'
+  ? new ElevenLabsAdapter({
+      apiKey: process.env['ELEVENLABS_API_KEY']!,
+      model: 'eleven_flash_v2_5',
+    })
+  : new GeminiTtsAdapter({
+      apiKey: process.env['GEMINI_API_KEY']!,
+    });
 
 // ─── 3. 통화별 고객 정보 캐시 ──────────────────────────────────────────────
 

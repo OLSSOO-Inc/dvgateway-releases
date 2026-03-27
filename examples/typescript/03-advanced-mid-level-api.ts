@@ -16,7 +16,7 @@ import 'dotenv/config';
 import { DVGatewayClient, detectVoiceActivity } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
 import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
-import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+import { ElevenLabsAdapter, GeminiTtsAdapter } from 'dvgateway-adapters/tts';
 import type { CallSession, Message } from 'dvgateway-sdk';
 
 const gw = new DVGatewayClient({
@@ -106,10 +106,15 @@ gw.onCallEvent(async (event) => {
       console.log(`🤖 [${session.linkedId}] AI: "${response}"`);
 
       // TTS 합성 및 주입
-      const tts = new ElevenLabsAdapter({
-        apiKey: process.env['ELEVENLABS_API_KEY']!,
-        model: 'eleven_flash_v2_5',
-      });
+      const ttsProvider = process.env['TTS_PROVIDER'] ?? 'gemini';
+      const tts = ttsProvider === 'elevenlabs'
+        ? new ElevenLabsAdapter({
+            apiKey: process.env['ELEVENLABS_API_KEY']!,
+            model: 'eleven_flash_v2_5',
+          })
+        : new GeminiTtsAdapter({
+            apiKey: process.env['GEMINI_API_KEY']!,
+          });
 
       state.isSpeaking = true;
       try {

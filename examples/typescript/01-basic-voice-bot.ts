@@ -22,7 +22,7 @@ import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
 import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
-import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+import { ElevenLabsAdapter, GeminiTtsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────
 
@@ -61,11 +61,17 @@ const llm = new OpenAILlmAdapter({
   temperature:  0.7,
 });
 
-const tts = new ElevenLabsAdapter({
-  apiKey:  process.env['ELEVENLABS_API_KEY']!,
-  voiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
-  model:   'eleven_flash_v2_5',       // 최저 지연 (~75ms)
-});
+const ttsProvider = process.env['TTS_PROVIDER'] ?? 'gemini';
+
+const tts = ttsProvider === 'elevenlabs'
+  ? new ElevenLabsAdapter({
+      apiKey:  process.env['ELEVENLABS_API_KEY']!,
+      voiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
+      model:   'eleven_flash_v2_5',       // 최저 지연 (~75ms)
+    })
+  : new GeminiTtsAdapter({
+      apiKey: process.env['GEMINI_API_KEY']!,
+    });
 
 // ─── 3. 파이프라인 시작 ──────────────────────────────────────────────────
 

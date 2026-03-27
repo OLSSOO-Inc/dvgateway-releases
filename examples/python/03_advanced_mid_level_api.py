@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 from dvgateway import DVGatewayClient, Message, detect_voice_activity
 from dvgateway.adapters.stt import DeepgramAdapter
 from dvgateway.adapters.llm import OpenAILlmAdapter
-from dvgateway.adapters.tts import ElevenLabsAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter, GeminiTtsAdapter
 from dvgateway.types import CallNewEvent, CallEndedEvent
 
 load_dotenv()
@@ -115,10 +115,16 @@ async def main() -> None:
         state["history"].append(Message(role="assistant", content=response))
         print(f"[{linked_id}] AI: \"{response}\"")
 
-        tts = ElevenLabsAdapter(
-            api_key=os.environ["ELEVENLABS_API_KEY"],
-            model="eleven_flash_v2_5",
-        )
+        tts_provider = os.environ.get("TTS_PROVIDER", "gemini")
+        if tts_provider == "elevenlabs":
+            tts = ElevenLabsAdapter(
+                api_key=os.environ["ELEVENLABS_API_KEY"],
+                model="eleven_flash_v2_5",
+            )
+        else:
+            tts = GeminiTtsAdapter(
+                api_key=os.environ["GEMINI_API_KEY"],
+            )
 
         state["is_speaking"] = True
         try:

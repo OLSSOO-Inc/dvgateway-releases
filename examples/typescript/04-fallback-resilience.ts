@@ -14,7 +14,7 @@ import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
 import { OpenAILlmAdapter, AnthropicAdapter } from 'dvgateway-adapters/llm';
-import { ElevenLabsAdapter, OpenAITtsAdapter } from 'dvgateway-adapters/tts';
+import { ElevenLabsAdapter, GeminiTtsAdapter, OpenAITtsAdapter } from 'dvgateway-adapters/tts';
 import type { SttAdapter, AudioChunk, TranscriptResult } from 'dvgateway-sdk';
 
 // ─── Whisper STT Fallback (HTTP polling 방식) ─────────────────────────────
@@ -134,7 +134,9 @@ await gw.pipeline()
     systemPrompt: '친절한 AI 상담원입니다. 짧게 답변하세요.',
   }))
     // .fallback(new AnthropicAdapter({ apiKey: process.env['ANTHROPIC_API_KEY']! }))  // GPT 장애 시
-  .tts(new ElevenLabsAdapter({ apiKey: process.env['ELEVENLABS_API_KEY']!, model: 'eleven_flash_v2_5' }))
+  .tts((process.env['TTS_PROVIDER'] ?? 'gemini') === 'elevenlabs'
+    ? new ElevenLabsAdapter({ apiKey: process.env['ELEVENLABS_API_KEY']!, model: 'eleven_flash_v2_5' })
+    : new GeminiTtsAdapter({ apiKey: process.env['GEMINI_API_KEY']! }))
     // .fallback(new OpenAITtsAdapter({ apiKey: process.env['OPENAI_API_KEY']! }))  // ElevenLabs 장애 시
   .onNewCall((s) => {
     console.log(

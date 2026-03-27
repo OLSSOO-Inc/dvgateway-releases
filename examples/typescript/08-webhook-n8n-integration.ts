@@ -43,7 +43,7 @@ import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
 import { OpenAILlmAdapter, WebhookAdapter } from 'dvgateway-adapters/llm';
-import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+import { ElevenLabsAdapter, GeminiTtsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────
 
@@ -109,10 +109,16 @@ const webhookLlm = new WebhookAdapter({
   },
 });
 
-const tts = new ElevenLabsAdapter({
-  apiKey: process.env['ELEVENLABS_API_KEY']!,
-  model: 'eleven_flash_v2_5',
-});
+const ttsProvider = process.env['TTS_PROVIDER'] ?? 'gemini';
+
+const tts = ttsProvider === 'elevenlabs'
+  ? new ElevenLabsAdapter({
+      apiKey: process.env['ELEVENLABS_API_KEY']!,
+      model: 'eleven_flash_v2_5',
+    })
+  : new GeminiTtsAdapter({
+      apiKey: process.env['GEMINI_API_KEY']!,
+    });
 
 // ─── 3. 파이프라인 시작 ──────────────────────────────────────────────────
 

@@ -24,7 +24,7 @@
 import 'dotenv/config';
 import * as readline from 'node:readline';
 import { DVGatewayClient } from 'dvgateway-sdk';
-import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+import { ElevenLabsAdapter, GeminiTtsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────
 
@@ -43,11 +43,17 @@ const gw = new DVGatewayClient({
 
 // ─── 2. TTS 어댑터 설정 ─────────────────────────────────────────────────────
 
-const tts = new ElevenLabsAdapter({
-  apiKey:  process.env['ELEVENLABS_API_KEY']!,
-  voiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
-  model:   'eleven_flash_v2_5',       // 최저 지연 (~75ms)
-});
+const ttsProvider = process.env['TTS_PROVIDER'] ?? 'gemini';
+
+const tts = ttsProvider === 'elevenlabs'
+  ? new ElevenLabsAdapter({
+      apiKey:  process.env['ELEVENLABS_API_KEY']!,
+      voiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
+      model:   'eleven_flash_v2_5',       // 최저 지연 (~75ms)
+    })
+  : new GeminiTtsAdapter({
+      apiKey: process.env['GEMINI_API_KEY']!,
+    });
 
 // ─── 3. 활성 콜 추적 ────────────────────────────────────────────────────────
 
@@ -254,7 +260,7 @@ rl.on('close', () => {
 
 printHelp();
 console.log('📡 게이트웨이:', process.env['DV_BASE_URL'] ?? 'http://localhost:8080');
-console.log('🔊 TTS 엔진: ElevenLabs Flash v2.5');
+console.log(`🔊 TTS 엔진: ${ttsProvider === 'elevenlabs' ? 'ElevenLabs Flash v2.5' : 'Gemini Flash TTS'}`);
 console.log('🔊 콜을 기다리는 중...\n');
 promptUser();
 

@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
 from dvgateway.adapters.llm import OpenAILlmAdapter, WebhookAdapter
-from dvgateway.adapters.tts import ElevenLabsAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter, GeminiTtsAdapter
 
 load_dotenv()
 
@@ -61,10 +61,17 @@ async def main() -> None:
         system_prompt="당신은 고객 상담 AI입니다. 짧고 명확하게 답변하세요.",
     )
 
-    tts = ElevenLabsAdapter(
-        api_key=os.environ["ELEVENLABS_API_KEY"],
-        model="eleven_flash_v2_5",
-    )
+    tts_provider = os.environ.get("TTS_PROVIDER", "gemini")
+
+    if tts_provider == "elevenlabs":
+        tts = ElevenLabsAdapter(
+            api_key=os.environ["ELEVENLABS_API_KEY"],
+            model="eleven_flash_v2_5",
+        )
+    else:
+        tts = GeminiTtsAdapter(
+            api_key=os.environ["GEMINI_API_KEY"],
+        )
 
     print("🔗 Webhook 연동 AI 음성 봇 시작...")
     print(f"   Webhook URL: {os.environ.get('WEBHOOK_URL', '(환경변수 미설정)')}")

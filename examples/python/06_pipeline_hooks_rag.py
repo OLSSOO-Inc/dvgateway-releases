@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 from dvgateway import DVGatewayClient
 from dvgateway.adapters.stt import DeepgramAdapter
 from dvgateway.adapters.llm import OpenAILlmAdapter
-from dvgateway.adapters.tts import ElevenLabsAdapter
+from dvgateway.adapters.tts import ElevenLabsAdapter, GeminiTtsAdapter
 from dvgateway.types import HookContext, HistoryOptions, Message
 
 load_dotenv()
@@ -204,10 +204,17 @@ async def main() -> None:
         temperature=0.3,
     )
 
-    tts = ElevenLabsAdapter(
-        api_key=os.environ["ELEVENLABS_API_KEY"],
-        model="eleven_flash_v2_5",
-    )
+    tts_provider = os.environ.get("TTS_PROVIDER", "gemini")
+
+    if tts_provider == "elevenlabs":
+        tts = ElevenLabsAdapter(
+            api_key=os.environ["ELEVENLABS_API_KEY"],
+            model="eleven_flash_v2_5",
+        )
+    else:
+        tts = GeminiTtsAdapter(
+            api_key=os.environ["GEMINI_API_KEY"],
+        )
 
     print("🎙️  RAG + DB 연동 AI 음성 봇 시작...\n")
 
