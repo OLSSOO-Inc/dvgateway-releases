@@ -158,36 +158,423 @@ callinfo WebSocket으로 실시간 수신:
 ## AI 어댑터
 
 ### STT (음성→텍스트)
-| 어댑터 | 패키지 |
-|--------|--------|
-| `DeepgramAdapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` |
+
+| 어댑터 | 패키지 | 설명 |
+|--------|--------|------|
+| `DeepgramAdapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` | Deepgram Nova-3 (한국어 최적) |
+| `GoogleChirp3Adapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` | Google Chirp 3 (V2 API) |
+| `OpenAISttAdapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` | OpenAI Realtime Transcription (gpt-4o-transcribe) |
+
+#### DeepgramAdapter 옵션
+
+```typescript
+// TypeScript
+import { DeepgramAdapter } from 'dvgateway-adapters/stt';
+const stt = new DeepgramAdapter({
+  apiKey: 'dg_xxx',           // 필수
+  language: 'ko',             // 기본: "ko"
+  model: 'nova-3',            // nova-3, nova-3-medical, nova-3-phonecall, enhanced, base
+  diarize: false,             // 화자 구분
+  vadEnabled: true,           // 음성 활동 감지
+  endpointingMs: 300,         // 발화 경계 감지 (ms)
+  utteranceEndMs: 800,        // 발화 종료 감지 (ms)
+  interimResults: true,       // 중간 결과
+  smartFormat: true,          // 숫자/날짜 자동 포맷
+  punctuate: true,            // 구두점
+  keywords: ['DVGateway'],    // 키워드 부스팅
+  profanityFilter: false,     // 비속어 필터
+  sentiment: false,           // 감정 분석 (Nova-3)
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.stt import DeepgramAdapter
+stt = DeepgramAdapter(
+    api_key="dg_xxx",
+    language="ko",
+    model="nova-3",
+    diarize=False,
+    endpointing_ms=500,
+    utterance_end_ms=1000,
+    interim_results=True,
+    smart_format=True,
+    keywords=["DVGateway"],
+    punctuate=True,
+    profanity_filter=False,
+    sentiment=False,
+)
+```
+
+#### GoogleChirp3Adapter 옵션
+
+```typescript
+// TypeScript
+import { GoogleChirp3Adapter } from 'dvgateway-adapters/stt';
+const stt = new GoogleChirp3Adapter({
+  apiKey: 'project_id:api_key',  // 필수 (V2: "project_id:key", V1: "key")
+  language: 'ko-KR',             // 기본: "ko-KR"
+  model: 'chirp_3',              // 기본: "chirp_3"
+  punctuate: true,               // 구두점
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.stt import GoogleChirp3Adapter
+stt = GoogleChirp3Adapter(
+    api_key="project_id:api_key",
+    language="ko-KR",
+    model="chirp_3",
+)
+```
+
+#### OpenAISttAdapter 옵션
+
+OpenAI Realtime Transcription API를 사용합니다. 서버 측 VAD로 발화 구간을 자동 감지합니다.
+
+```typescript
+// TypeScript
+import { OpenAISttAdapter } from 'dvgateway-adapters/stt';
+const stt = new OpenAISttAdapter({
+  apiKey: 'sk-xxx',               // 필수
+  language: 'ko',                  // 기본: "ko"
+  model: 'gpt-4o-transcribe',     // gpt-4o-transcribe, gpt-4o-mini-transcribe
+  vadEnabled: true,                // 서버 VAD 활성화 (기본: true)
+  vadThreshold: 0.4,               // 감도 0~1 (낮을수록 민감, 기본: 0.4)
+  silenceDurationMs: 200,          // 발화 종료 판단 무음 (ms, 기본: 200)
+  prefixPaddingMs: 200,            // 발화 시작 전 포함 오디오 (ms, 기본: 200)
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.stt import OpenAISttAdapter
+stt = OpenAISttAdapter(
+    api_key="sk-xxx",
+    language="ko",
+    model="gpt-4o-transcribe",
+    vad_enabled=True,
+    vad_threshold=0.4,
+    silence_duration_ms=200,
+    prefix_padding_ms=200,
+)
+```
 
 ### LLM (AI 대화)
-| 어댑터 | 패키지 |
-|--------|--------|
-| `AnthropicAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` |
-| `OpenAILlmAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` |
+
+| 어댑터 | 패키지 | 설명 |
+|--------|--------|------|
+| `AnthropicAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` | Anthropic Claude |
+| `OpenAILlmAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` | OpenAI GPT |
+| `WebhookAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` | n8n/Flowise/사내 API Webhook |
+
+#### AnthropicAdapter 옵션
+
+```typescript
+// TypeScript
+import { AnthropicAdapter } from 'dvgateway-adapters/llm';
+const llm = new AnthropicAdapter({
+  apiKey: 'sk-ant-xxx',                    // 필수
+  model: 'claude-sonnet-4-6',              // claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001
+  systemPrompt: '친절한 AI 상담원입니다.',    // 시스템 프롬프트
+  maxTokens: 1024,                          // 최대 출력 토큰
+  temperature: 0.7,                         // 창의성 (0~1)
+  topP: undefined,                          // nucleus sampling
+  stopSequences: [],                        // 종료 시퀀스
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.llm import AnthropicAdapter
+llm = AnthropicAdapter(
+    api_key="sk-ant-xxx",
+    model="claude-sonnet-4-6",
+    system_prompt="친절한 AI 상담원입니다.",
+    max_tokens=1024,
+    temperature=0.7,
+)
+```
+
+#### OpenAILlmAdapter 옵션
+
+```typescript
+// TypeScript
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
+const llm = new OpenAILlmAdapter({
+  apiKey: 'sk-xxx',                         // 필수
+  model: 'gpt-4o-mini',                     // gpt-4o-mini, gpt-4o, o3-mini, o1-mini
+  systemPrompt: '친절한 AI 상담원입니다.',    // 시스템 프롬프트
+  maxTokens: 1024,
+  temperature: 0.7,
+  presencePenalty: 0.0,                     // 반복 억제 (0~2)
+  frequencyPenalty: 0.0,                    // 빈도 패널티 (0~2)
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.llm import OpenAILlmAdapter
+llm = OpenAILlmAdapter(
+    api_key="sk-xxx",
+    model="gpt-4o-mini",
+    system_prompt="친절한 AI 상담원입니다.",
+    max_tokens=1024,
+    temperature=0.7,
+    presence_penalty=0.0,
+    frequency_penalty=0.0,
+)
+```
+
+#### WebhookAdapter 옵션 (n8n, Flowise, 사내 API 연동)
+
+```typescript
+// TypeScript
+import { WebhookAdapter } from 'dvgateway-adapters/llm';
+const llm = new WebhookAdapter({
+  url: 'https://n8n.example.com/webhook/voice-bot',  // 필수
+  timeout: 5000,                                       // 타임아웃 (ms)
+  secret: 'hmac-secret',                               // HMAC-SHA256 서명 키
+  headers: { 'X-Custom': 'value' },                    // 커스텀 헤더
+  systemPrompt: '상담원 봇입니다.',
+  fallback: new AnthropicAdapter({ apiKey: '...' }),   // 장애 시 폴백 어댑터
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.llm import WebhookAdapter, AnthropicAdapter
+llm = WebhookAdapter(
+    url="https://n8n.example.com/webhook/voice-bot",
+    timeout=5.0,
+    secret="hmac-secret",
+    headers={"X-Custom": "value"},
+    system_prompt="상담원 봇입니다.",
+    fallback=AnthropicAdapter(api_key="..."),
+)
+```
 
 ### TTS (텍스트→음성)
-| 어댑터 | 패키지 |
-|--------|--------|
-| `GeminiTtsAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` |
-| `ElevenLabsAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` |
-| `OpenAITtsAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` |
 
-TTS 선택: `TTS_PROVIDER` 환경변수로 `gemini` (기본) / `elevenlabs` 전환
+| 어댑터 | 패키지 | 설명 |
+|--------|--------|------|
+| `GeminiTtsAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` | Google Gemini TTS (30 음성) |
+| `ElevenLabsAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` | ElevenLabs (한국어 9 네이티브 음성) |
+| `OpenAITtsAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` | OpenAI TTS (11 음성) |
+| `CosyVoiceAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` | Alibaba CosyVoice (9 음성) |
+| `CachedTtsAdapter` | `dvgateway-adapters/tts` / `dvgateway.adapters.tts` | TTS 캐시 래퍼 (비용 절감) |
+
+#### GeminiTtsAdapter 옵션
+
+```typescript
+// TypeScript
+import { GeminiTtsAdapter, GEMINI_TTS_VOICES } from 'dvgateway-adapters/tts';
+const tts = new GeminiTtsAdapter({
+  apiKey: 'AIza_xxx',           // 필수
+  voice: 'Kore',                // 기본: "Kore" (30개 음성: Aoede, Charon, Fenrir, Kore, Puck, ...)
+  model: 'gemini-2.5-flash-tts', // gemini-2.5-flash-tts, gemini-2.5-pro-tts
+  languageCode: 'ko-KR',        // 기본: "ko-KR"
+  prompt: '밝고 친근한 톤으로',    // 스타일 제어 (선택)
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.tts import GeminiTtsAdapter, GEMINI_VOICES
+tts = GeminiTtsAdapter(
+    api_key="AIza_xxx",
+    voice="Kore",
+    model="gemini-2.5-flash-tts",
+    language="ko-KR",
+)
+```
+
+#### ElevenLabsAdapter 옵션
+
+```typescript
+// TypeScript
+import { ElevenLabsAdapter, ELEVENLABS_KOREAN_VOICES } from 'dvgateway-adapters/tts';
+const tts = new ElevenLabsAdapter({
+  apiKey: 'el_xxx',                        // 필수
+  voiceId: '21m00Tcm4TlvDq8ikWAM',        // 기본: Rachel (한국어 네이티브 9개 사용 가능)
+  model: 'eleven_multilingual_v2',          // eleven_multilingual_v2, eleven_flash_v2_5
+  stability: 0.3,                           // 안정성 (0~1)
+  similarityBoost: 0.75,                    // 유사도 (0~1)
+  style: 0.6,                               // 스타일 강도 (0~1)
+  useSpeakerBoost: true,                    // 화자 부스트
+  outputFormat: 'pcm_24000',                // 출력 포맷
+  optimizeStreamingLatency: 3,              // 0~4 (높을수록 빠름, 품질 트레이드오프)
+  humanVoice: true,                         // 한국어 최적화 프리셋 (stability/style 자동 조정)
+});
+// 한국어 네이티브 음성: ELEVENLABS_KOREAN_VOICES (9개)
+```
+
+```python
+# Python
+from dvgateway.adapters.tts import ElevenLabsAdapter, KOREAN_VOICES
+tts = ElevenLabsAdapter(
+    api_key="el_xxx",
+    voice_id="21m00Tcm4TlvDq8ikWAM",
+    model="eleven_multilingual_v2",
+    stability=0.3,
+    similarity_boost=0.75,
+    style=0.6,
+    use_speaker_boost=True,
+    output_format="pcm_24000",
+    optimize_streaming_latency=3,
+    human_voice=True,
+)
+```
+
+#### OpenAITtsAdapter 옵션
+
+```typescript
+// TypeScript
+import { OpenAITtsAdapter } from 'dvgateway-adapters/tts';
+const tts = new OpenAITtsAdapter({
+  apiKey: 'sk-xxx',                        // 필수
+  voice: 'nova',                           // alloy, echo, fable, onyx, nova, shimmer, ash, ballad, coral, sage, verse
+  model: 'gpt-4o-mini-tts',               // gpt-4o-mini-tts, tts-1
+  voiceInstructions: '밝고 친근한 톤',      // 음성 스타일 지시 (gpt-4o-mini-tts 전용)
+  humanVoice: true,                        // 한국어 최적화 프리셋
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.tts import OpenAITtsAdapter
+tts = OpenAITtsAdapter(
+    api_key="sk-xxx",
+    voice="nova",
+    model="gpt-4o-mini-tts",
+    voice_instructions="밝고 친근한 톤",
+    human_voice=True,
+)
+```
+
+#### CosyVoiceAdapter 옵션 (Alibaba)
+
+```typescript
+// TypeScript
+import { CosyVoiceAdapter, COSYVOICE_VOICES } from 'dvgateway-adapters/tts';
+const tts = new CosyVoiceAdapter({
+  apiKey: 'sk-xxx',                         // 필수 (DashScope API 키)
+  voice: 'longxiaochun',                    // longxiaochun, longyue, longwan, longjing, longshuo, longhua, longfei, longshu
+  model: 'cosyvoice-v3.5-plus',             // cosyvoice-v3.5-plus, cosyvoice-v3.5-flash
+  language: [],                              // 언어 힌트 (선택)
+  sampleRate: 16000,                         // 샘플레이트
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.tts import CosyVoiceAdapter, COSYVOICE_VOICES
+tts = CosyVoiceAdapter(
+    api_key="sk-xxx",
+    voice="longxiaochun",
+    model="cosyvoice-v3.5-plus",
+    language_hints=["ko"],
+)
+```
+
+#### CachedTtsAdapter (비용 절감 래퍼)
+
+반복 멘트(인사말, 안내문 등)를 캐시하여 TTS 비용을 절감합니다.
+
+```typescript
+// TypeScript
+import { CachedTtsAdapter, ElevenLabsAdapter } from 'dvgateway-adapters/tts';
+const inner = new ElevenLabsAdapter({ apiKey: '...' });
+const tts = new CachedTtsAdapter(inner, {
+  provider: 'elevenlabs',      // 캐시 키 구분용
+  cacheDir: './tts-cache',     // 캐시 디렉토리
+  ttlMs: 0,                    // 만료시간 (0=무제한)
+  maxEntries: 0,               // 최대 캐시 수 (0=무제한)
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.tts import CachedTtsAdapter, ElevenLabsAdapter
+inner = ElevenLabsAdapter(api_key="...")
+tts = CachedTtsAdapter(inner, provider="elevenlabs", cache_dir="./tts-cache")
+```
+
+### Realtime (음성→음성 직통)
+
+| 어댑터 | 패키지 | 설명 |
+|--------|--------|------|
+| `OpenAIRealtimeAdapter` | `dvgateway-adapters/realtime` / `dvgateway.adapters.realtime` | OpenAI Realtime API (STT+LLM+TTS 통합) |
+
+#### OpenAIRealtimeAdapter 옵션
+
+STT·LLM·TTS를 하나의 WebSocket으로 통합하여 초저지연 음성 대화를 구현합니다.
+
+```typescript
+// TypeScript
+import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+const realtime = new OpenAIRealtimeAdapter({
+  apiKey: 'sk-xxx',                               // 필수
+  model: 'gpt-4o-realtime-preview',               // gpt-4o-realtime-preview, gpt-4o-mini-realtime-preview
+  voice: 'alloy',                                  // alloy, echo, fable, onyx, nova, shimmer, ash, ballad, coral, sage, verse
+  instructions: '친절한 한국어 AI 상담원입니다.',     // 시스템 지시
+  inputTranscription: true,                        // 입력 텍스트 변환
+  temperature: 0.8,
+  maxResponseTokens: 'inf',                        // 최대 응답 토큰 ("inf" = 무제한)
+  turnDetection: {                                  // VAD 설정
+    mode: 'server_vad',                            // "server_vad" | "none"
+    threshold: 0.5,                                // 감도 (0~1)
+    prefixPaddingMs: 300,
+    silenceDurationMs: 200,
+  },
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter
+realtime = OpenAIRealtimeAdapter(
+    api_key="sk-xxx",
+    model="gpt-4o-realtime-preview",
+    voice="alloy",
+    instructions="친절한 한국어 AI 상담원입니다.",
+    input_transcription=True,
+    temperature=0.8,
+    max_response_tokens="inf",
+    turn_detection={
+        "mode": "server_vad",
+        "threshold": 0.5,
+        "prefix_padding_ms": 300,
+        "silence_duration_ms": 200,
+    },
+)
+```
+
+TTS 선택 가이드: `GEMINI` (가성비·30음성) / `ELEVENLABS` (최고 품질·한국어 네이티브) / `OPENAI` (voiceInstructions·스타일 제어) / `COSYVOICE` (중국어 특화·저비용)
 
 ---
 
 ## 환경변수
 
 ```bash
-DV_BASE_URL=http://localhost:8080   # 게이트웨이 API 주소
+# 게이트웨이 연결
+DV_BASE_URL=http://localhost:8080    # 게이트웨이 API 주소
 DV_API_KEY=dvgw_xxx                  # SDK API 키
-DEEPGRAM_API_KEY=dg_xxx              # STT
-ANTHROPIC_API_KEY=sk-ant-xxx         # LLM
-GEMINI_API_KEY=AIza_xxx              # TTS (Gemini)
-TTS_PROVIDER=gemini                   # gemini 또는 elevenlabs
+
+# STT 프로바이더
+DEEPGRAM_API_KEY=dg_xxx              # Deepgram
+GOOGLE_STT_API_KEY=project:key       # Google Chirp3 (V2: "project_id:key")
+
+# LLM 프로바이더
+ANTHROPIC_API_KEY=sk-ant-xxx         # Anthropic Claude
+OPENAI_API_KEY=sk-xxx                # OpenAI GPT (LLM + TTS + STT + Realtime 공용)
+
+# TTS 프로바이더
+GEMINI_API_KEY=AIza_xxx              # Google Gemini TTS
+ELEVENLABS_API_KEY=el_xxx            # ElevenLabs
+COSYVOICE_API_KEY=sk-xxx             # Alibaba CosyVoice (DashScope)
+TTS_PROVIDER=gemini                  # gemini / elevenlabs / openai / cosyvoice
 ```
 
 ---
