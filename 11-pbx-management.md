@@ -443,7 +443,59 @@ await asyncio.sleep(3600)
 
 ---
 
-## 6. DID별 동시통화 제한하기
+## 6. Early Media (응답 전 안내음)
+
+전화 응답(Answer) 전에 안내음을 재생합니다. DID별로 설정합니다.
+
+### TypeScript
+
+```typescript
+// 조회
+const config = await gw.getEarlyMedia('07045144801', 'tenant-id');
+
+// 음원 URL + 활성화 (MP3 → 자동 WAV 변환)
+await gw.setEarlyMedia('07045144801', {
+  enabled: 'yes',
+  audioUrl: 'https://www.makecall.io/greeting.mp3',
+}, 'tenant-id');
+
+// 비활성화만 (음원 유지)
+await gw.setEarlyMedia('07045144801', { enabled: 'no' }, 'tenant-id');
+
+// 다시 활성화
+await gw.setEarlyMedia('07045144801', { enabled: 'yes' }, 'tenant-id');
+
+// 음원만 교체
+await gw.setEarlyMedia('07045144801', {
+  audioUrl: 'https://cdn.example.com/new-greeting.mp3',
+}, 'tenant-id');
+```
+
+### Python
+
+```python
+# 조회
+config = await gw.get_early_media("07045144801", tenant_id="tenant-id")
+
+# 음원 URL + 활성화
+await gw.set_early_media("07045144801",
+    enabled="yes",
+    audio_url="https://www.makecall.io/greeting.mp3",
+    tenant_id="tenant-id")
+
+# 비활성화만 (음원 유지)
+await gw.set_early_media("07045144801", enabled="no", tenant_id="tenant-id")
+
+# 다시 활성화
+await gw.set_early_media("07045144801", enabled="yes", tenant_id="tenant-id")
+```
+
+> 음원은 MP3, OGG, FLAC, WAV 등 어떤 형식이든 Asterisk 호환 WAV (8kHz mono PCM)로 자동 변환됩니다.
+> 파일 저장 경로: `/var/spool/asterisk/{tenantId}/pa/{extension}/pamsg.wav`
+
+---
+
+## 7. DID별 동시통화 제한하기
 
 DVGateway는 **글로벌(라이선스)** 및 **테넌트별** 동시통화 제한을 제공합니다.
 **DID별** 동시통화 제한은 SDK 사용자가 비즈니스 로직으로 구현합니다.
