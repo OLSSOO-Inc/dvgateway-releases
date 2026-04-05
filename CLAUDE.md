@@ -551,6 +551,134 @@ realtime = OpenAIRealtimeAdapter(
 )
 ```
 
+#### S2S vs 기존 파이프라인 비교
+
+| | 기존 파이프라인 (STT→LLM→TTS) | S2S (OpenAI Realtime) |
+|---|---|---|
+| 구성 | STT + LLM + TTS 어댑터 3개 | `OpenAIRealtimeAdapter` 1개 |
+| API 키 | 프로바이더별 개별 키 | OpenAI 키 1개 |
+| 레이턴시 | ~500ms+ (3-hop) | ~300ms (단일 WebSocket) |
+| LLM 선택 | Claude, GPT, Webhook 등 | GPT-4o 전용 |
+| TTS 음색 | ElevenLabs 커스텀, Gemini 30종 등 | OpenAI 내장 11종 |
+| STT 모델 | Deepgram, Google Chirp3 등 | Whisper-1 고정 |
+| 파이프라인 훅 | onBeforeChat/onAfterChat 지원 | 불가 (중간 텍스트 접근 불가) |
+| 비용 | 프로바이더별 개별 과금 | 오디오 토큰 기반 통합 과금 |
+
+#### S2S 완전한 사용 예제
+
+```typescript
+// TypeScript — S2S 음성 봇 (STT/LLM/TTS 설정 불필요)
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+
+const gw = new DVGatewayClient({
+  baseUrl: process.env['DV_BASE_URL']!,
+  auth: { type: 'apiKey', apiKey: process.env['DV_API_KEY']! },
+});
+
+const realtime = new OpenAIRealtimeAdapter({
+  apiKey: process.env['OPENAI_API_KEY']!,
+  model: 'gpt-4o-realtime-preview',
+  voice: 'nova',
+  instructions: '당신은 친절한 한국어 음성 어시스턴트입니다. 짧고 명확하게 답변하세요.',
+  turnDetection: { mode: 'server_vad', threshold: 0.5, silenceDurationMs: 200 },
+});
+
+// AI 응답 오디오 → 통화 채널에 주입
+realtime.onAudioOutput(async (pcm16k, linkedId) => {
+  await gw.injectTTS(linkedId, pcm16k);
+});
+
+// 전사 결과 수신 (speaker: 'customer' | 'agent')
+realtime.onTranscript((result) => {
+  console.log(`[${result.speaker}] ${result.text}`);
+});
+
+realtime.onError((err, linkedId) => {
+  console.error(`[S2S ERROR] ${linkedId}: ${err.message}`);
+});
+
+// 통화 이벤트 구독
+gw.onCallInfo(async (event) => {
+  if (event.type === 'call:new') {
+    const stream = gw.streamAudio(event.linkedId, { dir: 'both' });
+    await realtime.startSession(event.linkedId, stream);
+  }
+  if (event.type === 'call:ended') {
+    await realtime.stop(event.linkedId);
+  }
+});
+
+await gw.connect();
+```
+
+```python
+# Python — S2S 음성 봇
+import asyncio, os
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter
+
+gw = DVGatewayClient(
+    base_url=os.environ["DV_BASE_URL"],
+    auth={"type": "apiKey", "api_key": os.environ["DV_API_KEY"]},
+)
+
+realtime = OpenAIRealtimeAdapter(
+    api_key=os.environ["OPENAI_API_KEY"],
+    model="gpt-4o-realtime-preview",
+    voice="nova",
+    instructions="당신은 친절한 한국어 음성 어시스턴트입니다. 짧고 명확하게 답변하세요.",
+    turn_detection={"mode": "server_vad", "threshold": 0.5, "silence_duration_ms": 200},
+)
+
+def on_audio(pcm16k: bytes, linked_id: str):
+    asyncio.ensure_future(gw.inject_tts(linked_id, pcm16k))
+
+realtime.on_audio_output(on_audio)
+realtime.on_transcript(lambda r: print(f"[{r.speaker}] {r.text}"))
+realtime.on_error(lambda err, lid: print(f"[S2S ERROR] {lid}: {err}"))
+
+async def on_call(event):
+    if event["type"] == "call:new":
+        stream = gw.stream_audio(event["linkedId"], dir="both")
+        await realtime.start_session(event["linkedId"], stream)
+    elif event["type"] == "call:ended":
+        await realtime.stop(event["linkedId"])
+
+gw.on_call_info(on_call)
+asyncio.run(gw.connect())
+```
+
+#### S2S 채널에 별도 TTS 삽입
+
+S2S 진행 중 별도 TTS 오디오(공지, 안내음 등)를 삽입할 수 있지만, S2S 응답 오디오와 겹침 방지를 위해 진행 중인 응답을 먼저 취소해야 합니다.
+
+```typescript
+// S2S 응답 중단 → 별도 TTS 삽입 → 재개
+// 주의: 현재 어댑터는 내부 WebSocket을 직접 노출하지 않으므로,
+// response.cancel이 필요한 경우 어댑터를 확장하거나
+// S2S가 응답하지 않는 타이밍에 삽입하세요.
+
+// 방법 1: S2S 미응답 구간에 삽입 (안전)
+await gw.injectTTS(linkedId, announcementPcm);
+
+// 방법 2: S2S 세션 일시 정지 후 삽입
+await realtime.stop(linkedId);          // S2S 세션 종료
+await gw.injectTTS(linkedId, announcePcm); // TTS 삽입
+// 필요 시 S2S 세션 재시작
+const stream = gw.streamAudio(linkedId, { dir: 'both' });
+await realtime.startSession(linkedId, stream);
+```
+
+#### 대시보드 S2S 설정
+
+게이트웨이 대시보드에서 S2S를 설정할 수 있습니다:
+
+1. **프로바이더 API 키** 탭 → S2S (Speech-to-Speech) 섹션 → OpenAI Realtime API 활성화 + API 키 입력
+2. **파이프라인 설정** 탭 → S2S 모드 활성화 → 프로바이더, 모델, 음성, 시스템 지시 설정
+
+대시보드에서 설정하면 SDK에서 `GET /api/v1/config/pipeline`으로 설정을 가져와 자동 적용할 수 있습니다.
+
 TTS 선택 가이드: `GEMINI` (가성비·30음성) / `ELEVENLABS` (최고 품질·한국어 네이티브) / `OPENAI` (voiceInstructions·스타일 제어) / `COSYVOICE` (중국어 특화·저비용)
 
 ---
@@ -599,4 +727,4 @@ TTS_PROVIDER=gemini                  # gemini / elevenlabs / openai / cosyvoice
 
 ---
 
-_최종 업데이트: 2026-04-03_
+_최종 업데이트: 2026-04-05_
