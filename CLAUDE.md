@@ -520,6 +520,7 @@ const realtime = new OpenAIRealtimeAdapter({
   voice: 'alloy',                                  // alloy, echo, fable, onyx, nova, shimmer, ash, ballad, coral, sage, verse
   instructions: '친절한 한국어 AI 상담원입니다.',     // 시스템 지시
   inputTranscription: true,                        // 입력 텍스트 변환
+  language: 'ko',                                   // 전사 언어 힌트 (BCP-47: "ko", "en", "ja" 등, 미설정 시 자동 감지)
   temperature: 0.8,
   maxResponseTokens: 'inf',                        // 최대 응답 토큰 ("inf" = 무제한)
   turnDetection: {                                  // VAD 설정
@@ -533,21 +534,29 @@ const realtime = new OpenAIRealtimeAdapter({
 
 ```python
 # Python
-from dvgateway.adapters.realtime import OpenAIRealtimeAdapter
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter, OpenAIRealtimeTurnDetectionOptions
+
 realtime = OpenAIRealtimeAdapter(
     api_key="sk-xxx",
     model="gpt-4o-realtime-preview",
     voice="alloy",
     instructions="친절한 한국어 AI 상담원입니다.",
     input_transcription=True,
+    language="ko",               # 전사 언어 힌트 (BCP-47, 미설정 시 자동 감지)
     temperature=0.8,
     max_response_tokens="inf",
-    turn_detection={
+    # turn_detection: dict 또는 OpenAIRealtimeTurnDetectionOptions 모두 가능
+    turn_detection={                          # dict 방식 ✅
         "mode": "server_vad",
         "threshold": 0.5,
         "prefix_padding_ms": 300,
         "silence_duration_ms": 200,
     },
+    # 또는 dataclass 방식:
+    # turn_detection=OpenAIRealtimeTurnDetectionOptions(
+    #     mode="server_vad", threshold=0.5,
+    #     prefix_padding_ms=300, silence_duration_ms=200,
+    # ),
 )
 ```
 
@@ -581,6 +590,7 @@ const realtime = new OpenAIRealtimeAdapter({
   model: 'gpt-4o-realtime-preview',
   voice: 'nova',
   instructions: '당신은 친절한 한국어 음성 어시스턴트입니다. 짧고 명확하게 답변하세요.',
+  language: 'ko',
   turnDetection: { mode: 'server_vad', threshold: 0.5, silenceDurationMs: 200 },
 });
 
@@ -628,6 +638,7 @@ realtime = OpenAIRealtimeAdapter(
     model="gpt-4o-realtime-preview",
     voice="nova",
     instructions="당신은 친절한 한국어 음성 어시스턴트입니다. 짧고 명확하게 답변하세요.",
+    language="ko",
     turn_detection={"mode": "server_vad", "threshold": 0.5, "silence_duration_ms": 200},
 )
 
@@ -727,4 +738,4 @@ TTS_PROVIDER=gemini                  # gemini / elevenlabs / openai / cosyvoice
 
 ---
 
-_최종 업데이트: 2026-04-05_
+_최종 업데이트: 2026-04-06_
