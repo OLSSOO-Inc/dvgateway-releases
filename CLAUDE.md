@@ -690,6 +690,111 @@ await realtime.startSession(linkedId, stream);
 
 대시보드에서 설정하면 SDK에서 `GET /api/v1/config/pipeline`으로 설정을 가져와 자동 적용할 수 있습니다.
 
+#### S2S Tool Calling (Function Calling)
+
+S2S 세션에서 모델이 외부 함수를 호출할 수 있습니다. DB 조회, API 호출, 주문 처리 등에 활용합니다.
+
+```typescript
+// TypeScript — S2S + Tool Calling
+import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+import type { OpenAIRealtimeTool, RealtimeToolCall } from 'dvgateway-adapters/realtime';
+
+const tools: OpenAIRealtimeTool[] = [
+  {
+    type: 'function',
+    name: 'lookup_order',
+    description: '주문번호로 주문 상태를 조회합니다.',
+    parameters: {
+      type: 'object',
+      properties: {
+        order_id: { type: 'string', description: '주문번호' },
+      },
+      required: ['order_id'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'transfer_agent',
+    description: '상담원에게 통화를 전환합니다.',
+    parameters: {
+      type: 'object',
+      properties: {
+        department: { type: 'string', description: '부서명 (예: 배송, 결제, 반품)' },
+      },
+      required: ['department'],
+    },
+  },
+];
+
+const realtime = new OpenAIRealtimeAdapter({
+  apiKey: process.env['OPENAI_API_KEY']!,
+  model: 'gpt-4o-realtime-preview',
+  voice: 'nova',
+  language: 'ko',
+  instructions: '주문 관련 문의 시 lookup_order를 호출하세요. 상담원 요청 시 transfer_agent를 호출하세요.',
+  tools,
+  toolChoice: 'auto',   // "auto" | "none" | "required" | { type: "function", name: "fn" }
+});
+
+// 모델이 함수 호출 시 실행
+realtime.onToolCall(async (call: RealtimeToolCall) => {
+  console.log(`[TOOL] ${call.name}(${JSON.stringify(call.args)})`);
+
+  if (call.name === 'lookup_order') {
+    const status = await db.getOrderStatus(call.args.order_id as string);
+    realtime.submitToolResult(call.linkedId, call.callId, { status, eta: '2일 후 도착' });
+  }
+  if (call.name === 'transfer_agent') {
+    realtime.submitToolResult(call.linkedId, call.callId, { transferred: true });
+    // 실제 전환 로직...
+  }
+});
+```
+
+```python
+# Python — S2S + Tool Calling
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter, RealtimeToolCall
+
+tools = [
+    {
+        "type": "function",
+        "name": "lookup_order",
+        "description": "주문번호로 주문 상태를 조회합니다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string", "description": "주문번호"},
+            },
+            "required": ["order_id"],
+        },
+    },
+]
+
+realtime = OpenAIRealtimeAdapter(
+    api_key=os.environ["OPENAI_API_KEY"],
+    model="gpt-4o-realtime-preview",
+    voice="nova",
+    language="ko",
+    instructions="주문 관련 문의 시 lookup_order를 호출하세요.",
+    tools=tools,              # list[dict] 또는 list[OpenAIRealtimeTool]
+    tool_choice="auto",       # "auto" | "none" | "required" | {"type":"function","name":"fn"}
+)
+
+def handle_tool_call(call: RealtimeToolCall):
+    print(f"[TOOL] {call.name}({call.args})")
+    if call.name == "lookup_order":
+        status = db.get_order_status(call.args["order_id"])
+        realtime.submit_tool_result(call.linked_id, call.call_id, {"status": status})
+
+realtime.on_tool_call(handle_tool_call)
+```
+
+**Tool Calling 흐름:**
+1. 사용자 발화 → 모델이 함수 호출 필요 판단
+2. `onToolCall` / `on_tool_call` 핸들러 호출 (callId, name, args 전달)
+3. 함수 실행 후 `submitToolResult` / `submit_tool_result`로 결과 반환
+4. 모델이 결과를 반영하여 음성 응답 생성
+
 TTS 선택 가이드: `GEMINI` (가성비·30음성) / `ELEVENLABS` (최고 품질·한국어 네이티브) / `OPENAI` (voiceInstructions·스타일 제어) / `COSYVOICE` (중국어 특화·저비용)
 
 ---
