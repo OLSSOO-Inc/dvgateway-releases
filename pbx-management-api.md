@@ -658,10 +658,18 @@ curl -H "Authorization: Bearer $TOKEN" \
   "did": "07007045144801",
   "enabled": "yes",
   "audioUrl": "https://www.makecall.io/demo-echotest.mp3",
+  "source": "url",
+  "ttsText": "",
+  "ttsProvider": "",
+  "ttsVoice": "",
   "localPath": "/var/spool/asterisk/7be69580e27641df/pa/07045144801/pamsg.wav",
   "fileExists": true
 }
 ```
+
+`source` 필드는 음원의 출처를 나타냅니다:
+- `"url"` — 외부 URL에서 다운로드
+- `"tts"` — 클라우드 TTS로 합성
 
 ### 6.2 Early Media 설정 (음원 URL + 활성화)
 
@@ -682,6 +690,7 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
   "did": "07007045144801",
   "enabled": "yes",
   "audioUrl": "https://www.makecall.io/demo-echotest.mp3",
+  "source": "url",
   "downloaded": true
 }
 ```
@@ -692,6 +701,7 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 |------|:----:|:----:|------|
 | `enabled` | string | - | `"yes"` 또는 `"no"` |
 | `audioUrl` | string | - | 음원 URL (mp3/wav/ogg/flac — 8kHz mono WAV로 자동 변환) |
+| `tts` | object | - | TTS 합성 (아래 6.5 참고). `audioUrl`과 동시 사용 불가 |
 
 ### 6.3 Early Media 활성화/비활성화만 변경
 
@@ -722,6 +732,57 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -d '{"audioUrl":"https://cdn.example.com/new-greeting.mp3"}'
 ```
 
+### 6.5 TTS 합성으로 Early Media 설정
+
+텍스트만 보내면 클라우드 TTS로 합성된 음성이 Early Media로 등록됩니다. 음원 파일을 따로 준비할 필요가 없습니다.
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=7be69580e27641df" \
+  -d '{
+    "enabled": "yes",
+    "tts": {
+      "text": "안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.",
+      "provider": "elevenlabs"
+    }
+  }'
+```
+
+**응답:**
+```json
+{
+  "ok": true,
+  "extension": "07045144801",
+  "did": "07007045144801",
+  "enabled": "yes",
+  "source": "tts",
+  "synthesized": true,
+  "ttsProvider": "elevenlabs",
+  "ttsVoice": "9BWtsMINqrJLrRacOk9x"
+}
+```
+
+**TTS 객체 필드:**
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|:----:|:----:|------|
+| `text` | string | ✅ | 합성할 텍스트 |
+| `provider` | string | - | `google` / `openai` / `elevenlabs` / `azure` / `aws` / `gemini` / `cosyvoice` / `qwen`. 미지정 시 대시보드의 primary 프로바이더 사용 |
+| `voice` | string | - | 음성 ID. 미지정 시 대시보드 설정 또는 프로바이더 기본값 사용 |
+
+**중요:**
+- API 키는 본 요청에 포함하지 않습니다. 대시보드 **프로바이더 API 키** 탭에서 테넌트별로 사전 등록된 키가 자동 사용됩니다.
+- `audioUrl`과 `tts`는 **동시 사용 불가**입니다. 하나만 선택하세요.
+- 합성된 음성은 자동으로 8kHz mono WAV로 변환되어 동일한 경로(`pamsg.wav`)에 저장됩니다.
+- TTS 메타데이터(`text`, `provider`, `voice`)는 AstDB에 저장되어 GET 응답과 재합성에 활용됩니다.
+
+**대시보드에서 TTS 키 사전 등록:**
+
+1. 대시보드 → **⚙ Dynamic VoIP 설정** → **🔑 프로바이더 API 키** 탭
+2. **TTS (Text-to-Speech)** 섹션에서 사용할 프로바이더 활성화 + API 키 입력
+3. **1순위 사용**으로 설정하면 `provider` 미지정 시 자동 선택됨
+
 ### SDK 사용법
 
 **TypeScript:**
@@ -729,12 +790,21 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 // 조회
 const config = await gw.getEarlyMedia('07045144801', 'tenant-id');
 console.log(config);
-// { enabled: "yes", audioUrl: "https://...", fileExists: true }
+// { enabled: "yes", audioUrl: "https://...", source: "url", fileExists: true }
 
 // 음원 URL + 활성화 설정
 await gw.setEarlyMedia('07045144801', {
   enabled: 'yes',
   audioUrl: 'https://www.makecall.io/demo-echotest.mp3',
+}, 'tenant-id');
+
+// TTS로 설정 (대시보드 프로바이더 키 사용)
+await gw.setEarlyMedia('07045144801', {
+  enabled: 'yes',
+  tts: {
+    text: '안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.',
+    provider: 'elevenlabs',  // optional
+  },
 }, 'tenant-id');
 
 // 비활성화만 (음원 유지)
@@ -760,6 +830,15 @@ await gw.set_early_media("07045144801",
     audio_url="https://www.makecall.io/demo-echotest.mp3",
     tenant_id="tenant-id")
 
+# TTS로 설정
+await gw.set_early_media("07045144801",
+    enabled="yes",
+    tts={
+        "text": "안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.",
+        "provider": "elevenlabs",  # optional
+    },
+    tenant_id="tenant-id")
+
 # 비활성화만 (음원 유지)
 await gw.set_early_media("07045144801", enabled="no", tenant_id="tenant-id")
 
@@ -775,8 +854,12 @@ await gw.set_early_media("07045144801",
 ### AstDB 저장 구조
 
 ```
-/{tenantId}/earlymedia/{extension}/enabled    → yes | no
-/{tenantId}/earlymedia/{extension}/audio_url  → https://...
+/{tenantId}/earlymedia/{extension}/enabled       → yes | no
+/{tenantId}/earlymedia/{extension}/audio_url     → https://... (url 모드)
+/{tenantId}/earlymedia/{extension}/source        → url | tts
+/{tenantId}/earlymedia/{extension}/tts_text      → 합성된 텍스트 (tts 모드)
+/{tenantId}/earlymedia/{extension}/tts_provider  → elevenlabs/openai/google/... (tts 모드)
+/{tenantId}/earlymedia/{extension}/tts_voice     → 사용된 voice ID (tts 모드)
 ```
 
 ### 음원 파일 변환

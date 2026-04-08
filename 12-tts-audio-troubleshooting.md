@@ -190,6 +190,11 @@ journalctl -u dvgateway --since "10 min ago" | grep "first audio frame linkedid=
 - `rms=0.01~0.3`: 정상 범위
 - `rms=0.3+`: 매우 큰 입력 (클리핑 가능성)
 
+> **Click-to-Call (아웃바운드) 통화 주의:**
+> 클릭투콜은 Local 채널을 사용하므로 다이얼플랜에서 **`[dvgateway-both-monitor]`** 컨텍스트를 호출해야 합니다 (인바운드 `[dvgateway-both]`와 다른 컨텍스트). 이 컨텍스트는 v1.3.7+에서 게이트웨이 시작 시 자동으로 `/etc/asterisk/dvgateway/extensions__10-dvgateway.conf`에 추가됩니다. 추가 후에는 `asterisk -rx 'dialplan reload'`만 실행하면 됩니다.
+>
+> Snoop은 Local 채널의 audiohook을 통해 양방향 오디오를 캡처하며, **별도의 `JITTERBUFFER`나 `AUDIOHOOK_INHERIT` 설정은 필요하지 않습니다.** 이전 버전에서 `Set(JITTERBUFFER(fixed)=default)` 워크어라운드를 사용했다면 v1.3.7+에서는 제거해도 됩니다.
+
 ```bash
 # AI 클라이언트 연결 확인 (Gateway → SDK)
 journalctl -u dvgateway --since "10 min ago" | grep "\[WS-DS\].*linkedid=<linkedId>"

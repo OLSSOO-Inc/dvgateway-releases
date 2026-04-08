@@ -89,10 +89,37 @@ await gw.pipeline().stt(stt).llm(llm).tts(tts).start()
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `getEarlyMedia(ext, tenantId?)` | `get_early_media(ext, tenant_id)` | Early Media 설정 조회 |
-| `setEarlyMedia(ext, {enabled,audioUrl})` | `set_early_media(ext, enabled, audio_url)` | Early Media 설정/변경 |
+| `setEarlyMedia(ext, {enabled,audioUrl,tts})` | `set_early_media(ext, enabled, audio_url, tts)` | Early Media 설정/변경 (URL 또는 TTS) |
 
-> `audioUrl` 설정 시 자동 다운로드 + ffmpeg WAV 변환 (8kHz mono PCM)
-> 저장 경로: `/var/spool/asterisk/{tenantId}/pa/{extension}/pamsg.wav`
+두 가지 음원 모드 (택일):
+- **`audioUrl`**: 외부 URL 자동 다운로드 + ffmpeg WAV 변환 (8kHz mono PCM)
+- **`tts`**: 클라우드 TTS로 합성 — 대시보드 **프로바이더 API 키** 탭의 테넌트별 키 자동 사용
+
+```typescript
+// TypeScript — TTS로 Early Media 설정
+await gw.setEarlyMedia('07045144801', {
+  enabled: 'yes',
+  tts: {
+    text: '안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.',
+    provider: 'elevenlabs',  // optional, 미지정 시 대시보드 primary 사용
+    voice: '9BWtsMINqrJLrRacOk9x',  // optional
+  },
+}, 'tenant-id');
+```
+
+```python
+# Python — TTS로 Early Media 설정
+await gw.set_early_media("07045144801",
+    enabled="yes",
+    tts={
+        "text": "안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.",
+        "provider": "elevenlabs",  # optional
+    },
+    tenant_id="tenant-id")
+```
+
+> 저장 경로 (URL/TTS 동일): `/var/spool/asterisk/{tenantId}/pa/{extension}/pamsg.wav`
+> TTS 메타데이터(text/provider/voice)는 AstDB에 저장되어 GET 응답에 포함됨
 
 ### 캠페인 (예약/동보/주기 발신)
 | TypeScript | Python | 설명 |
