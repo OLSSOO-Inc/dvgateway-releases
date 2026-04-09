@@ -13,6 +13,27 @@
 | TypeScript | `dvgateway-sdk` + `dvgateway-adapters` | `npm install dvgateway-sdk dvgateway-adapters` |
 | Python | `dvgateway-python` | `pip install dvgateway-python` |
 
+### 버전 호환성 및 알려진 이슈
+
+| 버전 | 상태 | 비고 |
+|------|------|------|
+| `1.3.5` | ✅ 안정 | 권장 안정 버전 (마지막으로 검증된 릴리즈) |
+| `1.3.6` | ⚠️ | 중간 릴리즈 |
+| `1.3.7` | ❌ 버그 | `OpenAIRealtimeAdapter` 오디오 입력 타입 불일치 — S2S 세션에서 오디오가 조용히 끊김 |
+| `1.3.8+` | ✅ 수정 | v1.3.7의 audio_in 타입 불일치 및 background task 사일런트 실패 수정 |
+
+**v1.3.7 버그 상세:**
+- `OpenAIRealtimeAdapter._pipe_audio_in()`이 `chunk.samples` (AudioChunk)를 기대하지만, 실제로는 `bytes`가 전달되는 경우가 있어 `AttributeError`로 background task가 사일런트 종료됨
+- `on_error` 콜백으로 예외가 전파되지 않아 진단이 어려움
+
+**워크어라운드 (v1.3.8 릴리즈 전):**
+```bash
+# Python: 이전 안정 버전 고정
+pip install dvgateway-python==1.3.5
+```
+
+v1.3.8부터는 `_pipe_audio_in`이 `bytes` / `bytearray` / `memoryview` / `AudioChunk`를 모두 받아들이며, task 예외가 `on_error` 핸들러 또는 stderr로 표면화됩니다.
+
 ---
 
 ## 클라이언트 초기화
