@@ -159,9 +159,13 @@ await gw.set_early_media("07045144801",
 ### 오디오/TTS
 | TypeScript | Python | 설명 |
 |------------|--------|------|
+| `streamAudio(linkedId, { dir, pipelineType })` | `stream_audio(linked_id, dir, pipeline_type)` | 통화 오디오 수신 스트림. `pipelineType: 's2s'`로 S2S 모드 선언 |
 | `injectTts(linkedId, audio)` | `inject_tts(linked_id, audio)` | TTS 오디오 주입 |
 | `say(linkedId, text, tts)` | `say(linked_id, text, tts)` | 텍스트→음성 재생 |
 | `broadcastTts(confId, audio)` | `broadcast_tts(conf_id, audio)` | 회의 전체 방송 |
+| `startThinking(linkedId)` | `start_thinking(linked_id)` | Comfort noise 시작 (dead air 방지) |
+| `stopThinking(linkedId)` | `stop_thinking(linked_id)` | Comfort noise 종료 |
+| `postVad(linkedId, side, speaking)` | `post_vad(linked_id, side, speaking)` | 대시보드 VAD 인디케이터 전달 (OpenAI Realtime VAD 등) |
 
 ### 이벤트/세션
 | TypeScript | Python | 설명 |
@@ -728,6 +732,129 @@ await gw.injectTTS(linkedId, announcePcm); // TTS 삽입
 const stream = gw.streamAudio(linkedId, { dir: 'both' });
 await realtime.startSession(linkedId, stream);
 ```
+
+#### S2S 대시보드 VU/VAD 통합 (v1.4+)
+
+S2S 모드에서 대시보드의 수신자(Callee) VU가 "AI" 스타일로 렌더되고, OpenAI Realtime 서버 VAD 이벤트가 대시보드 VAD 인디케이터로 직접 전달되도록 설정합니다. 이를 통해 운영자가 통화 카드에서 즉시 "AI 세션", "AI 발화 중(ducking)", "고객 발화 중(authoritative VAD)"를 구분할 수 있습니다.
+
+**필수 설정**: `streamAudio`/`stream_audio` 호출 시 `pipelineType: 's2s'`를 선언해야 합니다. 선언하지 않으면 callee VU가 비어 있는 것처럼 보입니다(S2S 특성상 실제 상담원이 없으므로).
+
+```typescript
+// TypeScript — 완전한 S2S + 대시보드 VU/VAD 통합
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+
+const gw = new DVGatewayClient({
+  baseUrl: process.env['DV_BASE_URL']!,
+  auth: { type: 'apiKey', apiKey: process.env['DV_API_KEY']! },
+});
+
+const realtime = new OpenAIRealtimeAdapter({
+  apiKey: process.env['OPENAI_API_KEY']!,
+  model: 'gpt-4o-realtime-preview',
+  voice: 'nova',
+  language: 'ko',
+  turnDetection: { mode: 'server_vad' }, // ← 필수: VAD 이벤트 수신
+});
+
+// AI 응답 오디오 → 통화 채널
+realtime.onAudioOutput(async (pcm16k, linkedId) => {
+  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
+});
+
+// ★ 대시보드 VAD 전달 — 고객이 말하기 시작/종료를 대시보드에 authoritative하게 전달
+realtime.onSpeechActivity(({ linkedId, side, speaking }) => {
+  // VAD는 UI 힌트이므로 fire-and-forget (네트워크 블립에서 통화 끊기면 안 됨)
+  gw.postVad(linkedId, side, speaking).catch(() => {});
+});
+
+gw.onCallInfo(async (event) => {
+  if (event.type === 'call:new') {
+    // ★ 필수: pipelineType: 's2s' 선언 → 대시보드가 callee VU를 AI 스타일로 렌더
+    const stream = gw.streamAudio(event.linkedId, {
+      dir: 'both',
+      pipelineType: 's2s',
+    });
+    await realtime.startSession(event.linkedId, stream);
+  }
+  if (event.type === 'call:ended') {
+    await realtime.stop(event.linkedId);
+  }
+});
+
+await gw.connect();
+```
+
+```python
+# Python — S2S + 대시보드 VU/VAD 통합
+import asyncio, os
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.realtime import (
+    OpenAIRealtimeAdapter,
+    RealtimeSpeechActivityEvent,
+)
+
+gw = DVGatewayClient(
+    base_url=os.environ["DV_BASE_URL"],
+    auth={"type": "apiKey", "api_key": os.environ["DV_API_KEY"]},
+)
+
+realtime = OpenAIRealtimeAdapter(
+    api_key=os.environ["OPENAI_API_KEY"],
+    model="gpt-4o-realtime-preview",
+    voice="nova",
+    language="ko",
+    turn_detection={"mode": "server_vad"},  # ← 필수: VAD 이벤트 수신
+)
+
+def on_audio(pcm16k: bytes, linked_id: str):
+    async def _gen():
+        yield pcm16k
+    asyncio.ensure_future(gw.inject_tts(linked_id, _gen()))
+
+realtime.on_audio_output(on_audio)
+
+# ★ 대시보드 VAD 전달
+def on_vad(ev: RealtimeSpeechActivityEvent) -> None:
+    # fire-and-forget — VAD는 UI 힌트
+    asyncio.ensure_future(
+        gw.post_vad(ev.linked_id, ev.side, ev.speaking)
+    )
+realtime.on_speech_activity(on_vad)
+
+async def on_call(event):
+    if event["type"] == "call:new":
+        # ★ 필수: pipeline_type="s2s" 선언
+        stream = gw.stream_audio(
+            event["linkedId"],
+            dir="both",
+            pipeline_type="s2s",
+        )
+        await realtime.start_session(event["linkedId"], stream)
+    elif event["type"] == "call:ended":
+        await realtime.stop(event["linkedId"])
+
+gw.on_call_info(on_call)
+asyncio.run(gw.connect())
+```
+
+##### 대시보드에서 관찰되는 동작
+
+| 이벤트 | 대시보드 표시 |
+|--------|--------------|
+| `pipelineType=s2s` 선언 | 세션 카드에 보라색 `S2S` 배지, callee VU 레이블이 "AI 🤖"로 변경, VU 그라디언트가 인디고/바이올렛으로 변경 |
+| OpenAI `speech_started` | Caller VU의 VAD 인디케이터가 즉시 녹색으로 켜짐 (RMS 임계값 우회) |
+| OpenAI `speech_stopped` | Caller VU의 VAD 인디케이터가 꺼짐 |
+| AI TTS 응답 시작 (`tts:start`) | Caller VU에 ducking 효과(grayscale + 55% opacity + ⤓), callee VU에 "AI 발화 중" 펄스 애니메이션 |
+| AI TTS 응답 종료 (`tts:end`) | Ducking 해제, callee VU 0으로 감쇠 |
+| OpenAI 스트림 지터 (`tts:underrun`) | 세션 카드 헤더에 노란 경고 점(4초 후 자동 제거), 로그에 경고 기록 |
+
+##### 트러블슈팅
+
+- **Callee VU가 비어있음**: `pipelineType: 's2s'` 선언을 잊었거나, `gw.injectTts()`를 호출하지 않는 경우. TTS 주입 경로가 활성화되어야 게이트웨이 TTS Player가 VU 이벤트를 발행합니다.
+- **VAD 인디케이터가 안 움직임**: `turnDetection.mode`가 `'none'`이면 OpenAI가 speech_started/stopped를 발행하지 않습니다. `'server_vad'`로 설정해야 합니다.
+- **Ducking이 적용되지 않음**: `tts:start` 이벤트는 게이트웨이 내부 TTS Player가 발행하므로 SDK 측 설정과 무관합니다. `injectTts` 호출이 게이트웨이에 도달하고 있는지 확인하세요.
+- **기존 STT+LLM+TTS 파이프라인에 영향**: `pipelineType`을 선언하지 않으면 기존 동작과 100% 동일합니다(기본값 빈 문자열).
 
 #### 대시보드 S2S 설정
 
