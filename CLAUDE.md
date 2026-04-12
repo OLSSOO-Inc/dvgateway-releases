@@ -1006,6 +1006,47 @@ asyncio.run(gw.connect())
 
 대시보드에서 설정하면 SDK에서 `GET /api/v1/config/pipeline`으로 설정을 가져와 자동 적용할 수 있습니다.
 
+### LLM 자격증명 통합 (API Keys 탭으로 일원화)
+
+LLM API 키는 STT/TTS/S2S와 동일하게 **프로바이더 API 키** 탭에서만 관리합니다. **파이프라인 설정** 탭은 *어떤 키를 쓸지*(선택)와 모델·프롬프트·동작(히스토리/인사말/웹훅)만 담당합니다.
+
+| 역할 | 저장 위치 | 설명 |
+|------|-----------|------|
+| LLM API 키 (claude, openai, gemini) | `apiKeysConfig.LLM` (`/api/v1/config/apikeys`) | 테넌트별 JSON. `enabled`, `role` (`primary`/`backup`), `apiKey` |
+| LLM 선택자 | `pipelineconf.Config` (`/api/v1/config/pipeline`) | `llmProvider`, `llmRole`, `llmModel`, `fallbackProvider`, `fallbackRole`, `fallbackModel` |
+| LLM 자격증명 해석 | `GET /api/v1/llm/resolve?role=primary\|backup[&provider=claude]` | 파이프라인 선택자를 apiKeysConfig.LLM에 매핑해 `{provider, role, model, apiKey}` 반환 |
+
+우선순위 (서버의 `resolveLLMProvider`와 동일):
+1. `provider` 쿼리 파라미터가 `apiKeysConfig.LLM`에 enabled+keyed로 존재하면 그 항목
+2. `role` 파라미터 또는 파이프라인 `llmRole`/`fallbackRole`과 일치하는 enabled+keyed 항목
+3. `role == "primary"`인 첫 번째 enabled+keyed 항목
+4. 임의의 enabled+keyed 항목 (fallback)
+
+SDK 권장 사용 패턴:
+
+```typescript
+// TypeScript — primary LLM 자격증명 해석
+const res = await fetch(`${gateway}/api/v1/llm/resolve?role=primary`, {
+  headers: { Authorization: `Bearer ${jwt}` },
+});
+const { provider, model, apiKey } = await res.json();
+// provider/model/apiKey 로 Anthropic/OpenAI SDK 초기화
+```
+
+```python
+# Python — 동일
+r = httpx.get(f"{gateway}/api/v1/llm/resolve", params={"role": "primary"}, headers={"Authorization": f"Bearer {jwt}"})
+data = r.json()
+provider, model, api_key = data["provider"], data["model"], data["apiKey"]
+```
+
+Primary/Backup 페일오버가 필요한 경우:
+1. API Keys 탭에서 Claude(role=primary)와 OpenAI(role=backup) 모두 enabled+키 입력
+2. Pipeline 탭에서 Fallback 섹션에 원하는 프로바이더 또는 `역할 = Backup` 선택
+3. SDK는 `?role=primary` 실패 시 `?role=backup`으로 재시도 → 서로 다른 프로바이더로 자동 전환
+
+`llmProvider = "webhook"`는 자격증명이 아니므로 예외입니다. `resolve` 응답은 `{provider: "webhook", webhookUrl}`을 반환하고, SDK는 `pipelineconf.WebhookURL`/`WebhookSecret`을 사용해 요청을 서명합니다.
+
 #### S2S Tool Calling (Function Calling)
 
 S2S 세션에서 모델이 외부 함수를 호출할 수 있습니다. DB 조회, API 호출, 주문 처리 등에 활용합니다.
