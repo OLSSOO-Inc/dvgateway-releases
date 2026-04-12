@@ -558,6 +558,147 @@ tts = CachedTtsAdapter(inner, provider="elevenlabs", cache_dir="./tts-cache")
 | 어댑터 | 패키지 | 설명 |
 |--------|--------|------|
 | `OpenAIRealtimeAdapter` | `dvgateway-adapters/realtime` / `dvgateway.adapters.realtime` | OpenAI Realtime API (STT+LLM+TTS 통합) |
+| `GeminiLiveAdapter` | `dvgateway-adapters/realtime` / `dvgateway.adapters.realtime` | Google Gemini Live API (BidiGenerateContent, AI Studio/Vertex) |
+
+두 어댑터는 **동일한 `RealtimeSpeechAdapter` 인터페이스**를 구현하므로 import만 바꾸면 그대로 교체됩니다. 동일한 S2S 배선(`pipelineType=s2s` + `onSpeechActivity → postVad`)이 모두 작동합니다.
+
+#### S2S 프로바이더 비교 (OpenAI vs Gemini)
+
+| 항목 | OpenAI Realtime | Gemini Live |
+|------|----------------|-------------|
+| **모델** | `gpt-4o-realtime-preview` | `gemini-live-2.5-flash-preview`, `gemini-2.5-flash-native-audio` |
+| **음성** | 11종 (alloy, nova, shimmer 등) | 8종 (Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr) |
+| **입력 샘플레이트** | 24kHz (SDK 업샘플) | **16kHz (DVGateway 네이티브 — 리샘플 없음)** |
+| **출력 샘플레이트** | 24kHz (SDK 다운샘플) | 24kHz (SDK 다운샘플) |
+| **VAD** | `server_vad` 또는 `none` (명시적 start/stop 이벤트) | `server_vad` 또는 `none` (활동 이벤트는 암묵적) |
+| **인증** | Bearer API 키 | AI Studio: API 키 / Vertex: OAuth Bearer |
+| **리전** | Global (anycast) | Global (AI Studio) + 리전별 Vertex (asia-northeast1 등) |
+| **비용** | 높음 (오디오 토큰) | 상대적으로 저렴 |
+| **한국어 품질** | 우수 | 우수 (네이티브 오디오 모델에서 뛰어남) |
+| **Tool Calling** | ✅ | ✅ |
+
+#### GeminiLiveAdapter 옵션
+
+Google Gemini Live API를 사용하여 S2S 파이프라인을 구성합니다. OpenAIRealtimeAdapter와 동일한 콜백(`onAudioOutput`, `onTranscript`, `onSpeechActivity`, `onToolCall`, `onError`)을 제공합니다.
+
+```typescript
+// TypeScript
+import { GeminiLiveAdapter } from 'dvgateway-adapters/realtime';
+
+const realtime = new GeminiLiveAdapter({
+  apiKey: process.env['GEMINI_API_KEY']!,
+  model: 'gemini-live-2.5-flash-preview',
+  voice: 'Puck',                        // Puck | Charon | Kore | Fenrir | Aoede | Leda | Orus | Zephyr
+  instructions: '친절한 한국어 AI 상담원입니다.',
+  language: 'ko-KR',                     // BCP-47 (미설정 시 자동 감지)
+  temperature: 0.8,
+  inputTranscription: true,              // 고객 발화 전사 (기본: true)
+  outputTranscription: true,             // AI 응답 전사 (기본: true)
+  turnDetection: {
+    mode: 'server_vad',                  // 'server_vad' | 'none'
+    startSensitivity: 'MEDIUM',          // LOW | MEDIUM | HIGH
+    endSensitivity: 'MEDIUM',
+    prefixPaddingMs: 200,
+    silenceDurationMs: 800,
+  },
+});
+
+// 나머지 S2S 배선은 OpenAI와 100% 동일
+realtime.onAudioOutput(async (pcm16k, linkedId) => {
+  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
+});
+realtime.onSpeechActivity(({ linkedId, side, speaking }) => {
+  gw.postVad(linkedId, side, speaking).catch(() => {});
+});
+
+gw.onCallInfo(async (event) => {
+  if (event.type === 'call:new') {
+    const stream = gw.streamAudio(event.linkedId, {
+      dir: 'both',
+      pipelineType: 's2s',               // ★ 동일하게 's2s' — 대시보드가 AI 세션으로 렌더
+    });
+    await realtime.startSession(event.linkedId, stream);
+  }
+  if (event.type === 'call:ended') {
+    await realtime.stop(event.linkedId);
+  }
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.realtime import GeminiLiveAdapter
+
+realtime = GeminiLiveAdapter(
+    api_key=os.environ["GEMINI_API_KEY"],
+    model="gemini-live-2.5-flash-preview",
+    voice="Puck",                         # Puck | Charon | Kore | Fenrir | Aoede | Leda | Orus | Zephyr
+    instructions="친절한 한국어 AI 상담원입니다.",
+    language="ko-KR",
+    temperature=0.8,
+    input_transcription=True,
+    output_transcription=True,
+    turn_detection={
+        "mode": "server_vad",
+        "start_sensitivity": "MEDIUM",
+        "end_sensitivity": "MEDIUM",
+        "prefix_padding_ms": 200,
+        "silence_duration_ms": 800,
+    },
+)
+```
+
+##### Vertex AI 리전 엔드포인트 사용 (GCP 네이티브 배포)
+
+데이터 레지던시 요구사항 또는 VPC Service Controls를 사용하는 경우 Vertex AI 엔드포인트를 사용합니다:
+
+```typescript
+const realtime = new GeminiLiveAdapter({
+  endpoint: 'vertex',
+  accessToken: process.env['GCP_ACCESS_TOKEN']!,   // gcloud auth print-access-token
+  project: 'my-gcp-project',
+  location: 'asia-northeast1',                      // 도쿄 — 한국 트래픽에 가장 가까움
+  model: 'gemini-live-2.5-flash-preview',
+  voice: 'Puck',
+  // 나머지 옵션은 AI Studio와 동일
+});
+```
+
+```python
+realtime = GeminiLiveAdapter(
+    endpoint="vertex",
+    access_token=os.environ["GCP_ACCESS_TOKEN"],
+    project="my-gcp-project",
+    location="asia-northeast1",
+    model="gemini-live-2.5-flash-preview",
+    voice="Puck",
+)
+```
+
+##### Gemini Live VAD 주의사항
+
+Gemini Live API는 OpenAI Realtime과 달리 **명시적인 `speech_started` / `speech_stopped` 이벤트를 발행하지 않습니다**. 대신 서버 측 VAD가 턴 경계를 자동으로 감지하여 `serverContent.interrupted` / `turnComplete` 신호로 알립니다.
+
+본 어댑터는 다음과 같이 **근사치 VAD 이벤트**를 제공합니다:
+
+- `serverContent.interrupted=true` → `speaking=true` (고객이 AI 응답 중 끼어들었음을 감지)
+- `serverContent.turnComplete=true` → `speaking=false` (턴 종료 시 초기화)
+
+정밀한 VAD가 필요한 경우 `turnDetection.mode = 'none'`으로 설정하고 자체 VAD 로직(on-device VAD)에서 `adapter.sendActivityStart(linkedId)` / `adapter.sendActivityEnd(linkedId)`를 직접 호출하세요.
+
+##### 프로바이더 전환
+
+OpenAI Realtime에서 Gemini Live로 교체는 import 변경 + 옵션 매핑만 필요합니다. S2S 배선(pipelineType, postVad, injectTts)은 그대로 유지됩니다:
+
+```typescript
+// OpenAI
+- import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+- const realtime = new OpenAIRealtimeAdapter({ apiKey, model: 'gpt-4o-realtime-preview', voice: 'nova' });
+
+// Gemini
++ import { GeminiLiveAdapter } from 'dvgateway-adapters/realtime';
++ const realtime = new GeminiLiveAdapter({ apiKey, model: 'gemini-live-2.5-flash-preview', voice: 'Puck' });
+```
 
 #### OpenAIRealtimeAdapter 옵션
 
