@@ -203,6 +203,185 @@ async def on_new_call(event):
 
 ---
 
+## 11-A. TTS 재생 완료 이벤트 — `tts:complete` (v1.4+)
+
+### 개요
+
+SDK의 `injectTts()` / `inject_tts()` / `say()` 는 오디오 iterator가 소진되면 즉시 반환됩니다. 그러나 **게이트웨이가 실제로 Asterisk에 모든 프레임을 주입 완료한 시점이 아닙니다**. 게이트웨이의 TTS Player는 20ms 틱 기반 루프로 프레임을 밀어넣기 때문에, 6초짜리 TTS는 대략 6초간 Asterisk에 계속 프레임을 공급합니다.
+
+`tts:complete` 이벤트는 게이트웨이가 **실제 재생 완료 시점**에 발행하는 authoritative 신호입니다.
+
+### 발생 시점
+
+- `Player.Play()` 세션 정상 EOF 종료 (페이드아웃 포함 모든 프레임 Asterisk로 전송 완료)
+- 명시적 `Stop()` 호출로 중단
+- 동시 `Play()` 호출에 의한 선점 (stale 세션은 발행 안 함 — 중복 알림 방지)
+
+### 의미
+
+게이트웨이 → Asterisk WebSocket 주입 완료. Asterisk → 전화기 RTP 버퍼 지연(~20–40ms)은 고려 안 됨. IVR / 음성봇 턴 관리 용도로는 무의미한 수준의 차이입니다.
+
+### 주요 활용 사례
+
+| 사례 | 설명 |
+|------|------|
+| **순차 TTS 재생** | 인사말 → 메뉴 안내 체이닝 (overlap 방지) |
+| **고객 VAD 리오픈** | AI 응답이 끝날 때까지 고객 발화 차단 유지 |
+| **S2S AI 발화 종료 감지** | OpenAI Realtime / Gemini Live 응답 완료 시점 정확히 포착 |
+| **통화 스크립트 진행 제어** | "안내 끝났으니 상담원 연결" 같은 흐름 제어 |
+| **지연 분석 로깅** | 합성 요청 → 실제 재생 완료까지 정확한 레이턴시 측정 |
+
+### TypeScript 사용법
+
+**방법 A — `onTtsComplete()` 전용 헬퍼 (권장)**
+
+```typescript
+import { DVGatewayClient } from 'dvgateway-sdk';
+import type { TTSCompleteEvent } from 'dvgateway-sdk';
+
+// 인사말이 끝난 직후 메뉴 재생
+await gw.injectTts(linkedId, welcomeTts.synthesize('안녕하세요'));
+
+const unsub = gw.onTtsComplete(async (ev: TTSCompleteEvent) => {
+  if (ev.linkedId !== linkedId) return;   // 다른 통화의 이벤트 무시
+  await gw.injectTts(linkedId, menuTts.synthesize('1번을 눌러주세요'));
+  unsub();  // 한 번만 재생하고 구독 해지
+});
+```
+
+**방법 B — `onCallEvent()` 로 전체 이벤트 받기**
+
+```typescript
+gw.onCallEvent(async (event) => {
+  switch (event.type) {
+    case 'call:new':
+      await gw.injectTts(event.session.linkedId, welcomeTts.synthesize('환영합니다'));
+      break;
+    case 'tts:complete':
+      console.log(`재생 완료: ${event.linkedId} (서버: ${event.serverId})`);
+      break;
+    case 'call:ended':
+      console.log(`통화 종료: ${event.linkedId} (${event.durationSec}초)`);
+      break;
+  }
+});
+```
+
+### Python 사용법
+
+```python
+from dvgateway import DVGatewayClient, TTSCompleteEvent
+
+# 인사말 재생 후 메뉴 안내 체이닝
+await gw.inject_tts(linked_id, welcome_tts.synthesize("안녕하세요"))
+
+def on_done(ev: TTSCompleteEvent) -> None:
+    if ev.linked_id != linked_id:
+        return
+    asyncio.ensure_future(
+        gw.inject_tts(linked_id, menu_tts.synthesize("1번을 눌러주세요"))
+    )
+
+unsub = gw.on_tts_complete(on_done)
+# 필요시 unsub() 호출로 구독 해지
+```
+
+### 실전 예제 — IVR 순차 안내
+
+```typescript
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { GoogleChirp3Adapter } from 'dvgateway-adapters/stt';
+import { OpenAITtsAdapter } from 'dvgateway-adapters/tts';
+
+const gw = new DVGatewayClient({ baseUrl, auth });
+const tts = new OpenAITtsAdapter({ apiKey });
+
+// 다단계 안내 스크립트
+const scripts = [
+  '(주)올소 고객센터입니다.',
+  '상담 품질 향상을 위해 통화가 녹음됩니다.',
+  '한국어는 1번, 영어는 2번을 눌러주세요.',
+];
+
+gw.onCallEvent(async (event) => {
+  if (event.type !== 'call:new') return;
+  const lid = event.session.linkedId;
+  let step = 0;
+
+  const playNext = async () => {
+    if (step >= scripts.length) return;
+    await gw.injectTts(lid, tts.synthesize(scripts[step++]));
+  };
+
+  // 초기 안내 시작
+  await playNext();
+
+  // 각 안내 완료마다 다음 안내 재생
+  const unsub = gw.onTtsComplete(async (ev) => {
+    if (ev.linkedId !== lid) return;
+    if (step >= scripts.length) {
+      unsub();  // 모든 안내 끝, DTMF 대기 단계로 전환
+      return;
+    }
+    await playNext();
+  });
+});
+
+await gw.connect();
+```
+
+### S2S (OpenAI Realtime / Gemini Live) 와의 연동
+
+S2S 어댑터의 `onAudioOutput` 콜백으로 받은 PCM을 `gw.injectTts()` 로 주입하면, AI 응답 한 턴이 끝날 때마다 `tts:complete` 이벤트가 발행됩니다. 이를 이용해 "AI 발화 종료 시점"을 정확히 감지할 수 있습니다.
+
+```typescript
+// S2S 응답 종료 시점 포착 → 대화 로그 기록 / 후속 조치
+realtime.onAudioOutput(async (pcm16k, linkedId) => {
+  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
+});
+
+gw.onTtsComplete((ev) => {
+  console.log(`AI 응답 종료: ${ev.linkedId} @ ${ev.timestamp.toISOString()}`);
+  // 예: 응답 내용 DB 저장, 고객 VAD 재개, 턴 카운터 증가 등
+});
+```
+
+### 이벤트 타입 전체 목록
+
+| 이벤트 | 발생 시점 | 주요 페이로드 |
+|--------|-----------|-------------|
+| `call:new` | 새 통화 시작 | `session` (CallSession 전체), `tenantId` |
+| `call:ended` | 통화 종료 | `linkedId`, `durationSec` |
+| `conf:join` | 회의 참여 | `linkedId`, `confId`, `caller` |
+| `conf:leave` | 회의 퇴장 | `linkedId`, `confId` |
+| `conf:ended` | 회의 종료 | `confId` |
+| **`tts:complete`** | **TTS 재생 완료 (v1.4+)** | **`linkedId`, `tenantId`, `serverId`, `timestamp`** |
+
+### Wire format (`/api/v1/ws/callinfo`)
+
+```json
+{
+  "event":    "tts:complete",
+  "linkedId": "1775805184.495",
+  "tenantId": "7be69580e27641df",
+  "serverId": "gw-seoul-01"
+}
+```
+
+테넌트 필터링: 테넌트 JWT로 connect한 구독자는 **해당 테넌트 이벤트만** 수신합니다. 관리자 연결(테넌트 ID 없음)은 모든 테넌트 이벤트 수신.
+
+### 주의사항
+
+1. **`tts:complete`는 `injectTts()` Promise 해결 이후에 발행됩니다** — Promise는 iterator 소진 시점에 resolve되고, 실제 재생은 그 이후에도 계속되므로 순서상 이벤트가 나중에 옵니다.
+
+2. **여러 통화 동시 핸들링 시 `linkedId` 필터 필수** — 콜백은 전역으로 등록되므로 반드시 `ev.linkedId === myLinkedId` 체크.
+
+3. **`Stop()` 이나 선점으로 중단된 경우도 발행됩니다** — "정상 완료"와 "중단"을 구분하고 싶다면 애플리케이션 레벨에서 상태 추적 필요. 게이트웨이는 "재생 루프가 끝났음" 만 알림.
+
+4. **S2S 모드에서 응답이 매우 긴 경우** — OpenAI/Gemini는 턴 단위로 오디오를 나눠 보내기도 합니다. 각 청크를 별도로 `injectTts()` 하면 `tts:complete`도 청크별로 발생. 한 턴 = 한 이벤트로 받고 싶다면 청크를 모아 한 번에 주입하세요.
+
+---
+
 ## 12. 폴백(Fallback) 설정 — 장애 자동 전환
 
 주 서비스 장애 시 자동으로 백업 서비스로 전환합니다.

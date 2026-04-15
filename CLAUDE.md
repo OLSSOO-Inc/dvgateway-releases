@@ -170,8 +170,70 @@ await gw.set_early_media("07045144801",
 ### 이벤트/세션
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| `onCallEvent(handler)` | `on_call_event(handler)` | 통화 이벤트 구독 |
+| `onCallEvent(handler)` | `on_call_event(handler)` | 전체 통화 이벤트 구독 |
+| `on(type, handler)` | `on(event_type, handler)` | 특정 타입 이벤트만 구독 |
+| `onTtsComplete(handler)` | `on_tts_complete(handler)` | **TTS 재생 완료 이벤트 구독 (v1.4+)** |
 | `listSessions()` | `list_sessions()` | 활성 세션 목록 |
+
+#### 이벤트 타입 목록
+
+| 이벤트 | 발생 시점 | 페이로드 |
+|--------|-----------|---------|
+| `call:new` | 새 통화 시작 | `session` (CallSession), `tenantId` |
+| `call:ended` | 통화 종료 | `linkedId`, `durationSec` |
+| `conf:join` | 회의 참여 | `linkedId`, `confId`, `caller` |
+| `conf:leave` | 회의 퇴장 | `linkedId`, `confId` |
+| `conf:ended` | 회의 종료 | `confId` |
+| **`tts:complete`** | **TTS 재생 완료** | **`linkedId`, `tenantId`, `serverId`** |
+
+#### `tts:complete` 이벤트 — TTS 재생 완료 감지
+
+SDK의 `injectTts()` / `inject_tts()` 는 오디오 iterator가 소진되면 즉시 반환되지만, **게이트웨이가 실제로 모든 프레임을 Asterisk에 주입 완료한 시점이 아닙니다**. TTS Player는 20ms 틱 루프로 프레임을 밀어넣기 때문에, 오디오 길이만큼 대기한 뒤에야 실제 재생이 끝납니다.
+
+`tts:complete` 이벤트는 게이트웨이가 **실제 재생 완료 시점**에 발행하는 authoritative 신호입니다.
+
+**발생 시점**:
+- `Player.Play()` 세션이 정상 EOF로 종료 (페이드아웃 포함 모든 프레임 Asterisk로 전송 완료)
+- 명시적 `Stop()` 호출로 중단
+- 동시 `Play()` 호출에 의한 선점 (stale 세션은 발행 안 함 — 중복 알림 방지)
+
+**의미**: 게이트웨이→Asterisk WebSocket 주입 완료. Asterisk→전화기 RTP 버퍼(~20–40ms)는 고려 안 됨 (IVR/음성봇 턴 관리에는 무의미한 차이).
+
+**주요 활용**:
+1. 고객 VAD 리오픈 — AI 응답이 끝날 때까지 고객 발화 차단 유지
+2. 순차 TTS 재생 — 인사말 → 메뉴 안내 체이닝 (overlap 방지)
+3. 정확한 재생 완료 타임스탬프 로깅 (지연 분석용)
+
+```typescript
+// TypeScript — 인사말 끝나면 메뉴 안내 재생
+await gw.injectTts(linkedId, welcomeTts.synthesize('안녕하세요'));
+gw.onTtsComplete(async (ev) => {
+  if (ev.linkedId !== linkedId) return;
+  await gw.injectTts(linkedId, menuTts.synthesize('1번을 눌러주세요'));
+});
+```
+
+```python
+# Python — 동일 패턴
+import asyncio
+await gw.inject_tts(linked_id, welcome_tts.synthesize("안녕하세요"))
+
+def on_done(ev):
+    if ev.linked_id != linked_id:
+        return
+    asyncio.ensure_future(
+        gw.inject_tts(linked_id, menu_tts.synthesize("1번을 눌러주세요"))
+    )
+
+gw.on_tts_complete(on_done)
+```
+
+**Wire format** (`/api/v1/ws/callinfo`):
+```json
+{"event":"tts:complete","linkedId":"1775805184.495","tenantId":"7be69580e27641df","serverId":"gw-seoul-01"}
+```
+
+**S2S 모드와의 관계**: OpenAI Realtime / Gemini Live 어댑터의 `onAudioOutput` 콜백으로 받은 PCM을 `gw.injectTts()`로 주입하면, 게이트웨이가 재생을 마칠 때마다 `tts:complete`가 발행됩니다. 이 이벤트를 이용해 "AI 발화 종료" 시점을 정확히 감지할 수 있습니다.
 
 ---
 
