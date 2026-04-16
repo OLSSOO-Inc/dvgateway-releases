@@ -832,6 +832,7 @@ tts = CachedTtsAdapter(inner, provider="elevenlabs", cache_dir="./tts-cache")
 | **한국어 품질** | 우수 | 우수 (네이티브 오디오 모델에서 뛰어남) |
 | **Tool Calling** | ✅ | ✅ |
 | **Tool Choice** (`auto` / `none` / `required` / `function`) | ✅ (v1.0+) | ✅ (v1.4+) |
+| **출력 볼륨 (기본)** | ≈ -12 dBFS (전화 적정) | ≈ -40 dBFS (너무 조용) — `outputGainDb: 24` 필수 |
 
 #### GeminiLiveAdapter 옵션
 
@@ -850,6 +851,7 @@ const realtime = new GeminiLiveAdapter({
   temperature: 0.8,
   inputTranscription: true,              // 고객 발화 전사 (기본: true)
   outputTranscription: true,             // AI 응답 전사 (기본: true)
+  outputGainDb: 24,                      // ★ 필수 — half-cascade 모델 출력 볼륨 보정 (v1.4+)
   turnDetection: {
     mode: 'server_vad',                  // 'server_vad' | 'none'
     startSensitivity: 'MEDIUM',          // LOW | MEDIUM | HIGH
@@ -894,6 +896,7 @@ realtime = GeminiLiveAdapter(
     temperature=0.8,
     input_transcription=True,
     output_transcription=True,
+    output_gain_db=24,                    # ★ 필수 — half-cascade 모델 출력 볼륨 보정 (v1.4+)
     turn_detection={
         "mode": "server_vad",
         "start_sensitivity": "MEDIUM",
@@ -903,6 +906,30 @@ realtime = GeminiLiveAdapter(
     },
 )
 ```
+
+##### ⚠️ `outputGainDb` / `output_gain_db` — Gemini 출력 볼륨 보정 (v1.4+)
+
+Gemini Live의 **half-cascade 모델**(`gemini-live-2.5-flash-preview`)은 TTS 출력을 약 **-40 dBFS peak**로 송출합니다. OpenAI Realtime(~-12 dBFS)보다 **약 30 dB 조용**해서 전화 통화에서 거의 들리지 않습니다. SDK가 이 차이를 자동 보정하지 않으므로 반드시 명시적으로 설정해야 합니다.
+
+**권장값**:
+
+| 모델 | 권장 `outputGainDb` | 적용 후 peak |
+|---|---|---|
+| `gemini-live-2.5-flash-preview` (half-cascade) | **`24`** | ≈ -16 dBFS (전화 적정 수준) |
+| `gemini-2.5-flash-native-audio` | `0`–`12` | 모델이 자체적으로 loudness 최적화 |
+| `gemini-2.0-flash-live-001` (legacy) | `24` | half-cascade와 동일 |
+
+**동작**: 어댑터가 각 오디오 청크에 선형 게인을 적용한 후 int16 범위로 clamp합니다. `24 dB`는 ≈16배 증폭이고, int16 최대 크기(±32767)를 초과하는 샘플은 wrap-around 없이 안전하게 clipped됩니다.
+
+**운영 진단**: 게이트웨이 로그에서 `[TTS] WARNING session max_peak=-XX.XXdBFS is below -30 dBFS` 메시지가 보이면 이 옵션이 미설정이거나 값이 너무 낮다는 신호입니다. 어댑터 자체도 첫 오디오 청크에서 다음과 같이 경고합니다:
+
+```
+[GeminiLive] source peak -43.5dBFS is quiet for a phone sink (< -30 dBFS) and
+outputGainDb=0 is not compensating. Recommended: outputGainDb: 24 for
+half-cascade models.
+```
+
+**허용 범위**: `[-24, +40]` dB를 벗어나는 값은 WARN 로그만 발생하고 실제 적용은 됩니다 (WebRTC·파일 출력 등 비전화 sink에서는 다른 범위가 적절할 수 있음).
 
 ##### Vertex AI 리전 엔드포인트 사용 (GCP 네이티브 배포)
 
