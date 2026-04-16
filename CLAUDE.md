@@ -831,7 +831,9 @@ tts = CachedTtsAdapter(inner, provider="elevenlabs", cache_dir="./tts-cache")
 | **비용** | 높음 (오디오 토큰) | 상대적으로 저렴 |
 | **한국어 품질** | 우수 | 우수 (네이티브 오디오 모델에서 뛰어남) |
 | **Tool Calling** | ✅ | ✅ |
-| **Tool Choice** (`auto` / `none` / `required` / `function`) | ✅ (v1.0+) | ✅ (v1.4+) |
+| **Tool Choice** (`auto` / `none` / `required` / `function`) | ✅ (v1.0+) | ⚠️ **AUTO 고정** — Live API setup 스키마에 `tool_config` 필드 없음 |
+| **`maxResponseTokens` / `max_response_tokens`** (OpenAI 이름) | ✅ 기본 | ✅ **별칭으로 수용 (v1.4.11+)** — `maxOutputTokens`로 변환. 명시적 `maxOutputTokens`가 우선. `'inf'` → 무제한 |
+| **`turnDetection.threshold`** (0.0~1.0 float) | ✅ native | ✅ **별칭으로 수용 (v1.4.11+)** — Gemini의 LOW/MEDIUM/HIGH 센시티비티로 자동 매핑. 명시적 `startSensitivity`/`endSensitivity`가 우선 |
 | **출력 볼륨 (기본)** | ≈ -12 dBFS (전화 적정) | ≈ -40 dBFS (너무 조용) — `outputGainDb: 24` 필수 |
 
 #### GeminiLiveAdapter 옵션
@@ -930,6 +932,129 @@ half-cascade models.
 ```
 
 **허용 범위**: `[-24, +40]` dB를 벗어나는 값은 WARN 로그만 발생하고 실제 적용은 됩니다 (WebRTC·파일 출력 등 비전화 sink에서는 다른 범위가 적절할 수 있음).
+
+##### ⚠️ 모델 ID는 자주 deprecated됨 — `listGeminiLiveModels()` 권장 (v1.4.10+)
+
+Google이 Gemini Live 모델 ID를 몇 달마다 변경합니다 (예: `gemini-live-2.5-flash-preview`는 2025년 말에 rename됨). SDK에 default model을 hardcode하면 어느 시점에 모든 사용자가 다음 close 코드로 막힙니다:
+
+```
+[GeminiLive] WS closed code=1008 reason='models/gemini-live-... is not found
+for API version v1beta, or is not supported for bidiGenerateContent.'
+```
+
+**권장 패턴 — 시작 시 동적 조회**:
+
+```typescript
+// TypeScript
+import { GeminiLiveAdapter, listGeminiLiveModels } from 'dvgateway-adapters/realtime';
+
+const apiKey = process.env.GEMINI_API_KEY!;
+const liveModels = await listGeminiLiveModels(apiKey);   // models.list API 호출, 5분 캐시
+
+// 우선순위: native-audio → flash → 첫 번째
+const chosen =
+  liveModels.find(m => m.name.includes('native-audio'))?.name ??
+  liveModels.find(m => m.name.includes('flash'))?.name ??
+  liveModels[0]?.name;
+if (!chosen) throw new Error('이 API 키로 Live-가능 모델 없음');
+
+const realtime = new GeminiLiveAdapter({
+  apiKey,
+  model: chosen.replace(/^models\//, ''),   // "models/" prefix 제거
+  voice: 'Puck',
+  outputGainDb: 24,
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.realtime import GeminiLiveAdapter, list_gemini_live_models
+
+api_key = os.environ["GEMINI_API_KEY"]
+live = await list_gemini_live_models(api_key)
+
+chosen = next(
+    (m["name"] for m in live if "native-audio" in m["name"]),
+    next((m["name"] for m in live if "flash" in m["name"]), None),
+)
+if not chosen:
+    raise RuntimeError("이 API 키로 Live-가능 모델 없음")
+
+realtime = GeminiLiveAdapter(
+    api_key=api_key,
+    model=chosen.removeprefix("models/"),
+    voice="Puck",
+    output_gain_db=24,
+)
+```
+
+**Endpoint**: `GET https://generativelanguage.googleapis.com/v1beta/models?key=KEY` — `supportedGenerationMethods`에 `bidiGenerateContent`가 포함된 모델만 반환됩니다.
+
+**캐싱**: API 키 단위로 5분 in-memory cache. `cacheMs=0` (TS) / `cache_ttl_s=0` (Python)으로 우회 가능 — 1008 close 직후 재조회할 때 사용.
+
+**Vertex 엔드포인트**: 현재 helper는 AI Studio (`generativelanguage.googleapis.com`)만 지원. Vertex는 별도 endpoint + OAuth 필요 → 현재는 SDK 사용자가 GCP `aiplatform.models.list` 직접 호출 권장.
+
+**자동 fallback 로깅**: 만약 잘못된 model ID로 시도하면, 어댑터가 close 후 자동으로 다음 로그 출력:
+
+```
+[GeminiLive] Model "gemini-live-2.5-flash-preview" appears to be deprecated, renamed,
+or unavailable for this API key. Discover currently Live-capable models with:
+  import { listGeminiLiveModels } from 'dvgateway-adapters/realtime';
+  const models = await listGeminiLiveModels(apiKey);
+  console.log(models.map(m => m.name));
+Then pass the chosen name (without the 'models/' prefix) as the `model` option.
+```
+
+##### 🔁 OpenAI → Gemini Drop-in Migration (v1.4.11+)
+
+OpenAI Realtime 설정을 Gemini로 그대로 복사해도 작동하도록 **두 가지 별칭**을 지원합니다:
+
+| OpenAI 형식 | Gemini 내부 변환 | 우선순위 |
+|---|---|---|
+| `maxResponseTokens: 1024` | → `maxOutputTokens: 1024` | 명시적 `maxOutputTokens` 우선 |
+| `maxResponseTokens: 'inf'` | → `maxOutputTokens: null` (무제한) | — |
+| `turnDetection.threshold: 0.5` | → 양쪽 sensitivity **MEDIUM** | 명시적 sensitivity 우선 |
+| `turnDetection.threshold: < 0.3` | → **HIGH** (민감) | — |
+| `turnDetection.threshold: > 0.7` | → **LOW** (엄격) | — |
+
+**Threshold 역매핑 이유**: OpenAI는 "higher threshold = 덜 민감", Gemini는 "HIGH = 더 민감" — 값의 의미(사용자 의도)를 유지하기 위해 매핑이 반전됩니다.
+
+**마이그레이션 예**:
+
+```typescript
+// 이전 OpenAI 설정 — 그대로 복사 가능
+const realtime = new GeminiLiveAdapter({
+  apiKey: process.env.GEMINI_API_KEY!,
+  model: 'gemini-2.5-flash-native-audio-preview-09-2025',  // listGeminiLiveModels로 조회
+  voice: 'Puck',                        // Gemini voice로만 바꿔주세요
+  instructions: '...',                  // 그대로
+  maxResponseTokens: 1024,              // ✅ OpenAI 이름 그대로 — 자동 매핑
+  turnDetection: {
+    mode: 'server_vad',
+    threshold: 0.5,                     // ✅ OpenAI 형식 그대로 — MEDIUM으로 매핑
+    prefixPaddingMs: 300,               // 그대로
+    silenceDurationMs: 200,             // 그대로
+  },
+  outputGainDb: 24,                     // Gemini 전용 — 추가 필요
+});
+```
+
+**Mix-and-match 지원** — 명시적 옵션은 별칭보다 우선:
+
+```typescript
+turnDetection: {
+  threshold: 0.1,                       // end만 적용 (HIGH)
+  startSensitivity: 'LOW',              // ← 명시적 start는 LOW로 확정
+}
+// 결과: startSensitivity=LOW, endSensitivity=HIGH
+```
+
+**저수준 헬퍼** — 매핑 로직만 사용:
+```typescript
+import { mapThresholdToSensitivity, normalizeMaxOutputTokens } from 'dvgateway-adapters/realtime';
+mapThresholdToSensitivity(0.9)         // → 'LOW'
+normalizeMaxOutputTokens(undefined, 'inf')   // → null
+```
 
 ##### Vertex AI 리전 엔드포인트 사용 (GCP 네이티브 배포)
 
@@ -1435,48 +1560,55 @@ realtime.on_tool_call(handle_tool_call)
 3. 함수 실행 후 `submitToolResult` / `submit_tool_result`로 결과 반환
 4. 모델이 결과를 반영하여 음성 응답 생성
 
-#### GeminiLiveAdapter — 동일한 `toolChoice` / `tool_choice` 지원 (v1.4+)
+#### GeminiLiveAdapter — `toolChoice` / `tool_choice` 옵션은 **AUTO 고정** (중요)
 
-`GeminiLiveAdapter`도 `OpenAIRealtimeAdapter`와 동일한 `toolChoice` / `tool_choice` 옵션을 받습니다. SDK가 내부적으로 Gemini Live 프로토콜의 `tool_config.function_calling_config`로 매핑해 주므로 **두 어댑터를 import만 바꿔서 교체**할 수 있습니다 (drop-in parity 유지).
+⚠️ **알려진 제약 (v1.4.10+에서 안전 처리)**: `GeminiLiveAdapter`도 OpenAI parity를 위해 `toolChoice` / `tool_choice` 옵션을 노출하지만, **Gemini Live BidiGenerateContent 의 `setup` 메시지 스키마에는 `tool_config` 필드가 없습니다** (일반 `GenerateContent` API에는 있지만 Live API에는 없음). v1.4.5 ~ 1.4.9에서는 SDK가 `tool_config`를 setup에 포함시켜 **Gemini가 WS를 즉시 close (code=1011 bad setup)** 하는 버그가 있었습니다 — 사용자 측 증상은 `start_session_exit age=0s chunks_sent=N` 로 나타났습니다.
 
-**매핑 테이블**:
+**v1.4.10+ 동작**:
+- `tools`만 사용하면 정상 작동 (Gemini는 항상 AUTO 모드로 함수 호출 결정)
+- `toolChoice` / `tool_choice` 값을 명시하면 어댑터가 **저장만 하고 Gemini로는 보내지 않음** + 한 번 WARN 로그 출력
 
-| SDK 값 | Gemini `function_calling_config` |
-|---|---|
-| `'auto'` (tools 있을 때 기본값) | `{ mode: 'AUTO' }` |
-| `'none'` | `{ mode: 'NONE' }` |
-| `'required'` | `{ mode: 'ANY' }` |
-| `{ type: 'function', name: 'fn' }` | `{ mode: 'ANY', allowed_function_names: ['fn'] }` |
+```
+[GeminiLive] toolChoice="required" ignored — Gemini Live BidiGenerateContent setup
+has no tool_config field. Tools default to AUTO calling mode. To pin a specific
+function, add an explicit instruction in your system_instruction prompt.
+```
+
+**`required` / 특정 function 강제가 필요한 경우 — 두 가지 우회 방법**:
+
+1. **System instruction으로 강제**:
+   ```python
+   instructions = "주문번호로 문의 시 반드시 lookup_order 함수를 호출하세요. 직접 답변하지 마세요."
+   ```
+2. **Live API 대신 일반 `GenerateContent` API 사용** — `tool_config` 지원됨. `buildGeminiToolConfig()` / `build_gemini_tool_config()` 헬퍼는 이 용도로 export되어 있습니다.
+
+**일반 사용 (AUTO 모드면 충분)**:
 
 ```typescript
-// TypeScript
-import { GeminiLiveAdapter } from 'dvgateway-adapters/realtime';
-
+// TypeScript — toolChoice 생략 (AUTO가 기본)
 const realtime = new GeminiLiveAdapter({
   apiKey: process.env['GEMINI_API_KEY']!,
   model: 'gemini-live-2.5-flash-preview',
   voice: 'Puck',
   instructions: '주문 문의 시 lookup_order를 호출하세요.',
   tools,
-  toolChoice: 'required',   // "auto" | "none" | "required" | { type: "function", name: "fn" }
+  // toolChoice 생략 — AUTO 모드 자동 적용
 });
 ```
 
 ```python
-# Python
-from dvgateway.adapters.realtime import GeminiLiveAdapter
-
+# Python — tool_choice 생략 (AUTO가 기본)
 realtime = GeminiLiveAdapter(
     api_key=os.environ["GEMINI_API_KEY"],
     model="gemini-live-2.5-flash-preview",
     voice="Puck",
     instructions="주문 문의 시 lookup_order를 호출하세요.",
     tools=tools,
-    tool_choice="required",   # "auto" | "none" | "required" | {"type":"function","name":"fn"}
+    # tool_choice 생략 — AUTO 모드 자동 적용
 )
 ```
 
-**저수준 접근이 필요할 때** — 직접 프로토콜 메시지를 만들거나 테스트할 때는 `buildGeminiToolConfig()` / `build_gemini_tool_config()`를 호출하세요. Pure 함수이며 어댑터를 생성하지 않고도 매핑 결과를 확인할 수 있습니다.
+**OpenAI Realtime과의 차이**: OpenAI는 `session.update`에 `tool_choice` 필드가 있어 `'required'` / 특정 function 강제 가능. Gemini Live는 Setup에 없으므로 system instruction prompt로 우회해야 합니다.
 
 TTS 선택 가이드: `GEMINI` (가성비·30음성) / `ELEVENLABS` (최고 품질·한국어 네이티브) / `OPENAI` (voiceInstructions·스타일 제어) / `COSYVOICE` (중국어 특화·저비용)
 
