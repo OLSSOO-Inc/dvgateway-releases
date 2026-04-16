@@ -255,6 +255,111 @@ await gw.set_early_media(
 | `stopThinking(linkedId)` | `stop_thinking(linked_id)` | Comfort noise 종료 |
 | `postVad(linkedId, side, speaking)` | `post_vad(linked_id, side, speaking)` | 대시보드 VAD 인디케이터 전달 (OpenAI Realtime VAD 등) |
 
+### 시뮬레이션 (게이트웨이 · 전화번호 불필요)
+| TypeScript | Python | 설명 |
+|------------|--------|------|
+| `simulate({ audioFile, ... })` | `simulate(audio_file=..., ...)` | **로컬 WAV 파일로 가짜 통화 재생 — 파이프라인 동작을 게이트웨이 없이 검증 (v1.4+)** |
+
+`simulate()`는 5가지 용도를 위한 "루프백 게이트웨이"입니다:
+1. 온보딩 — 설치 직후 게이트웨이/DID 설정 없이 첫 봇 실행
+2. 단위 테스트 — `pytest` / `jest`에서 실제 네트워크 없이 STT→LLM→TTS 검증
+3. CI 회귀 테스트 — 대화 로직 변경이 응답 품질에 미치는 영향 자동 확인
+4. 문서 "Try it" 위젯 — 브라우저에서 코드 수정 → 음성 출력 재생
+5. 오프라인 데모 — 전시장/영업 환경에서 전화망 없이 시연
+
+**동작 방식**: 동일 `pipeline().stt().llm().tts().start()` 코드가 그대로 실행됩니다. `simulate()`가 내부 `WsPool`에 3개의 가상 경로를 설치해:
+- `/api/v1/ws/callinfo` → 합성 `call:new` 이벤트 1개 발행 → 오디오 종료 후 `call:ended`
+- `/api/v1/ws/stream?linkedid={id}` → WAV 파일을 20ms/프레임으로 주입
+- `/api/v1/ws/tts/{linkedId}` → 파이프라인이 주입한 TTS 바이트를 메모리에 캡처
+
+실제 게이트웨이·PBX·전화번호 모두 불필요합니다.
+
+**입력 포맷**: 16 kHz 모노 16-bit PCM WAV 또는 raw slin16. 변환:
+```bash
+ffmpeg -i input.mp3 -ar 16000 -ac 1 -sample_fmt s16 caller.wav
+```
+
+**옵션** (TS/Python 공통, Python은 snake_case):
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `audioFile` / `audio_file` | string | (필수) | 재생할 오디오 파일 경로 |
+| `linkedId` / `linked_id` | string | `sim-{timestamp}-{hex}` | 통화 식별자 자동 생성 |
+| `caller` | string | `'+1-555-0100'` | 합성 발신자 번호 |
+| `callerName` / `caller_name` | string | `'Simulated Caller'` | 합성 발신자 이름 |
+| `callee` | string | `'100'` | 피호출 내선 |
+| `did` | string | callee와 동일 | 대표 번호 |
+| `tenantId` / `tenant_id` | string | (없음) | 테넌트 식별자 |
+| `realtime` | boolean | `true` | 20ms/프레임 페이싱 (false = CI용 즉시 flush) |
+| `hangupDelayMs` / `hangup_delay_ms` | int | `5000` | 오디오 종료 후 `call:ended` 발행까지 대기 (봇이 마지막 TTS를 끝낼 시간) |
+| `onTts` / `on_tts` | callback | (없음) | 캡처된 TTS 프레임별 콜백 (옵션) |
+
+**반환값 — `SimulatedCall` 핸들**:
+
+| 메서드 | 설명 |
+|--------|------|
+| `waitForEnd()` / `wait_for_end()` | 통화 종료까지 대기 (오디오 드레인 + hangup 지연) |
+| `stop()` | 즉시 종료 — `call:ended` 발행 후 정리 |
+| `capturedTtsBytes()` / `captured_tts_bytes()` | 캡처된 TTS PCM (slin16) |
+| `saveTts(path)` / `save_tts(path)` | 캡처된 TTS를 16 kHz 모노 WAV로 저장 |
+
+**TypeScript 예시**:
+```typescript
+import { DVGatewayClient } from 'dvgateway-sdk';
+
+const gw = new DVGatewayClient({
+  baseUrl: 'http://localhost:8080',
+  auth: { type: 'apiKey', apiKey: 'simulation' },  // 실제 키 불필요
+});
+
+// 파이프라인 시작 (non-awaited — gw.close()까지 실행)
+void gw.pipeline().stt(stt).llm(llm).tts(tts).start();
+
+// 가짜 통화 재생
+const call = await gw.simulate({
+  audioFile: './samples/customer-inquiry.wav',
+  caller: '+82-10-1234-5678',
+});
+await call.waitForEnd();
+await call.saveTts('./samples/bot-reply.wav');  // 봇 응답을 WAV로 저장
+
+gw.close();
+```
+
+**Python 예시**:
+```python
+import asyncio
+from dvgateway import DVGatewayClient
+
+async def main():
+    gw = DVGatewayClient(
+        base_url="http://localhost:8080",
+        auth={"type": "apiKey", "api_key": "simulation"},
+    )
+
+    # 파이프라인 시작 (non-awaited — gw.close()까지 실행)
+    asyncio.ensure_future(
+        gw.pipeline().stt(stt).llm(llm).tts(tts).start()
+    )
+
+    # 가짜 통화 재생
+    call = await gw.simulate(
+        audio_file="./samples/customer-inquiry.wav",
+        caller="+82-10-1234-5678",
+    )
+    await call.wait_for_end()
+    await call.save_tts("./samples/bot-reply.wav")  # 봇 응답을 WAV로 저장
+
+    gw.close()
+
+asyncio.run(main())
+```
+
+**주의사항**:
+- `simulate()`는 WS 계층에서만 게이트웨이를 대체합니다. `hangup()`, `redirect()`, `startThinking()` 등 **HTTP API 호출은 에러로 실패**합니다 (시뮬레이터가 처리 안 함). 테스트에서는 해당 호출을 목(mock)하거나 try/catch로 감싸세요.
+- 멀티테넌트 격리 검증에는 `tenantId` 옵션으로 시나리오별 통화를 분리할 수 있습니다.
+- 실제 게이트웨이와 완전히 동일한 동작을 보장하지 않습니다 — ConfBridge, AMI 이벤트 순서 등 복잡한 흐름은 실기 테스트 필요.
+
 ### 이벤트/세션
 | TypeScript | Python | 설명 |
 |------------|--------|------|
@@ -726,6 +831,7 @@ tts = CachedTtsAdapter(inner, provider="elevenlabs", cache_dir="./tts-cache")
 | **비용** | 높음 (오디오 토큰) | 상대적으로 저렴 |
 | **한국어 품질** | 우수 | 우수 (네이티브 오디오 모델에서 뛰어남) |
 | **Tool Calling** | ✅ | ✅ |
+| **Tool Choice** (`auto` / `none` / `required` / `function`) | ✅ (v1.0+) | ✅ (v1.4+) |
 
 #### GeminiLiveAdapter 옵션
 
@@ -1301,6 +1407,49 @@ realtime.on_tool_call(handle_tool_call)
 2. `onToolCall` / `on_tool_call` 핸들러 호출 (callId, name, args 전달)
 3. 함수 실행 후 `submitToolResult` / `submit_tool_result`로 결과 반환
 4. 모델이 결과를 반영하여 음성 응답 생성
+
+#### GeminiLiveAdapter — 동일한 `toolChoice` / `tool_choice` 지원 (v1.4+)
+
+`GeminiLiveAdapter`도 `OpenAIRealtimeAdapter`와 동일한 `toolChoice` / `tool_choice` 옵션을 받습니다. SDK가 내부적으로 Gemini Live 프로토콜의 `tool_config.function_calling_config`로 매핑해 주므로 **두 어댑터를 import만 바꿔서 교체**할 수 있습니다 (drop-in parity 유지).
+
+**매핑 테이블**:
+
+| SDK 값 | Gemini `function_calling_config` |
+|---|---|
+| `'auto'` (tools 있을 때 기본값) | `{ mode: 'AUTO' }` |
+| `'none'` | `{ mode: 'NONE' }` |
+| `'required'` | `{ mode: 'ANY' }` |
+| `{ type: 'function', name: 'fn' }` | `{ mode: 'ANY', allowed_function_names: ['fn'] }` |
+
+```typescript
+// TypeScript
+import { GeminiLiveAdapter } from 'dvgateway-adapters/realtime';
+
+const realtime = new GeminiLiveAdapter({
+  apiKey: process.env['GEMINI_API_KEY']!,
+  model: 'gemini-live-2.5-flash-preview',
+  voice: 'Puck',
+  instructions: '주문 문의 시 lookup_order를 호출하세요.',
+  tools,
+  toolChoice: 'required',   // "auto" | "none" | "required" | { type: "function", name: "fn" }
+});
+```
+
+```python
+# Python
+from dvgateway.adapters.realtime import GeminiLiveAdapter
+
+realtime = GeminiLiveAdapter(
+    api_key=os.environ["GEMINI_API_KEY"],
+    model="gemini-live-2.5-flash-preview",
+    voice="Puck",
+    instructions="주문 문의 시 lookup_order를 호출하세요.",
+    tools=tools,
+    tool_choice="required",   # "auto" | "none" | "required" | {"type":"function","name":"fn"}
+)
+```
+
+**저수준 접근이 필요할 때** — 직접 프로토콜 메시지를 만들거나 테스트할 때는 `buildGeminiToolConfig()` / `build_gemini_tool_config()`를 호출하세요. Pure 함수이며 어댑터를 생성하지 않고도 매핑 결과를 확인할 수 있습니다.
 
 TTS 선택 가이드: `GEMINI` (가성비·30음성) / `ELEVENLABS` (최고 품질·한국어 네이티브) / `OPENAI` (voiceInstructions·스타일 제어) / `COSYVOICE` (중국어 특화·저비용)
 
