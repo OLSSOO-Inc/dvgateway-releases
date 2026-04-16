@@ -783,22 +783,63 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 2. **TTS (Text-to-Speech)** 섹션에서 사용할 프로바이더 활성화 + API 키 입력
 3. **1순위 사용**으로 설정하면 `provider` 미지정 시 자동 선택됨
 
-### SDK 사용법
+### 6.6 테넌트 기본값 (v1.4+) — `_default` 특수 extension
+
+DID마다 개별 설정이 없을 때 폴백으로 재생되는 **테넌트 전체 기본 Early Media**. `extension` 위치에 예약어 `_default` 를 넣으면 일반 per-DID 엔드포인트가 그대로 재활용됩니다.
+
+**다이얼플랜 폴백 순서** (`[dvgateway-pa-noa]` 컨텍스트):
+
+1. 해당 DID 개별 설정 `enabled="yes"` → **per-DID 사용**
+2. 아니면 `_default` 프로파일 `enabled="yes"` → **테넌트 기본값 사용**
+3. 둘 다 비활성 → Early Media 스킵
+
+```bash
+# 테넌트 기본 Early Media를 TTS로 설정
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=7be69580e27641df" \
+  -d '{
+    "enabled": "yes",
+    "tts": {
+      "text": "고객센터 상담원 연결 중입니다. 잠시만 기다려 주세요.",
+      "provider": "openai",
+      "voice": "nova"
+    }
+  }'
+
+# 조회 — 동일한 응답 스키마
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=7be69580e27641df"
+
+# 기본값 비활성화 (per-DID 설정은 영향 없음)
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=7be69580e27641df" \
+  -d '{"enabled":"no"}'
+```
+
+**저장 경로**:
+- 파일: `/var/spool/asterisk/{tenantId}/pa/_default/pamsg.wav`
+- AstDB: `/{tenantId}/earlymedia/_default/{enabled,audio_url,source,tts_*}`
+
+**보안**: API는 `extension` 값이 숫자(와 하이픈) 이거나 정확히 `_default` 여야만 받아들입니다. `../` 같은 경로 탐색이나 임의 문자열은 400 에러로 거부됩니다.
+
+### 6.7 SDK 사용법
 
 **TypeScript:**
 ```typescript
-// 조회
+// Per-DID 조회
 const config = await gw.getEarlyMedia('07045144801', 'tenant-id');
 console.log(config);
 // { enabled: "yes", audioUrl: "https://...", source: "url", fileExists: true }
 
-// 음원 URL + 활성화 설정
+// Per-DID — 음원 URL + 활성화 설정
 await gw.setEarlyMedia('07045144801', {
   enabled: 'yes',
   audioUrl: 'https://www.makecall.io/demo-echotest.mp3',
 }, 'tenant-id');
 
-// TTS로 설정 (대시보드 프로바이더 키 사용)
+// Per-DID — TTS로 설정 (대시보드 프로바이더 키 사용)
 await gw.setEarlyMedia('07045144801', {
   enabled: 'yes',
   tts: {
@@ -817,20 +858,50 @@ await gw.setEarlyMedia('07045144801', { enabled: 'yes' }, 'tenant-id');
 await gw.setEarlyMedia('07045144801', {
   audioUrl: 'https://cdn.example.com/new-greeting.mp3',
 }, 'tenant-id');
+
+// ─── 테넌트 기본값 (v1.4+) — 편의 메서드 ─────────────────────────
+// 기본값 조회
+const def = await gw.getEarlyMediaDefault('tenant-id');
+
+// 기본값 TTS 설정 — 모든 미설정 DID가 이 안내음 재생
+await gw.setEarlyMediaDefault({
+  enabled: 'yes',
+  tts: {
+    text: '고객센터 상담원 연결 중입니다. 잠시만 기다려 주세요.',
+    provider: 'openai',
+    voice: 'nova',
+  },
+}, 'tenant-id');
+
+// 기본값 오디오 URL 설정
+await gw.setEarlyMediaDefault({
+  enabled: 'yes',
+  audioUrl: 'https://cdn.example.com/brand-jingle.mp3',
+}, 'tenant-id');
+
+// 기본값 비활성화 (per-DID 설정은 영향 없음)
+await gw.setEarlyMediaDefault({ enabled: 'no' }, 'tenant-id');
+
+// 상수로 명시적 지정도 가능 (동일 결과)
+await gw.setEarlyMedia(
+  DVGatewayClient.EARLY_MEDIA_DEFAULT_EXT,  // = "_default"
+  { enabled: 'yes', tts: { text: '기본 안내음' } },
+  'tenant-id',
+);
 ```
 
 **Python:**
 ```python
-# 조회
+# Per-DID 조회
 config = await gw.get_early_media("07045144801", tenant_id="tenant-id")
 
-# 음원 URL + 활성화 설정
+# Per-DID — 음원 URL + 활성화 설정
 await gw.set_early_media("07045144801",
     enabled="yes",
     audio_url="https://www.makecall.io/demo-echotest.mp3",
     tenant_id="tenant-id")
 
-# TTS로 설정
+# Per-DID — TTS로 설정
 await gw.set_early_media("07045144801",
     enabled="yes",
     tts={
@@ -849,17 +920,108 @@ await gw.set_early_media("07045144801", enabled="yes", tenant_id="tenant-id")
 await gw.set_early_media("07045144801",
     audio_url="https://cdn.example.com/new-greeting.mp3",
     tenant_id="tenant-id")
+
+# ─── 테넌트 기본값 (v1.4+) — 편의 메서드 ─────────────────────────
+# 기본값 조회
+default = await gw.get_early_media_default(tenant_id="tenant-id")
+
+# 기본값 TTS 설정 — 모든 미설정 DID가 이 안내음 재생
+await gw.set_early_media_default(
+    enabled="yes",
+    tts={
+        "text": "고객센터 상담원 연결 중입니다. 잠시만 기다려 주세요.",
+        "provider": "openai",
+        "voice": "nova",
+    },
+    tenant_id="tenant-id",
+)
+
+# 기본값 오디오 URL 설정
+await gw.set_early_media_default(
+    enabled="yes",
+    audio_url="https://cdn.example.com/brand-jingle.mp3",
+    tenant_id="tenant-id",
+)
+
+# 기본값 비활성화 (per-DID 설정은 영향 없음)
+await gw.set_early_media_default(enabled="no", tenant_id="tenant-id")
+
+# 상수로 명시적 지정도 가능 (동일 결과)
+await gw.set_early_media(
+    gw.EARLY_MEDIA_DEFAULT_EXT,  # = "_default"
+    enabled="yes",
+    tts={"text": "기본 안내음"},
+    tenant_id="tenant-id",
+)
+```
+
+### 6.8 실무 시나리오 — 대량 테넌트 프로비저닝
+
+수백 개 DID에 동일한 안내음을 반복 설정할 필요 없이, 기본값 1회 + 예외 DID만 개별 설정:
+
+**TypeScript:**
+```typescript
+async function provisionTenant(tenantId: string, brandName: string) {
+  // 1. 테넌트 전체 기본 인사말 — 모든 DID가 이것을 폴백으로 사용
+  await gw.setEarlyMediaDefault({
+    enabled: 'yes',
+    tts: {
+      text: `${brandName} 고객센터입니다. 잠시만 기다려 주세요.`,
+      provider: 'openai',
+      voice: 'nova',
+    },
+  }, tenantId);
+
+  // 2. VIP DID만 특별 안내음 (기본값 자동 오버라이드)
+  await gw.setEarlyMedia('07045144801', {
+    enabled: 'yes',
+    tts: { text: `${brandName} VIP 고객센터입니다. 최우선으로 응대해 드립니다.` },
+  }, tenantId);
+
+  // 3. 수백 개의 나머지 DID는 추가 API 호출 없이 자동으로 기본 인사말 사용
+}
+```
+
+**Python:**
+```python
+async def provision_tenant(tenant_id: str, brand_name: str):
+    # 1. 테넌트 전체 기본 인사말
+    await gw.set_early_media_default(
+        enabled="yes",
+        tts={
+            "text": f"{brand_name} 고객센터입니다. 잠시만 기다려 주세요.",
+            "provider": "openai",
+            "voice": "nova",
+        },
+        tenant_id=tenant_id,
+    )
+
+    # 2. VIP DID만 특별 안내음
+    await gw.set_early_media("07045144801",
+        enabled="yes",
+        tts={"text": f"{brand_name} VIP 고객센터입니다. 최우선으로 응대해 드립니다."},
+        tenant_id=tenant_id,
+    )
 ```
 
 ### AstDB 저장 구조
 
 ```
-/{tenantId}/earlymedia/{extension}/enabled       → yes | no
-/{tenantId}/earlymedia/{extension}/audio_url     → https://... (url 모드)
-/{tenantId}/earlymedia/{extension}/source        → url | tts
-/{tenantId}/earlymedia/{extension}/tts_text      → 합성된 텍스트 (tts 모드)
-/{tenantId}/earlymedia/{extension}/tts_provider  → elevenlabs/openai/google/... (tts 모드)
-/{tenantId}/earlymedia/{extension}/tts_voice     → 사용된 voice ID (tts 모드)
+Per-DID:
+  /{tenantId}/earlymedia/{extension}/enabled       → yes | no
+  /{tenantId}/earlymedia/{extension}/audio_url     → https://... (url 모드)
+  /{tenantId}/earlymedia/{extension}/source        → url | tts
+  /{tenantId}/earlymedia/{extension}/tts_text      → 합성된 텍스트 (tts 모드)
+  /{tenantId}/earlymedia/{extension}/tts_provider  → elevenlabs/openai/google/... (tts 모드)
+  /{tenantId}/earlymedia/{extension}/tts_voice     → 사용된 voice ID (tts 모드)
+
+테넌트 기본값 (v1.4+):
+  /{tenantId}/earlymedia/_default/enabled          → yes | no
+  /{tenantId}/earlymedia/_default/audio_url        → https://... (url 모드)
+  /{tenantId}/earlymedia/_default/source           → url | tts
+  /{tenantId}/earlymedia/_default/tts_text         → (tts 모드)
+  /{tenantId}/earlymedia/_default/tts_provider     → (tts 모드)
+  /{tenantId}/earlymedia/_default/tts_voice        → (tts 모드)
 ```
 
 ### 음원 파일 변환

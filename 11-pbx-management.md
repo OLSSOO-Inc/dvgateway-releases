@@ -445,9 +445,11 @@ await asyncio.sleep(3600)
 
 ## 6. Early Media (응답 전 안내음)
 
-전화 응답(Answer) 전에 안내음을 재생합니다. DID별로 설정합니다.
+전화 응답(Answer) 전에 안내음을 재생합니다. **DID별 개별 설정** 과 **테넌트 전체 기본값** 두 가지 레벨을 지원합니다 (v1.4+).
 
-### TypeScript
+### 6.1 Per-DID 설정 — 특정 번호에만 적용
+
+#### TypeScript
 
 ```typescript
 // 조회
@@ -457,6 +459,16 @@ const config = await gw.getEarlyMedia('07045144801', 'tenant-id');
 await gw.setEarlyMedia('07045144801', {
   enabled: 'yes',
   audioUrl: 'https://www.makecall.io/greeting.mp3',
+}, 'tenant-id');
+
+// TTS 텍스트로 설정 (대시보드 프로바이더 API 키 자동 사용)
+await gw.setEarlyMedia('07045144801', {
+  enabled: 'yes',
+  tts: {
+    text: 'VIP 고객님, 잠시만 기다려 주세요.',
+    provider: 'elevenlabs',   // optional, 미지정 시 dashboard primary
+    voice: 'custom-voice-id',  // optional
+  },
 }, 'tenant-id');
 
 // 비활성화만 (음원 유지)
@@ -471,7 +483,7 @@ await gw.setEarlyMedia('07045144801', {
 }, 'tenant-id');
 ```
 
-### Python
+#### Python
 
 ```python
 # 조회
@@ -483,6 +495,15 @@ await gw.set_early_media("07045144801",
     audio_url="https://www.makecall.io/greeting.mp3",
     tenant_id="tenant-id")
 
+# TTS 텍스트로 설정
+await gw.set_early_media("07045144801",
+    enabled="yes",
+    tts={
+        "text": "VIP 고객님, 잠시만 기다려 주세요.",
+        "provider": "elevenlabs",   # optional
+    },
+    tenant_id="tenant-id")
+
 # 비활성화만 (음원 유지)
 await gw.set_early_media("07045144801", enabled="no", tenant_id="tenant-id")
 
@@ -490,8 +511,129 @@ await gw.set_early_media("07045144801", enabled="no", tenant_id="tenant-id")
 await gw.set_early_media("07045144801", enabled="yes", tenant_id="tenant-id")
 ```
 
-> 음원은 MP3, OGG, FLAC, WAV 등 어떤 형식이든 Asterisk 호환 WAV (8kHz mono PCM)로 자동 변환됩니다.
-> 파일 저장 경로: `/var/spool/asterisk/{tenantId}/pa/{extension}/pamsg.wav`
+---
+
+### 6.2 테넌트 기본값 (v1.4+) — 개별 설정 없는 모든 DID에 자동 적용
+
+수백 개 DID에 **동일한 안내음**을 일괄 적용하고 싶을 때, 각 DID마다 설정할 필요 없이 **한 번만** 테넌트 기본값을 저장하면 됩니다. 특정 DID에만 다른 안내음이 필요하면 그 DID에만 개별 설정 — 개별 설정이 기본값을 자동으로 오버라이드합니다.
+
+#### 다이얼플랜 폴백 순서
+
+`[dvgateway-pa-noa]` 컨텍스트는 인바운드 통화마다 다음 순서로 확인합니다:
+
+```
+1. 해당 DID의 개별 설정 enabled="yes"  →  Per-DID 프로파일 사용
+2. 아니면 _default 프로파일 enabled="yes"  →  테넌트 기본값 사용
+3. 둘 다 비활성  →  Early Media 스킵 (통화 즉시 처리)
+```
+
+#### TypeScript
+
+```typescript
+import { DVGatewayClient } from 'dvgateway-sdk';
+
+// 편의 메서드 — 테넌트 기본값 조회
+const def = await gw.getEarlyMediaDefault();
+console.log(def.enabled, def.source, def.ttsText, def.fileExists);
+
+// 편의 메서드 — 테넌트 기본값 설정 (TTS)
+await gw.setEarlyMediaDefault({
+  enabled: 'yes',
+  tts: {
+    text: '고객센터 상담원 연결 중입니다. 잠시만 기다려 주세요.',
+    provider: 'openai',        // optional
+    voice: 'nova',              // optional
+  },
+});
+
+// 오디오 URL 기반 기본값
+await gw.setEarlyMediaDefault({
+  enabled: 'yes',
+  audioUrl: 'https://cdn.example.com/brand-jingle.mp3',
+});
+
+// 기본값 비활성화 (per-DID 설정은 영향 없음)
+await gw.setEarlyMediaDefault({ enabled: 'no' });
+
+// 상수로 명시적 지정도 가능 (동일 결과)
+await gw.setEarlyMedia(
+  DVGatewayClient.EARLY_MEDIA_DEFAULT_EXT,  // = "_default"
+  { enabled: 'yes', tts: { text: '기본 안내음' } },
+);
+```
+
+#### Python
+
+```python
+# 편의 메서드 — 테넌트 기본값 조회
+default = await gw.get_early_media_default()
+print(default["enabled"], default["source"], default["ttsText"], default["fileExists"])
+
+# 편의 메서드 — 테넌트 기본값 설정 (TTS)
+await gw.set_early_media_default(
+    enabled="yes",
+    tts={
+        "text": "고객센터 상담원 연결 중입니다. 잠시만 기다려 주세요.",
+        "provider": "openai",     # optional
+        "voice": "nova",           # optional
+    },
+)
+
+# 오디오 URL 기반 기본값
+await gw.set_early_media_default(
+    enabled="yes",
+    audio_url="https://cdn.example.com/brand-jingle.mp3",
+)
+
+# 기본값 비활성화 (per-DID 설정은 영향 없음)
+await gw.set_early_media_default(enabled="no")
+
+# 상수로 명시적 지정도 가능 (동일 결과)
+await gw.set_early_media(
+    gw.EARLY_MEDIA_DEFAULT_EXT,  # = "_default"
+    enabled="yes",
+    tts={"text": "기본 안내음"},
+)
+```
+
+#### 실무 시나리오 — 테넌트 프로비저닝 자동화
+
+```typescript
+// 새 테넌트 입주 시 한 번만 호출
+async function provisionTenant(tenantId: string, brandName: string) {
+  // 1. 테넌트 전체 기본 인사말 등록
+  await gw.setEarlyMediaDefault({
+    enabled: 'yes',
+    tts: {
+      text: `${brandName} 고객센터입니다. 잠시만 기다려 주세요.`,
+      provider: 'openai',
+      voice: 'nova',
+    },
+  }, tenantId);
+
+  // 2. VIP DID에만 특별 안내음
+  await gw.setEarlyMedia('07045144801', {
+    enabled: 'yes',
+    tts: { text: `${brandName} VIP 고객센터입니다. 최우선으로 응대해 드립니다.` },
+  }, tenantId);
+
+  // 수백 개의 나머지 DID는 자동으로 기본 인사말을 사용함 — 추가 작업 불필요
+}
+```
+
+### 6.3 저장 경로 & 주의사항
+
+| 항목 | Per-DID | 기본값 (`_default`) |
+|------|---------|---------------------|
+| 파일 경로 | `/var/spool/asterisk/{tenantId}/pa/{DID}/pamsg.wav` | `/var/spool/asterisk/{tenantId}/pa/_default/pamsg.wav` |
+| AstDB 키 | `/{tenantId}/earlymedia/{DID}/*` | `/{tenantId}/earlymedia/_default/*` |
+| 변환 방식 | 저장 시 1회 ffmpeg 변환 (8kHz mono WAV) | 동일 |
+| 다이얼플랜 | `[dvgateway-pa-noa]` 가 자동 폴백 처리 | 동일 |
+
+- 음원은 MP3/OGG/FLAC/WAV 등 어떤 형식이든 **저장 시점에 1회 변환** — 통화마다 재다운로드하지 않음
+- TTS 메타데이터 (`text`/`provider`/`voice`)는 AstDB에 저장되어 GET 응답에 포함
+- `enabled="no"` 로 설정해도 `ttsText` / `audioUrl` 값은 유지 (재활성화 시 그대로 재사용)
+- `_default` 는 **예약어** — 실제 전화번호로는 사용 불가 (밑줄 접두사로 숫자 충돌 방지)
 
 ---
 

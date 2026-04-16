@@ -109,15 +109,20 @@ await gw.pipeline().stt(stt).llm(llm).tts(tts).start()
 ### Early Media (응답 전 안내음)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| `getEarlyMedia(ext, tenantId?)` | `get_early_media(ext, tenant_id)` | Early Media 설정 조회 |
-| `setEarlyMedia(ext, {enabled,audioUrl,tts})` | `set_early_media(ext, enabled, audio_url, tts)` | Early Media 설정/변경 (URL 또는 TTS) |
+| `getEarlyMedia(ext, tenantId?)` | `get_early_media(ext, tenant_id)` | 특정 DID의 Early Media 설정 조회 |
+| `setEarlyMedia(ext, {enabled,audioUrl,tts})` | `set_early_media(ext, enabled, audio_url, tts)` | 특정 DID의 Early Media 설정/변경 |
+| **`getEarlyMediaDefault(tenantId?)`** | **`get_early_media_default(tenant_id)`** | **테넌트 전체 기본 Early Media 조회 (v1.4+)** |
+| **`setEarlyMediaDefault({enabled,audioUrl,tts})`** | **`set_early_media_default(enabled, audio_url, tts)`** | **테넌트 전체 기본 Early Media 설정 (v1.4+)** |
+| `DVGatewayClient.EARLY_MEDIA_DEFAULT_EXT` | `DVGatewayClient.EARLY_MEDIA_DEFAULT_EXT` | `"_default"` 상수 — 위 메서드 대신 직접 지정도 가능 |
 
 두 가지 음원 모드 (택일):
-- **`audioUrl`**: 외부 URL 자동 다운로드 + ffmpeg WAV 변환 (8kHz mono PCM)
+- **`audioUrl`**: 외부 URL 자동 다운로드 + ffmpeg WAV 변환 (8kHz mono PCM, 1회성)
 - **`tts`**: 클라우드 TTS로 합성 — 대시보드 **프로바이더 API 키** 탭의 테넌트별 키 자동 사용
 
+#### Per-DID 설정 (특정 번호에만 적용)
+
 ```typescript
-// TypeScript — TTS로 Early Media 설정
+// TypeScript — 특정 DID에 TTS 안내음
 await gw.setEarlyMedia('07045144801', {
   enabled: 'yes',
   tts: {
@@ -129,7 +134,7 @@ await gw.setEarlyMedia('07045144801', {
 ```
 
 ```python
-# Python — TTS로 Early Media 설정
+# Python — 특정 DID에 TTS 안내음
 await gw.set_early_media("07045144801",
     enabled="yes",
     tts={
@@ -139,8 +144,91 @@ await gw.set_early_media("07045144801",
     tenant_id="tenant-id")
 ```
 
-> 저장 경로 (URL/TTS 동일): `/var/spool/asterisk/{tenantId}/pa/{extension}/pamsg.wav`
-> TTS 메타데이터(text/provider/voice)는 AstDB에 저장되어 GET 응답에 포함됨
+#### 테넌트 기본값 (v1.4+) — 개별 설정 없는 모든 DID에 자동 적용
+
+**다이얼플랜 폴백 순서**:
+1. 해당 DID의 개별 설정이 `enabled="yes"` → **그 설정** 사용
+2. 아니면 `_default` 프로파일이 `enabled="yes"` → **기본값** 사용
+3. 둘 다 활성화 안 됨 → Early Media 스킵
+
+수백 개 DID에 동일한 안내음을 일괄 적용할 때 DID마다 설정할 필요 없이 한 번만 `setEarlyMediaDefault()` 호출하면 됩니다. 특정 DID만 다른 안내음을 원하면 그 DID에만 `setEarlyMedia()` 로 개별 설정 — 개별 설정이 기본값을 자동 오버라이드.
+
+```typescript
+// TypeScript — 테넌트 전체 기본 안내음 (편의 메서드)
+await gw.setEarlyMediaDefault({
+  enabled: 'yes',
+  tts: {
+    text: '고객센터 상담원 연결 중입니다.',
+    provider: 'openai',       // optional
+    voice: 'nova',            // optional
+  },
+});
+
+// 또는 상수로 명시적 지정 (동일 결과)
+await gw.setEarlyMedia(
+  DVGatewayClient.EARLY_MEDIA_DEFAULT_EXT,
+  { enabled: 'yes', tts: { text: '고객센터 상담원 연결 중입니다.' } },
+);
+
+// 오디오 URL 기반 기본값
+await gw.setEarlyMediaDefault({
+  enabled: 'yes',
+  audioUrl: 'https://cdn.example.com/brand-jingle.mp3',
+});
+
+// 기본값 비활성화 (per-DID 설정은 영향 없음)
+await gw.setEarlyMediaDefault({ enabled: 'no' });
+
+// 현재 기본값 조회
+const def = await gw.getEarlyMediaDefault();
+console.log(def.enabled, def.source, def.ttsText, def.fileExists);
+```
+
+```python
+# Python — 테넌트 전체 기본 안내음 (편의 메서드)
+await gw.set_early_media_default(
+    enabled="yes",
+    tts={
+        "text": "고객센터 상담원 연결 중입니다.",
+        "provider": "openai",    # optional
+        "voice": "nova",         # optional
+    },
+)
+
+# 오디오 URL 기반 기본값
+await gw.set_early_media_default(
+    enabled="yes",
+    audio_url="https://cdn.example.com/brand-jingle.mp3",
+)
+
+# 기본값 비활성화 (per-DID 설정은 영향 없음)
+await gw.set_early_media_default(enabled="no")
+
+# 현재 기본값 조회
+default = await gw.get_early_media_default()
+print(default["enabled"], default["source"], default["ttsText"], default["fileExists"])
+
+# 또는 상수로 명시적 지정 (동일 결과)
+await gw.set_early_media(
+    gw.EARLY_MEDIA_DEFAULT_EXT,
+    enabled="yes",
+    tts={"text": "고객센터 상담원 연결 중입니다."},
+)
+```
+
+#### 저장 경로 & 주의사항
+
+| 항목 | Per-DID | 기본값 |
+|------|---------|--------|
+| 파일 경로 | `/var/spool/asterisk/{tenantId}/pa/{DID}/pamsg.wav` | `/var/spool/asterisk/{tenantId}/pa/_default/pamsg.wav` |
+| AstDB 키 | `/{tenantId}/earlymedia/{DID}/*` | `/{tenantId}/earlymedia/_default/*` |
+| 변환 시점 | 저장 시 1회 ffmpeg 변환 (8kHz mono WAV) | 동일 |
+| 다이얼플랜 컨텍스트 | `[dvgateway-pa-noa]` | 동일 (하나의 컨텍스트가 fallback 처리) |
+
+- TTS 메타데이터 (`text`/`provider`/`voice`)는 AstDB에 저장되어 GET 응답에 포함
+- `audioUrl`을 업데이트하면 저장 시 즉시 다운로드 + 변환 (통화 시 재다운로드 없음)
+- `enabled="no"` 로 설정해도 저장된 `ttsText` / `audioUrl` 값은 유지 (재활성화 시 재사용 가능)
+- `_default` extension은 예약어 — 실제 전화번호로는 사용 불가 (밑줄 접두사로 충돌 방지)
 
 ### 캠페인 (예약/동보/주기 발신)
 | TypeScript | Python | 설명 |
