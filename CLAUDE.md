@@ -82,6 +82,7 @@ await gw.pipeline().stt(stt).llm(llm).tts(tts).start()
 |------------|--------|------|
 | `hangup(linkedId)` | `hangup(linked_id)` | 통화 종료 |
 | `redirect(linkedId, dest)` | `redirect(linked_id, dest)` | 통화 전환 |
+| `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 (에이전트 답변 후 브릿지) |
 
 ### PBX 관리
 | TypeScript | Python | 설명 |
@@ -378,6 +379,201 @@ asyncio.run(main())
 | `conf:leave` | 회의 퇴장 | `linkedId`, `confId` |
 | `conf:ended` | 회의 종료 | `confId` |
 | **`tts:complete`** | **TTS 재생 완료** | **`linkedId`, `tenantId`, `serverId`** |
+| **`call:dtmf`** | **DTMF 키 입력 (AMI DTMFBegin/DTMFEnd 기반)** | **`linkedId`, `digit`, `phase` (`begin`/`end`), `durationMs` (end 단계), `direction` (`received`/`sent`), `tenantId`, `serverId`, `ts`** |
+
+#### `call:dtmf` 이벤트 — 통화 중 키패드 입력 감지
+
+게이트웨이는 Asterisk AMI `DTMFBegin` / `DTMFEnd` 이벤트를 수신해 `call:dtmf` 이벤트로 전달합니다. IVR 입력, 전화기 단축키, 회의 제어 등에 사용하세요.
+
+게이트웨이 환경 변수:
+- `GW_DTMF_ENABLED` (기본 `true`) — 전체 스위치.
+- `GW_DTMF_PHASE_FILTER` (기본 `end`) — `end`만 발행 (duration 포함), `both`로 설정하면 `begin`도 함께 발행.
+
+CDR에도 통화 종료 시 집계(`dtmfCount`, `dtmfDigits`)가 자동으로 기록됩니다.
+
+##### `collect_dtmf()` / `collectDtmf()` — DTMF 자릿수 수집 (Python · TypeScript, P0)
+
+IVR 시나리오에서 PIN/메뉴 선택 등 여러 자리의 DTMF를 한 번에 수집하는 고수준 헬퍼입니다. 내부에서 `call:dtmf` 이벤트를 구독하고 `max_digits`, `terminator`, 타임아웃 조건 중 먼저 도래하는 것으로 완료합니다. 수집 중에는 STT 파이프라인을 자동 음소거하여 DTMF 톤이 단어로 전사되는 것을 방지합니다.
+
+```python
+result = await gw.collect_dtmf(
+    linked_id,
+    max_digits=4,
+    timeout_ms=8_000,            # 첫 키 대기 (ms)
+    inter_digit_timeout_ms=3_000, # 자릿수 간 대기 (ms)
+    terminator="#",              # 종료 키 ("" 이면 비활성)
+    mute_stt=True,                # 수집 중 STT 자동 mute (기본 True)
+)
+# DTMFResult(digits="1234", timed_out=False, terminated_by_key=True)
+```
+
+TypeScript:
+
+```typescript
+const result = await gw.collectDtmf({
+  linkedId,
+  maxDigits: 4,
+  timeoutMs: 8_000,               // 첫 키 대기 (ms)
+  interDigitTimeoutMs: 3_000,     // 자릿수 간 대기 (ms)
+  terminator: '#',                // 종료 키 ("" 이면 비활성)
+  muteStt: true,                  // 수집 중 STT 자동 mute (기본 true)
+});
+// { digits: "1234", timedOut: false, terminatedByKey: true }
+```
+
+완료 조건(먼저 도래하는 것):
+1. `max_digits` 자리 누적
+2. `terminator` 키 수신 (해당 키는 `digits`에 포함되지 않고 `terminated_by_key=True`로 보고)
+3. 첫 키 타임아웃(`timeout_ms`) — `digits=""`, `timed_out=True`
+4. 자릿수 간 타임아웃(`inter_digit_timeout_ms`) — 부분 수집된 `digits`, `timed_out=True`
+
+동일 `linked_id`에 대한 동시 `collect_dtmf()` 호출은 각각 독립적으로 수집되며, STT mute는 reference count로 관리됩니다(마지막 홀더가 해제할 때만 실제 unmute).
+
+##### `mute_stt()` / `unmute_stt()` · `muteStt()` / `unmuteStt()` — STT 음소거 제어 (Python · TypeScript, P0)
+
+특정 `linked_id`에 대해 게이트웨이의 STT 파이프라인을 일시 중단합니다. mute 상태에서는 오디오 프레임이 STT 프로바이더로 전달되기 전에 drop됩니다. 주 용도는 `collect_dtmf()`이지만 DTMF 이외의 경우(예: 보류음 재생)에도 직접 사용 가능합니다.
+
+```python
+await gw.mute_stt(linked_id, duration_ms=5_000)  # 5초 뒤 자동 해제
+await gw.mute_stt(linked_id)                     # 명시적 unmute 전까지 유지
+await gw.unmute_stt(linked_id)                   # 즉시 해제 (모든 holder drop)
+```
+
+TypeScript:
+
+```typescript
+await gw.muteStt(linkedId, 5_000);   // 5초 뒤 자동 해제
+await gw.muteStt(linkedId);           // 명시적 unmute 전까지 유지
+await gw.unmuteStt(linkedId);         // 즉시 해제 (모든 holder drop)
+```
+
+게이트웨이 환경 변수:
+- `GW_STT_MUTE_ENABLED` (기본 `true`) — 기능 자체 토글. `false`면 API 호출은 200을 반환하지만 실제 드롭은 수행되지 않음.
+
+게이트웨이 REST:
+- `POST /api/v1/stt/{linkedId}/mute[?duration_ms=N]` — mute (ref-count +1)
+- `DELETE /api/v1/stt/{linkedId}/mute` — 즉시 force-unmute (모든 holder drop)
+- `GET  /api/v1/stt/{linkedId}/mute` — 현재 상태 (`{"muted": bool, "until": iso8601|null}`)
+
+##### `play_audio()` / `stop_audio()` · `playAudio()` / `stopAudio()` — URL 오디오 재생 (Python · TypeScript, P1)
+
+URL로 지정한 오디오 파일(mp3/wav/ogg)을 통화에 주입합니다. 게이트웨이가 16kHz mono PCM으로 자동 변환하여 재생하며, 선택적으로 DTMF 입력 시 즉시 중단할 수 있습니다(동의 수집/법적 고지/IVR 프롬프트에 적합).
+
+Python:
+
+```python
+result = await gw.play_audio(
+    linked_id,
+    url="https://cdn.example.com/legal-notice.mp3",
+    loop=False,
+    interrupt_on_dtmf=True,        # 아무 숫자키 누르면 즉시 중단
+    wait_for_completion=True,       # 재생 완료까지 대기 (기본 True)
+)
+# result.completed: bool
+# result.interrupted_by_dtmf: "1" 등 digit 또는 None (빈 문자열은 None으로 정규화)
+# result.duration_ms: int
+if result.interrupted_by_dtmf == "1":
+    await process_consent(linked_id)
+
+await gw.stop_audio(linked_id)     # 진행 중 재생 즉시 중단
+```
+
+TypeScript:
+
+```typescript
+const result = await gw.playAudio({
+  linkedId,
+  url: 'https://cdn.example.com/legal-notice.mp3',
+  loop: false,
+  interruptOnDtmf: true,
+  waitForCompletion: true,
+});
+// result.completed: boolean
+// result.interruptedByDtmf: string | null  (빈 문자열은 null로 정규화)
+// result.durationMs: number
+if (result.interruptedByDtmf === '1') {
+  await processConsent(linkedId);
+}
+
+await gw.stopAudio(linkedId);
+```
+
+동작 규칙:
+- `wait_for_completion=False` / `waitForCompletion=false` 일 때 게이트웨이는 202를 반환하고 백그라운드에서 재생. SDK는 즉시 `PlayAudioResult(completed=False, interrupted_by_dtmf=None, duration_ms=0)` 반환.
+- 빈 `url`은 SDK 단계에서 `ValueError` / `Error('url is required')` 발생.
+- 서버 응답의 `interruptedByDtmf` 빈 문자열은 Python/TS 모두 `None` / `null` 로 정규화.
+
+게이트웨이 REST:
+- `POST /api/v1/play/{linkedId}` — body: `{url, loop, interruptOnDtmf, waitForCompletion}`
+- `DELETE /api/v1/play/{linkedId}` — 진행 중 재생 중단
+
+##### `warm_transfer()` · `warmTransfer()` — 웜 트랜스퍼 (Python · TypeScript, P2)
+
+활성 통화를 에이전트 내선으로 웜 트랜스퍼합니다. 게이트웨이가 `destination`으로 새 레그를 Originate하고, 선택적으로 에이전트에 귓속말(whisper) 프롬프트를 재생한 뒤, 콜러와 에이전트를 브릿지합니다. `timeout_ms` 안에 응답이 없으면 타임아웃 처리되며 원본 통화는 유지됩니다.
+
+Python:
+
+```python
+result = await gw.warm_transfer(
+    linked_id,
+    destination="1001",
+    whisper_text="VIP 고객입니다",
+    hold_audio_url="https://cdn.example.com/hold.mp3",
+    context="from-internal",      # 기본값
+    timeout_ms=30_000,             # 기본 30s
+)
+# result.connected: bool
+# result.timed_out: bool
+# result.error: str | None                  (빈 문자열은 None으로 정규화)
+# result.agent_channel: str | None          ("PJSIP/1001-00000042")
+# result.bridge_id: str | None              ("bridge-xyz")
+# result.whisper_played: bool               (아래 제한 참고)
+if result.connected:
+    print(f"bridged: agent={result.agent_channel}")
+elif result.timed_out:
+    await gw.say(linked_id, "담당자 연결에 실패했습니다.", tts)
+```
+
+TypeScript:
+
+```typescript
+const result = await gw.warmTransfer({
+  linkedId,
+  destination: '1001',
+  whisperText: 'VIP 고객입니다',
+  holdAudioUrl: 'https://cdn.example.com/hold.mp3',
+  context: 'from-internal',   // 기본값
+  timeoutMs: 30_000,          // 기본 30_000
+});
+// result.connected: boolean
+// result.timedOut: boolean
+// result.error: string | null              (빈 문자열은 null로 정규화)
+// result.agentChannel: string | null
+// result.bridgeId: string | null
+// result.whisperPlayed: boolean
+if (result.connected) {
+  console.log('bridged:', result.agentChannel);
+} else if (result.timedOut) {
+  await gw.say(linkedId, '담당자 연결에 실패했습니다.', tts);
+}
+```
+
+동작 규칙:
+- 빈 `destination` → Python `ValueError` / TS `Error('destination is required')`.
+- `timeout_ms` / `timeoutMs` 가 0 이하 → Python `ValueError` / TS `Error('timeoutMs must be > 0')`.
+- `whisper_text`, `hold_audio_url` 빈 문자열이면 서버 기본값이 적용되도록 body에서 생략됩니다.
+- 응답의 `error` / `agentChannel` / `bridgeId` 빈 문자열은 Python/TS 모두 `None` / `null` 로 정규화.
+- 네트워크 오류는 기존 HTTP transport 예외가 그대로 전파됩니다.
+
+**현재 제한 (whisper 합성 미구현)**:
+- SDK 파라미터 `whisper_text` / `whisperText` 는 게이트웨이에 전달되지만, 현재 게이트웨이는 whisper 오디오를 합성하지 않습니다. 응답의 `whisper_played` / `whisperPlayed` 는 일반적으로 `False` / `false` 입니다.
+- 원본 스펙의 `whisper_tts: TtsAdapter` 파라미터는 혼선 방지를 위해 이번 릴리즈 SDK에서는 제공하지 않습니다. 게이트웨이 측 whisper 합성 기능이 추가되면 다음 마이너 버전에서 도입 예정이며, 그때도 기존 시그니처는 깨지지 않습니다.
+
+게이트웨이 REST:
+- `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, holdAudioUrl?, timeoutMs}`
+- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":false}`
+- 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false}`
+- 실패: `400` / `403` / `503` with `{"error":"..."}`
 
 #### `tts:complete` 이벤트 — TTS 재생 완료 감지
 

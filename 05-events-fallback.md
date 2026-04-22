@@ -356,6 +356,60 @@ gw.onTtsComplete((ev) => {
 | `conf:leave` | 회의 퇴장 | `linkedId`, `confId` |
 | `conf:ended` | 회의 종료 | `confId` |
 | **`tts:complete`** | **TTS 재생 완료 (v1.4+)** | **`linkedId`, `tenantId`, `serverId`, `timestamp`** |
+| **`call:dtmf`** | **DTMF 키 입력** | **`linkedId`, `digit`, `phase`, `durationMs`, `direction`, `tenantId`, `serverId`, `ts`** |
+
+---
+
+## 11-B. DTMF 이벤트 — `call:dtmf`
+
+### 페이로드
+
+```json
+{
+  "event":      "call:dtmf",
+  "linkedId":   "1775805184.495",
+  "digit":      "5",
+  "phase":      "end",
+  "durationMs": 120,
+  "direction":  "received",
+  "tenantId":   "7be69580e27641df",
+  "serverId":   "gw-seoul-01",
+  "ts":         1745000000000
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `digit` | `string` | 눌린 키 (`0`–`9`, `*`, `#`, `A`–`D`) |
+| `phase` | `"begin"` \| `"end"` | 키 누름 시작 / 해제 |
+| `durationMs` | `number` | 키 누름 지속 시간 (ms) — `phase="end"` 일 때만 포함 |
+| `direction` | `"received"` \| `"sent"` | 수신(고객) / 송신(게이트웨이) |
+| `ts` | `number` | 이벤트 발생 시각 (unix ms) |
+
+**`GW_DTMF_PHASE_FILTER`** 환경변수로 발행 단계를 제한할 수 있습니다 (기본값: `"end"` — DTMFEnd 이벤트만 발행, `durationMs` 포함). `"begin"` 으로 설정하면 두 단계 모두 발행됩니다.
+
+### 구독 예제
+
+**TypeScript:**
+
+```typescript
+gw.on("call:dtmf", (event) => {
+  if (event.linkedId !== myLinkedId) return;
+  console.log(`DTMF: ${event.digit} (${event.durationMs}ms)`);
+});
+```
+
+**Python:**
+
+```python
+@gw.on("call:dtmf")
+async def on_dtmf(event):
+    if event["linkedId"] != my_linked_id:
+        return
+    print(f"DTMF: {event['digit']} ({event.get('durationMs')}ms)")
+```
+
+> 여러 자리를 순서대로 수집할 때는 `call:dtmf` 를 직접 구독하는 것보다 [`collect_dtmf` / `collectDtmf`](13-voice-flow-controls.md) 고수준 유틸을 사용하는 것을 권장합니다 (타임아웃, 종료 키, STT 뮤트 자동 처리).
 
 ### Wire format (`/api/v1/ws/callinfo`)
 
