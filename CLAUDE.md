@@ -21,7 +21,9 @@
 | `1.3.6` | ⚠️ | 중간 릴리즈 |
 | `1.3.7` | ❌ 버그 | `OpenAIRealtimeAdapter` 오디오 입력 타입 불일치 — S2S 세션에서 오디오가 조용히 끊김 |
 | `1.3.8` ~ `1.5.2` | ✅ 수정 | v1.3.7의 audio_in 타입 불일치 및 background task 사일런트 실패 수정 |
-| `1.5.3+` | ✅ 신규 | `channel:state` 이벤트 추가 — outbound click-to-call B-leg 응답 감지 (`gw.on_channel_state` / `gw.onChannelState`). **게이트웨이 v1.3.9.1+ 필요** (AMI Newstate / DialEnd publish 지원) |
+| `1.5.3` | ✅ 안정 | `channel:state` 이벤트 추가 — outbound click-to-call B-leg 응답 감지 (`gw.on_channel_state` / `gw.onChannelState`). **게이트웨이 v1.3.9.1+ 필요** (AMI Newstate / DialEnd publish 지원) |
+| `1.6.0+` | ✅ 신규 | `audio:playback` 이벤트 추가 — `play_audio()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `play_audio()`/`playAudio()` 가 `playback_id`/`playbackId` 반환. **게이트웨이 v1.3.9.2+ 필요** (`PublishAudioPlayback` publish 지원) |
+| `1.6.1+` | ✅ 신규 | `tts:playback` 이벤트 추가 — `inject_tts()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `phase="canceled"` 의 `error_reason` 으로 선점 (`preempted`) / barge-in (`barge_in`) / 통화 종료 (`hangup`) / 사용자 요청 (`user_request`) 구분 가능. `inject_tts()` / `injectTts()` / `say()` 가 `InjectTtsResult { inject_id }` 반환. **게이트웨이 v1.3.9.3+ 필요** (`PublishTTSPlayback` publish 지원) |
 
 **v1.3.7 버그 상세:**
 - `OpenAIRealtimeAdapter._pipe_audio_in()`이 `chunk.samples` (AudioChunk)를 기대하지만, 실제로는 `bytes`가 전달되는 경우가 있어 `AttributeError`로 background task가 사일런트 종료됨
@@ -382,6 +384,8 @@ asyncio.run(main())
 | **`tts:complete`** | **TTS 재생 완료** | **`linkedId`, `tenantId`, `serverId`** |
 | **`call:dtmf`** | **DTMF 키 입력 (AMI DTMFBegin/DTMFEnd 기반)** | **`linkedId`, `digit`, `phase` (`begin`/`end`), `durationMs` (end 단계), `direction` (`received`/`sent`), `tenantId`, `serverId`, `ts`** |
 | **`channel:state`** *(SDK 1.5.3+)* | **Asterisk 채널 상태 변화 (AMI Newstate / DialEnd 기반)** | **`linkedId`, `channelId`, `leg` (`a`/`b`), `state` (`ring`/`up`/`down`/`busy`/`no_answer`/`rejected`), `direction` (`inbound`/`outbound`), `sipResponseCode` (선택), `tenantId`, `serverId`, `ts`** |
+| **`audio:playback`** *(SDK 1.6.0+)* | **`play_audio()` 라이프사이클** | **`linkedId`, `playbackId`, `url`, `phase` (`start`/`complete`/`canceled`/`failed`), `durationMs`, `errorReason` (failed 시), `tenantId`, `serverId`, `ts`** |
+| **`tts:playback`** *(SDK 1.6.1+)* | **`inject_tts()` 라이프사이클** | **`linkedId`, `injectId`, `phase` (`start`/`complete`/`canceled`/`failed`), `durationMs` (frames × 20ms — RTP-paced), `errorReason` (canceled: `preempted`/`barge_in`/`hangup`/`user_request` · failed: `channel_lost`/`playback_failed`), `tenantId`, `serverId`, `ts`** |
 
 #### `channel:state` 이벤트 — B-leg 응답 감지 (click-to-call 핵심)
 
@@ -465,6 +469,245 @@ else:
     # 1.0.x 폴백: 기존 휴리스틱 유지
     ...
 ```
+
+#### `audio:playback` 이벤트 — `play_audio()` 라이프사이클 정확 측정
+
+**SDK 1.6.0+** (게이트웨이 **v1.3.9.2+** 필요) — `gw.play_audio(url)` 호출의 **실제 재생 완료 시점**을 명시 신호로 노출합니다. DTMF 안내 오디오 + 키 입력 수집 시 보수 추정(`base_timeout + 8s`) 으로 처리하던 부채를 정확 측정으로 회수합니다.
+
+**phase 계약** — 재생 1회당 정확히 **1개**의 terminal phase 발사:
+
+| phase | 의미 | 비고 |
+|-------|------|------|
+| `start` | PCM 주입 시작 직전 | `durationMs`=0, 선택적 |
+| `complete` | 모든 PCM 프레임이 Asterisk 로 전송 완료 | `durationMs` = 실제 재생 길이 |
+| `canceled` | `DELETE /api/v1/play/{linkedId}` 또는 `interruptOnDtmf` 키 입력 | `durationMs` = 중단까지 경과 |
+| `failed` | 재생 중 오류 | `errorReason` 필드로 분류 |
+
+**`errorReason` 분류** (failed 시):
+
+| 값 | 의미 | retry 권장? |
+|-----|------|------------|
+| `fetch_failed` | URL 다운로드 / 캐시 실패 | ✅ (일시적 네트워크 오류) |
+| `decode_failed` | 트랜스코드 / 포맷 오류 | ❌ (재시도 무의미) |
+| `channel_lost` | RTP/WS to Asterisk 단절 (통화 hangup) | ❌ (통화 자체 종료) |
+| `playback_failed` | 일반 player 오류 | ⚠️ 케이스별 판단 |
+
+**`playback_id` 매칭**: `gw.play_audio()`/`gw.playAudio()` 가 반환하는 `playback_id`/`playbackId` 와 이벤트의 `playback_id` 가 일치할 때만 처리. 한 통화에 여러 audio 가 순차 재생될 때 정확한 매칭에 필수.
+
+**Wire format**:
+
+```json
+{
+  "event": "audio:playback",
+  "linkedId": "1777432210.78",
+  "playbackId": "9f4c3e12-…",
+  "url": "https://cdn.example.com/menu.wav",
+  "phase": "complete",
+  "durationMs": 4860,
+  "errorReason": "",
+  "tenantId": "tenant-xyz",
+  "serverId": "gw-seoul-01",
+  "ts": 1713779200123
+}
+```
+
+**Python — DTMF 안내 + 정확한 timeout 보강**:
+
+```python
+# Before — 보수 추정 (안내가 4초든 30초든 +8s 일괄)
+prompt_task = asyncio.ensure_future(gw.play_audio(linked_id, prompt_url))
+effective_timeout_ms = base_timeout_ms + 8000  # 마법 상수
+
+# After — 정확 측정
+res = await gw.play_audio(linked_id, prompt_url, wait_for_completion=False)
+playback_id = res.playback_id
+audio_done = asyncio.Event()
+actual_ms = 0
+
+async def on_pb(ev: AudioPlaybackEvent) -> None:
+    nonlocal actual_ms
+    if ev.playback_id != playback_id:
+        return
+    if ev.phase in ("complete", "canceled", "failed"):
+        actual_ms = ev.duration_ms or 0
+        audio_done.set()
+
+unsub = gw.on_audio_playback(on_pb)
+try:
+    await asyncio.wait_for(audio_done.wait(), timeout=30.0)
+    effective_timeout_ms = base_timeout_ms + actual_ms + 500  # 정확
+except asyncio.TimeoutError:
+    effective_timeout_ms = base_timeout_ms + 8000  # fail-safe 폴백
+finally:
+    unsub()
+```
+
+**TypeScript — `flow.play_audio` 노드 정확한 라우팅**:
+
+```typescript
+const { playbackId } = await gw.playAudio({ linkedId, url, waitForCompletion: false });
+
+const unsub = gw.onAudioPlayback((ev) => {
+  if (ev.playbackId !== playbackId) return;
+  switch (ev.phase) {
+    case 'complete': onSuccess(ev.durationMs); break;       // ✓ 끝까지 재생
+    case 'canceled': onSuccess(ev.durationMs); break;       // 사용자 키 입력으로 중단 (의도적)
+    case 'failed':
+      if (ev.errorReason === 'fetch_failed') retry();        // 일시적 — retry
+      else onError(ev.errorReason);                          // 영구적 — on_error 라우팅
+      break;
+  }
+  unsub();
+});
+```
+
+**호환성 가드**:
+
+```python
+if hasattr(gw, "on_audio_playback"):
+    gw.on_audio_playback(on_pb)
+else:
+    # 1.5.x 폴백: 8s 보수 추정 유지
+    effective_timeout_ms = base_timeout_ms + 8000
+```
+
+#### `tts:playback` 이벤트 — `inject_tts()` 라이프사이클 정확 측정
+
+**SDK 1.6.1+** (게이트웨이 **v1.3.9.3+** 필요) — `gw.inject_tts(...)` (스트리밍 PCM 주입) 의 라이프사이클을 명시 신호로 노출합니다. `audio:playback` 의 inject_tts 버전 — 같은 phase 계약 + `inject_id` 상관관계 + cancel 사유 분리.
+
+**왜 필요한가**: 기존 `tts:complete` 는 모든 terminal phase 에 발사되지만 `linkedId` 만 노출 — "정상 종료" / "선점됨" / "barge-in" / "channel_lost" 를 구분할 수 없었습니다. `tts:playback` 은 이 차이를 명시적으로 surface 합니다.
+
+**phase 계약** — 주입 1회당 정확히 **1개**의 terminal phase 발사:
+
+| phase | 의미 | 비고 |
+|-------|------|------|
+| `start` | PCM 프레임 송출 시작 직전 | `durationMs`=0, 선택적 |
+| `complete` | 모든 PCM 프레임이 Asterisk 로 전송 완료 | `durationMs` = frames × 20ms (게이트웨이 ticker 정확 페이싱) |
+| `canceled` | 자연 EOF 이전에 중단 | `errorReason` 으로 사유 분류 |
+| `failed` | 재생 중 오류 | `errorReason` 으로 분류 |
+
+**`errorReason` 분류**:
+
+| phase | 값 | 의미 |
+|-------|-----|------|
+| `canceled` | `preempted` | 같은 통화에 새 `inject_tts()` 가 들어와 기존 재생을 끊음 (가장 흔함) |
+| `canceled` | `barge_in` | 게이트웨이 측 VAD 가 caller 발화를 감지해 TTS 자동 중단 |
+| `canceled` | `hangup` | 통화 종료가 재생 중 발생 |
+| `canceled` | `user_request` | `DELETE /api/v1/tts/{lid}` 또는 `{"cmd":"stop"}` |
+| `failed` | `channel_lost` | Asterisk WebSocket 끊김 (통화 hangup 가능성 높음) |
+| `failed` | `playback_failed` | 일반 player 오류 |
+
+**`inject_id` 매칭**: `gw.inject_tts()` / `gw.injectTts()` 가 `InjectTtsResult { inject_id }` 반환. 한 통화에 여러 TTS 가 순차 주입될 때 phase=canceled (이전 주입 선점) 와 phase=complete (현재 주입 종료) 를 정확히 구분하려면 매칭 필수. **선점된 (preempted) 세션도 자기 inject_id 로 phase=canceled 이벤트가 발사**되므로 양쪽 ID 모두 추적 가능.
+
+**Wire format**:
+
+```json
+{
+  "event": "tts:playback",
+  "linkedId": "1777432210.78",
+  "injectId": "tts-9f4c3e12-…",
+  "phase": "complete",
+  "durationMs": 2640,
+  "errorReason": "",
+  "tenantId": "tenant-xyz",
+  "serverId": "gw-seoul-01",
+  "ts": 1713779200123
+}
+```
+
+**Python — `wait_tts_playback` 단순화 (makecall 마이그레이션)**:
+
+```python
+# Before — 시간 기반 추정 (CLAUDE.md "이벤트 기반 개발 원칙" 위반)
+async def wait_tts_playback_old(linked_id: str, audio_duration_ms: int):
+    inject_start = time.time()
+    await gw.inject_tts(linked_id, audio_chunks)
+    await tts_complete_evt.wait()                              # 전송 완료
+    elapsed_ms = (time.time() - inject_start) * 1000
+    remaining_ms = audio_duration_ms - elapsed_ms + 500        # 시간 추정
+    if remaining_ms > 50:
+        await asyncio.sleep(remaining_ms / 1000)               # ← sleep 위반
+    await asyncio.sleep(0.2)                                   # ← jitter drain sleep
+
+# After — 이벤트 기반, sleep 0개
+async def wait_tts_playback_new(linked_id: str):
+    result = await gw.inject_tts(linked_id, audio_chunks)
+    done = asyncio.Event()
+    captured_phase: str = ""
+
+    def on_tp(ev: TtsPlaybackEvent) -> None:
+        nonlocal captured_phase
+        if ev.inject_id != result.inject_id:
+            return
+        if ev.phase in ("complete", "canceled", "failed"):
+            captured_phase = ev.phase
+            done.set()
+
+    unsub = gw.on_tts_playback(on_tp)
+    try:
+        await done.wait()
+    finally:
+        unsub()
+    return captured_phase  # 호출자가 phase 별 라우팅
+```
+
+**TypeScript — TTS 시퀀스 chaining**:
+
+```typescript
+// 인사 → 메뉴 안내를 차례로, 각 inject 의 진짜 끝 시점 대기
+const r1 = await gw.injectTts(linkedId, greetingAudio());
+await waitTtsTerminal(gw, r1.injectId);
+const r2 = await gw.injectTts(linkedId, menuAudio());
+await waitTtsTerminal(gw, r2.injectId);
+
+async function waitTtsTerminal(gw: DVGatewayClient, injectId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const unsub = gw.onTtsPlayback((ev) => {
+      if (ev.injectId !== injectId) return;
+      if (ev.phase === 'complete' || ev.phase === 'canceled' || ev.phase === 'failed') {
+        unsub();
+        resolve();
+      }
+    });
+  });
+}
+```
+
+**호환성 가드**:
+
+```python
+if hasattr(gw, "on_tts_playback"):
+    # SDK 1.6.1+ — 정확 신호
+    gw.on_tts_playback(on_tp)
+else:
+    # SDK <1.6.1 폴백 — 기존 tts:complete 사용
+    gw.on_tts_complete(lambda ev: done.set())  # phase 구분 불가, 단순 종료만
+```
+
+```typescript
+if ('onTtsPlayback' in gw) {
+  gw.onTtsPlayback(handler);
+} else {
+  gw.onTtsComplete((ev) => handler({
+    type: 'tts:playback',
+    linkedId: ev.linkedId,
+    injectId: '', // 빈 — 폴백 모드는 inject_id 없음
+    phase: 'complete',
+    timestamp: ev.timestamp,
+  } as TtsPlaybackEvent));
+}
+```
+
+**타이밍 정확도 — 측정 결과**:
+
+게이트웨이 ticker 가 20ms strict 페이싱이므로 `phase=complete` 의 `durationMs` 는 결정론적입니다. 실측 (2026-04-29 production 로그):
+
+| 오디오 길이 | frames | 측정 delta | 일치 |
+|---|---|---|---|
+| 2.6s | 132 | 2640ms (132 × 20) | ✓ |
+| 519ms (barge-in) | 25 | 500ms (25 × 20) | ✓ |
+
+게이트웨이 → Asterisk 전송 완료 ≈ 실제 RTP-end 시점 (Asterisk 측 jitter buffer drain ~20-100ms 가 잔여 — 일반 voice-bot turn-taking 에는 무시 가능).
 
 #### `call:dtmf` 이벤트 — 통화 중 키패드 입력 감지
 
