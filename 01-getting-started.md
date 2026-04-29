@@ -447,5 +447,7 @@ npx tsx bot.ts
 npx tsc && node dist/bot.js
 ```
 
+> 고급 통화 제어(DTMF 수집, 오디오 재생, STT 뮤트, 상담원 이관)는 [13. 음성 플로우 제어 API](13-voice-flow-controls.md) 참조.
+
 ---
 
