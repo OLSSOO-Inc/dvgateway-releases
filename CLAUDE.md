@@ -24,6 +24,7 @@
 | `1.5.3` | ✅ 안정 | `channel:state` 이벤트 추가 — outbound click-to-call B-leg 응답 감지 (`gw.on_channel_state` / `gw.onChannelState`). **게이트웨이 v1.3.9.1+ 필요** (AMI Newstate / DialEnd publish 지원) |
 | `1.6.0+` | ✅ 신규 | `audio:playback` 이벤트 추가 — `play_audio()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `play_audio()`/`playAudio()` 가 `playback_id`/`playbackId` 반환. **게이트웨이 v1.3.9.2+ 필요** (`PublishAudioPlayback` publish 지원) |
 | `1.6.1+` | ✅ 신규 | `tts:playback` 이벤트 추가 — `inject_tts()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `phase="canceled"` 의 `error_reason` 으로 선점 (`preempted`) / barge-in (`barge_in`) / 통화 종료 (`hangup`) / 사용자 요청 (`user_request`) 구분 가능. `inject_tts()` / `injectTts()` / `say()` 가 `InjectTtsResult { inject_id }` 반환. **게이트웨이 v1.3.9.3+ 필요** (`PublishTTSPlayback` publish 지원) |
+| `1.6.2+` | ✅ 신규 | **VoiceFlow + 온디맨드 오디오** — `gw.flow()` 빌더 (stage 그래프 기반 IVR 런타임), `attachAudio()`/`detachAudio()`/`getAudioStatus()` 신규 메서드 추가. 다이얼플랜에서 `Stasis(dvgateway, flow=true, ...)`로 진입한 통화는 ExternalMedia/Bridge가 자동 생성되지 않고 holding 상태로 시작 → SDK가 stage onEnter/onExit 시점에 명시적으로 attach/detach. DTMF 메뉴 단계에서 STT/TTS 비용 0, 통화 중 단계별로 Asterisk 채널 수 동적 변동 가능. `flow=true` 미지정 통화는 기존 동작 그대로(회귀 영향 0). **게이트웨이 v1.3.9.4+ 필요** (`flow` Stasis arg + `/api/v1/audio/{linkedId}` 엔드포인트 + `audio:attached`/`audio:detached` 대시보드 이벤트 지원). 자세한 내용은 [VoiceFlow 섹션](#voiceflow--stage-그래프-ivr-자동화-gateway-1394) 참조 |
 
 **v1.3.7 버그 상세:**
 - `OpenAIRealtimeAdapter._pipe_audio_in()`이 `chunk.samples` (AudioChunk)를 기대하지만, 실제로는 `bytes`가 전달되는 경우가 있어 `AttributeError`로 background task가 사일런트 종료됨
@@ -78,6 +79,190 @@ await gw.pipeline().stt(stt).llm(llm).tts(tts).start()
 
 ---
 
+## VoiceFlow — Stage 그래프 IVR 자동화 (gateway 1.3.9.4+)
+
+`gw.pipeline()`은 **항상 켜진 풀-듀플렉스 AI 대화**를 가정합니다. 반면 IVR / 메뉴 / 폼 입력 / "DTMF로 분기 → 단계별 AI 호출" 같은 시나리오는 단계마다 필요한 자원이 다릅니다 — 메뉴 안내 단계는 TTS만, 콜백 번호 수집 단계는 DTMF만, AI 상담 단계만 풀-듀플렉스.
+
+이 비대칭 자원 사용을 게이트웨이가 **런타임에** 알 수 있도록 다이얼플랜에서 `flow=true`로 진입시키면, 게이트웨이는 ExternalMedia/Bridge를 자동 생성하지 않고 통화를 holding 상태로 둡니다. SDK가 stage onEnter/onExit 시점에 명시적으로 `attachAudio`/`detachAudio` REST 호출을 보내면 그때만 ExternalMedia가 만들어졌다 사라집니다 — Asterisk 채널 수와 미디어 게이트웨이 처리 비용 모두 단계별로 최소화됩니다.
+
+### 다이얼플랜 진입
+
+```asterisk
+exten => s,1,Stasis(dvgateway,flow=true,tenantid=acme,callernum=${CALLERID(num)},callednum=${EXTEN})
+```
+
+`flow=true`를 빼면 기존 동작(StasisStart 시 즉시 ExternalMedia 생성)이 그대로 유지됩니다 — **기존 통화 회귀 영향 0**.
+
+### 단계 audio 모드
+
+| 모드 | REST `dir` | 게이트웨이 동작 | 사용처 |
+|------|-----------|---------------|--------|
+| `'none'` | (없음) | ExternalMedia 분리 — 채널은 holding bridge | DTMF 메뉴 대기 / 폼 입력 / 슬립 |
+| `'tts-only'` | `out` | gateway → caller 단방향 | 안내 멘트 재생 (STT 비용 0) |
+| `'stt-only'` | `in` | caller → gateway 단방향 | 발화 녹취만 |
+| `'full'` | `both` | 양방향 (기본 AI 대화) | LLM 상담 단계 |
+
+### TypeScript 예제
+
+```typescript
+import { ElevenLabsAdapter, AnthropicAdapter, DeepgramAdapter } from 'dvgateway-adapters';
+
+const greetTts = new ElevenLabsAdapter({ apiKey: process.env.ELEVENLABS_KEY! });
+const aiPipeline = gw.pipeline()
+  .stt(new DeepgramAdapter({ apiKey: process.env.DEEPGRAM_KEY!, language: 'ko' }))
+  .llm(new AnthropicAdapter({ apiKey: process.env.ANTHROPIC_KEY!, model: 'claude-opus-4-7' }))
+  .tts(greetTts);
+
+gw.flow()
+  .stage('greet', {
+    audio: 'tts-only',                                    // out 방향만 attach
+    onEnter: async (ctx) => {
+      await ctx.say('안녕하세요. 1번은 상담, 2번은 콜백, 9번은 종료', greetTts);
+    },
+    onDtmf: { '1': 'chat', '2': 'callback', '9': 'bye' },
+  })
+  .stage('chat', {
+    audio: 'full',                                         // both 방향 attach
+    onEnter: async (ctx) => {
+      // 런타임 통화 수신을 AI 파이프라인에 위임
+      await aiPipeline.start();
+    },
+  })
+  .stage('callback', {
+    audio: 'none',                                         // 오디오 분리, DTMF만
+    onEnter: async (ctx) => {
+      const r = await ctx.collectDtmf({ maxDigits: 11, terminator: '#', timeoutMs: 15_000 });
+      ctx.setVar('callbackNumber', r.digits);
+      ctx.transitionTo('confirm');
+    },
+  })
+  .stage('confirm', {
+    audio: 'tts-only',
+    onEnter: async (ctx) => {
+      const num = ctx.getVar<string>('callbackNumber');
+      await ctx.say(`${num}로 다시 연락드리겠습니다.`, greetTts);
+      ctx.transitionTo('bye');
+    },
+  })
+  .stage('bye', {
+    audio: 'tts-only',
+    onEnter: async (ctx) => {
+      await ctx.say('감사합니다. 안녕히 계세요.', greetTts);
+      await ctx.hangup();
+    },
+  })
+  .startStage('greet')
+  .start();
+```
+
+### Python 예제
+
+```python
+from dvgateway import DVGatewayClient
+from dvgateway.adapters.tts import ElevenLabsAdapter
+
+greet_tts = ElevenLabsAdapter(api_key=os.environ["ELEVENLABS_KEY"])
+
+async def on_greet(ctx):
+    await ctx.say("1번 상담, 2번 콜백, 9번 종료", greet_tts)
+
+async def on_callback(ctx):
+    r = await ctx.collect_dtmf(max_digits=11, terminator="#", timeout_ms=15_000)
+    ctx.set_var("callback_number", r.digits)
+    ctx.transition_to("confirm")
+
+async def on_confirm(ctx):
+    num = ctx.get_var("callback_number")
+    await ctx.say(f"{num}로 다시 연락드리겠습니다.", greet_tts)
+    ctx.transition_to("bye")
+
+async def on_bye(ctx):
+    await ctx.say("감사합니다.", greet_tts)
+    await ctx.hangup()
+
+(
+    gw.flow()
+      .stage("greet",    audio="tts-only", on_enter=on_greet,
+             on_dtmf={"1": "chat", "2": "callback", "9": "bye"})
+      .stage("chat",     audio="full",     on_enter=lambda ctx: aiPipeline.start())
+      .stage("callback", audio="none",     on_enter=on_callback)
+      .stage("confirm",  audio="tts-only", on_enter=on_confirm)
+      .stage("bye",      audio="tts-only", on_enter=on_bye)
+      .start_stage("greet")
+      .start()
+)
+```
+
+### FlowContext 헬퍼
+
+`onEnter(ctx)`로 전달되는 컨텍스트는 `linkedId`가 자동 바인딩된 헬퍼들을 노출:
+
+| TypeScript | Python | 설명 |
+|------------|--------|------|
+| `ctx.say(text, tts)` | `ctx.say(text, tts)` | TTS 합성 + 주입 (현재 통화에) |
+| `ctx.playAudio(url, opts?)` | `ctx.play_audio(url, ...)` | URL 오디오 재생 |
+| `ctx.collectDtmf(opts?)` | `ctx.collect_dtmf(...)` | DTMF 자릿수 수집 (`client.collectDtmf`와 동일) |
+| `ctx.transitionTo(stage)` | `ctx.transition_to(stage)` | 다음 stage로 전환 (onEnter 종료 후 발효) |
+| `ctx.hangup()` | `ctx.hangup()` | 통화 종료 + flow 실행 종료 |
+| `ctx.setVar(key, value)` | `ctx.set_var(key, value)` | 통화별 임시 변수 저장 |
+| `ctx.getVar(key)` | `ctx.get_var(key, default=None)` | 통화별 임시 변수 조회 |
+| `ctx.client` | `ctx.client` | 전체 `DVGatewayClient` 접근 (헬퍼 외 메서드 호출용) |
+| `ctx.linkedId` | `ctx.linked_id` | 현재 통화 ID |
+| `ctx.session` | `ctx.session` | `CallSession` (caller, did, tenantId 등) |
+
+### Stage 전환 규칙
+
+- **`onDtmf` 매핑**: 단일 키 → 다음 stage. 첫 매칭 키가 즉시 발효.
+- **명시적 `ctx.transitionTo()`**: `onEnter` 안에서 호출. `onEnter`가 끝난 뒤 발효.
+- **DTMF 매핑도 명시 전환도 없는 stage**: 통화 종료까지 holding (예: 종료 인사 → `ctx.hangup()`).
+- **stage 전환 사이**: `onExit` (이전 stage) → audio 모드 reconcile (필요 시 detach + 재attach) → `onEnter` (다음 stage).
+
+### `forDid()` — 멀티 흐름 분기
+
+한 게이트웨이에 여러 voice flow를 등록할 경우 DID로 라우팅:
+
+```typescript
+gw.flow().forDid('07045144801').stage('vip-greet', {...}).startStage('vip-greet').start();
+gw.flow().forDid('07045144802').stage('main-greet', {...}).startStage('main-greet').start();
+```
+
+미지정 시 **첫 매칭 flow**가 모든 flow=true 통화를 받습니다.
+
+### 게이트웨이 자원 비교
+
+| 시나리오 | flow=true 사용 | 미사용 (기존) |
+|---------|--------------|--------------|
+| DTMF 메뉴 1단계 | ExternalMedia/Bridge **없음** | ExternalMedia/Bridge 즉시 생성 |
+| TTS 안내 단계 | ExternalMedia 1개 (`out` 방향) | ExternalMedia 1개 (양방향) |
+| AI 상담 단계 | ExternalMedia 1개 (`both`) | 동일 |
+| 콜백 번호 수집 | ExternalMedia **분리** | 그대로 유지 |
+| Asterisk 채널 수 | 단계별 변동 | 통화 시작~종료 내내 고정 |
+
+### 직접 attach/detach (flow 빌더 없이)
+
+VoiceFlow가 표현하지 못하는 동적 시나리오는 직접 호출:
+
+```typescript
+// flow=true 통화에 임시 안내 후 다시 detach
+await gw.attachAudio(linkedId, 'out');
+await gw.say(linkedId, '잠시만요', tts);
+await gw.detachAudio(linkedId);
+
+// 상태 조회
+const s = await gw.getAudioStatus(linkedId);
+// { flowMode: true, attached: false, extMediaId: '', bridgeId: 'dv-spy-...' }
+```
+
+`flowMode === false`인 통화는 attach/detach가 의미 없습니다 (이미 StasisStart 시점에 양방향 부착됨) — `attachAudio`는 404를 반환합니다.
+
+### 언제 VoiceFlow를 쓰지 말아야 하는가
+
+- **항상 풀-듀플렉스 AI 대화**: `gw.pipeline()` 단독으로 충분. flow는 오버킬.
+- **Click-to-call 발신**: 통화 시작부터 양방향 필요. flow=true 의미 없음.
+- **회의 (ConfBridge)**: 다중 참여자 모델은 flow와 호환 안 됨.
+
+---
+
 ## 전체 SDK 메서드 레퍼런스
 
 ### 통화 제어
@@ -86,6 +271,10 @@ await gw.pipeline().stt(stt).llm(llm).tts(tts).start()
 | `hangup(linkedId)` | `hangup(linked_id)` | 통화 종료 |
 | `redirect(linkedId, dest)` | `redirect(linked_id, dest)` | 통화 전환 |
 | `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 (에이전트 답변 후 브릿지) |
+| **`attachAudio(linkedId, dir?)`** | **`attach_audio(linked_id, dir)`** | **통화 중 오디오 스트리밍 부착 (flow=true 통화 전용, gateway 1.3.9.4+)** |
+| **`detachAudio(linkedId)`** | **`detach_audio(linked_id)`** | **오디오 분리 — 통화는 holding bridge에 유지** |
+| **`getAudioStatus(linkedId)`** | **`get_audio_status(linked_id)`** | **현재 오디오 attach 상태 조회 (flowMode/attached/extMediaId/bridgeId)** |
+| **`flow()`** | **`flow()`** | **VoiceFlow 빌더 — stage 그래프 기반 IVR 자동화 (아래 섹션 참조)** |
 
 ### PBX 관리
 | TypeScript | Python | 설명 |
