@@ -280,22 +280,28 @@ sudo apt install -y ffmpeg
 
 ### 동작
 
-통화를 상담원 내선으로 이관합니다. 게이트웨이가 상담원 레그를 새로 발신하고, 상담원이 수신하면 양 레그를 브릿지합니다. 이관 중에는 발신자에게 대기 음악을 재생할 수 있습니다.
+통화를 상담원 내선 또는 외부 PSTN 번호로 이관합니다. 게이트웨이가 상담원 레그를 새로 발신하고, 상담원이 수신하면 양 레그를 브릿지합니다. 이관 중에는 발신자에게 대기 음악을 재생할 수 있고, 상담원이 응답한 직후 — 브릿지 *전* — 에 상담 준비 정보(whisper)를 상담원에게만 들려줄 수 있습니다.
 
-Cold transfer(즉시 이관)와 달리 상담원이 수신 전에 상담 준비 정보(whisper)를 들을 수 있도록 설계되어 있습니다.
+**SDK 1.6.5 / Gateway 1.3.9.5 부터:**
 
-> **현재 제한:** 게이트웨이가 아직 `whisper_text` 음성 합성을 구현하지 않았습니다. `whisper_text`를 전달해도 서버에서 무시되며, 응답의 `whisper_played` 필드는 항상 `False`를 반환합니다. 다음 릴리즈에서 구현 예정이며, 구현 완료 시 SDK 변경 없이 자동으로 활성화됩니다.
+- 외부 휴대폰/유선번호로의 이관 지원 (`outbound=True` 옵션)
+- whisper TTS 실제 재생 — 게이트웨이가 테넌트별 클라우드 TTS 프로바이더로 16 kHz PCM 을 합성하여 상담원 채널에 ARI Play 로 주입. 활성 TTS 프로바이더가 없으면 whisper 만 조용히 스킵 (이관 자체는 정상)
+- 상담원 레그 outbound caller-ID / accountcode 지정 (`cid_number`, `cid_name`, `account_code`)
 
 ### 파라미터
 
 | 파라미터 | Python | TypeScript | 기본값 | 설명 |
 |---------|--------|------------|--------|------|
 | 통화 식별자 | `linked_id` | `linkedId` | — | 필수 |
-| 이관 대상 | `destination` | `destination` | — | 필수. 상담원 내선 번호 |
-| 귀속 안내문 | `whisper_text` | `whisperText` | `""` | 상담원에게만 들리는 안내 (현재 미구현) |
+| 이관 대상 | `destination` | `destination` | — | 필수. 상담원 내선 번호 또는 외부 PSTN 번호 (`01026132471` 등) |
+| 귀속 안내문 | `whisper_text` | `whisperText` | `""` | 상담원에게만 들리는 안내 (브릿지 전 재생) |
 | 대기 음악 URL | `hold_audio_url` | `holdAudioUrl` | `""` | 발신자 대기 중 재생할 오디오 URL |
-| 다이얼플랜 컨텍스트 | `context` | `context` | `"from-internal"` | 상담원 레그 발신 컨텍스트 |
+| 다이얼플랜 컨텍스트 | `context` | `context` | `"from-internal"` | 상담원 레그 발신 컨텍스트. `outbound=True` 시 트렁크 컨텍스트 (예: `"cos-all"`) |
 | 이관 타임아웃 | `timeout_ms` | `timeoutMs` | `30000` | 상담원 수신 대기 시간 (ms, >0) |
+| 외부 PSTN 라우팅 | `outbound` | `outbound` | `False` | `True` 시 endpoint 를 `Local/{dest}@{context}` 로 강제 — 외부 PSTN/트렁크 라우팅. 기본 false (digit-only → PJSIP 내부 peer) |
+| Outbound CID 번호 | `cid_number` | `cidNumber` | `""` | 상담원 레그 caller-ID 번호. `CALLERID(num)` + `EXTERNAL_CID_NUMBER` 양쪽에 주입되어 트렁크 측 P-Asserted-Identity 에 반영 |
+| Outbound CID 이름 | `cid_name` | `cidName` | `""` | 상담원 레그 caller-ID 이름 (`CALLERID(name)`) |
+| 계정 코드 | `account_code` | `accountCode` | `""` | CDR 계정 코드 (`CHANNEL(accountcode)`) |
 
 ### 반환값 (WarmTransferResult)
 
@@ -306,15 +312,15 @@ Cold transfer(즉시 이관)와 달리 상담원이 수신 전에 상담 준비 
 | 오류 사유 | `error` | `error` | 실패 사유 문자열 (예: `"no_answer"`, `"originate_failed"`). 없으면 `None`/`null` |
 | 상담원 채널 | `agent_channel` | `agentChannel` | 연결된 상담원 채널 이름. 실패 시 `None`/`null` |
 | 브릿지 ID | `bridge_id` | `bridgeId` | 생성된 브릿지 ID. 실패 시 `None`/`null` |
-| 귀속 재생 여부 | `whisper_played` | `whisperPlayed` | 현재 항상 `False` (미구현) |
+| 귀속 재생 여부 | `whisper_played` | `whisperPlayed` | whisper 가 실제로 재생 완료된 경우 `True`. 활성 TTS 프로바이더 없거나 합성/재생 실패 시 `False` |
 
-### Python 예제
+### Python 예제 — 내부 내선
 
 ```python
 res = await gw.warm_transfer(
     linked_id,
     destination="1001",
-    whisper_text="VIP 고객입니다. 주문번호 #12345",  # 현재 미구현
+    whisper_text="VIP 고객입니다. 주문번호 #12345",
     hold_audio_url="https://cdn.example.com/hold.mp3",
     timeout_ms=30_000,
 )
@@ -328,31 +334,74 @@ else:
     await gw.say(linked_id, f"연결 실패: {res.error}", tts)
 ```
 
+### Python 예제 — 외부 PSTN 번호
+
+```python
+res = await gw.warm_transfer(
+    linked_id,
+    destination="01026132471",            # 상담원 휴대폰
+    outbound=True,                         # ★ 외부 PSTN 라우팅 활성화
+    context="cos-all",                     # 트렁크 다이얼플랜 컨텍스트
+    cid_number="16682471",                 # 트렁크 측에 표시될 발신번호
+    cid_name="회사명",
+    account_code="07045144800",            # CDR 계정 코드
+    whisper_text="고객: 홍길동, 용건: 환불 문의",
+    hold_audio_url="https://cdn.example.com/hold.mp3",
+    timeout_ms=90_000,
+)
+```
+
 ### TypeScript 예제
 
 ```typescript
+// 내부 내선
 const res = await gw.warmTransfer({
   linkedId,
   destination: '1001',
-  whisperText: 'VIP 고객입니다. 주문번호 #12345',  // 현재 미구현
+  whisperText: 'VIP 고객입니다. 주문번호 #12345',
   holdAudioUrl: 'https://cdn.example.com/hold.mp3',
   timeoutMs: 30_000,
 });
 
-if (res.connected) {
-  console.log(`이관 완료: channel=${res.agentChannel}, bridge=${res.bridgeId}`);
-} else if (res.timedOut) {
-  await gw.say(linkedId, '죄송합니다. 잠시 후 다시 연결해 드리겠습니다.', tts);
-} else {
-  console.error('이관 실패:', res.error);
-}
+// 외부 PSTN 번호
+const res = await gw.warmTransfer({
+  linkedId,
+  destination: '01026132471',
+  outbound: true,
+  context: 'cos-all',
+  cidNumber: '16682471',
+  cidName: '회사명',
+  accountCode: '07045144800',
+  whisperText: '고객: 홍길동, 용건: 환불 문의',
+  holdAudioUrl: 'https://cdn.example.com/hold.mp3',
+  timeoutMs: 90_000,
+});
 ```
+
+### Whisper 재생 동작
+
+1. 상담원이 응답하면 게이트웨이가 `whisper_text` 를 테넌트별 클라우드 TTS 프로바이더로 16 kHz PCM 합성
+2. PCM 을 게이트웨이 호스트의 `GW_WARM_TRANSFER_WHISPER_DIR`(기본 `/var/lib/dvgateway/whisper`)에 `.sln16` 임시 파일로 저장
+3. ARI `POST /channels/{agentChannel}/play` 로 상담원 채널에만 재생 — 이 시점 발신자는 hold music/무음 상태이므로 whisper 가 발신자에게는 들리지 않음
+4. PlaybackFinished 이벤트 또는 `GW_WARM_TRANSFER_WHISPER_TIMEOUT_MS`(기본 20초) 경과 후 임시 파일 삭제 → 양 레그를 브릿지
+
+활성 클라우드 TTS 프로바이더가 없거나 합성/재생 중 어떤 단계라도 실패하면 whisper 만 스킵되고 (`whisper_played=False`) 이관 자체는 정상 진행됩니다.
 
 ### 타임아웃·실패 동작
 
 - `timed_out=True`: 이관 실패. 원본 통화(`linked_id`)는 유지 상태이므로 후속 처리(재시도, 콜백 예약 등)를 진행할 수 있습니다.
 - `error`가 있는 경우: 상담원 레그 발신 자체가 실패한 것이므로 원본 통화 역시 이미 끊겼을 가능성이 있습니다. 세션 상태를 확인하세요.
 - `connected=True` 이후: SDK 측에서는 통화가 상담원에게 이관된 것으로 간주합니다. 상담원 통화 이후 이벤트(종료 등)는 AMI 이벤트 스트림에서 확인하세요.
+
+### 게이트웨이 환경변수 (운영자용)
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `GW_WARM_TRANSFER_ENABLED` | `true` | warm_transfer 마스터 스위치. ARI 활성화 (`ARI_ENABLED=true`) 필수 |
+| `GW_WARM_TRANSFER_DEFAULT_TIMEOUT_MS` | `30000` | 클라이언트가 `timeoutMs` 미지정 시 적용되는 기본 타임아웃 |
+| `GW_WARM_TRANSFER_DEFAULT_CONTEXT` | `"from-internal"` | 클라이언트가 `context` 미지정 시 적용되는 기본 컨텍스트 |
+| `GW_WARM_TRANSFER_WHISPER_DIR` | `/var/lib/dvgateway/whisper` | whisper `.sln16` 임시 파일 디렉터리. **PBX 프로세스가 읽을 수 있어야 함**. 디렉터리는 게이트웨이가 자동 생성 (mode 0755), 파일은 0644 로 작성 |
+| `GW_WARM_TRANSFER_WHISPER_TIMEOUT_MS` | `20000` | whisper PlaybackFinished 최대 대기 시간 (초과 시 whisper 스킵하고 브릿지 진행) |
 
 ---
 
@@ -365,4 +414,4 @@ if (res.connected) {
 
 ---
 
-_Last updated: 2026-04-22_
+_Last updated: 2026-05-02_

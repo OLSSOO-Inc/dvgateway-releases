@@ -270,7 +270,7 @@ const s = await gw.getAudioStatus(linkedId);
 |------------|--------|------|
 | `hangup(linkedId)` | `hangup(linked_id)` | 통화 종료 |
 | `redirect(linkedId, dest)` | `redirect(linked_id, dest)` | 통화 전환 |
-| `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 (에이전트 답변 후 브릿지) |
+| `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 — 내선/외부 PSTN, whisper 재생, outbound CID/accountcode (1.6.5+) |
 | **`attachAudio(linkedId, dir?)`** | **`attach_audio(linked_id, dir)`** | **통화 중 오디오 스트리밍 부착 (flow=true 통화 전용, gateway 1.3.9.4+)** |
 | **`detachAudio(linkedId)`** | **`detach_audio(linked_id)`** | **오디오 분리 — 통화는 holding bridge에 유지** |
 | **`getAudioStatus(linkedId)`** | **`get_audio_status(linked_id)`** | **현재 오디오 attach 상태 조회 (flowMode/attached/extMediaId/bridgeId)** |
@@ -1026,9 +1026,13 @@ await gw.stopAudio(linkedId);
 
 ##### `warm_transfer()` · `warmTransfer()` — 웜 트랜스퍼 (Python · TypeScript, P2)
 
-활성 통화를 에이전트 내선으로 웜 트랜스퍼합니다. 게이트웨이가 `destination`으로 새 레그를 Originate하고, 선택적으로 에이전트에 귓속말(whisper) 프롬프트를 재생한 뒤, 콜러와 에이전트를 브릿지합니다. `timeout_ms` 안에 응답이 없으면 타임아웃 처리되며 원본 통화는 유지됩니다.
+활성 통화를 에이전트 내선 또는 외부 PSTN 번호로 웜 트랜스퍼합니다. 게이트웨이가 `destination`으로 새 레그를 Originate하고, 선택적으로 에이전트에 귓속말(whisper) 프롬프트를 재생한 뒤, 콜러와 에이전트를 브릿지합니다. `timeout_ms` 안에 응답이 없으면 타임아웃 처리되며 원본 통화는 유지됩니다.
 
-Python:
+`outbound=True`/`outbound: true` 를 지정하면 `destination`을 PJSIP 내부 peer 가 아닌 다이얼플랜 컨텍스트(`Local/{destination}@{context}`)로 라우팅합니다 — 외부 휴대폰/유선번호로 트렁크를 통해 발신할 때 필요합니다. 이 모드에서 `cid_number` / `cid_name` / `account_code` 가 트렁크 측 caller-ID 와 CDR 에 반영됩니다.
+
+Whisper TTS 는 게이트웨이의 테넌트별 클라우드 TTS 설정(`/api/v1/tts/synthesize` 와 동일한 프로바이더)을 그대로 사용합니다. 클라우드 TTS 가 구성되지 않은 테넌트에서는 `whisper_text` 가 무시되고 `whisper_played` 는 `False` 입니다.
+
+Python — 내부 내선:
 
 ```python
 result = await gw.warm_transfer(
@@ -1039,12 +1043,29 @@ result = await gw.warm_transfer(
     context="from-internal",      # 기본값
     timeout_ms=30_000,             # 기본 30s
 )
+```
+
+Python — 외부 PSTN:
+
+```python
+result = await gw.warm_transfer(
+    linked_id,
+    destination="01026132471",
+    outbound=True,
+    context="cos-all",                # 트렁크 다이얼플랜 컨텍스트
+    cid_number="16682471",
+    cid_name="회사명",
+    account_code="07045144800",
+    whisper_text="고객: 홍길동, 용건: 환불 문의",
+    hold_audio_url="https://cdn.example.com/hold.mp3",
+    timeout_ms=90_000,
+)
 # result.connected: bool
 # result.timed_out: bool
 # result.error: str | None                  (빈 문자열은 None으로 정규화)
-# result.agent_channel: str | None          ("PJSIP/1001-00000042")
+# result.agent_channel: str | None          ("PJSIP/...-...")
 # result.bridge_id: str | None              ("bridge-xyz")
-# result.whisper_played: bool               (아래 제한 참고)
+# result.whisper_played: bool
 if result.connected:
     print(f"bridged: agent={result.agent_channel}")
 elif result.timed_out:
@@ -1056,39 +1077,32 @@ TypeScript:
 ```typescript
 const result = await gw.warmTransfer({
   linkedId,
-  destination: '1001',
-  whisperText: 'VIP 고객입니다',
+  destination: '01026132471',
+  outbound: true,
+  context: 'cos-all',
+  cidNumber: '16682471',
+  cidName: '회사명',
+  accountCode: '07045144800',
+  whisperText: '고객: 홍길동, 용건: 환불 문의',
   holdAudioUrl: 'https://cdn.example.com/hold.mp3',
-  context: 'from-internal',   // 기본값
-  timeoutMs: 30_000,          // 기본 30_000
+  timeoutMs: 90_000,
 });
-// result.connected: boolean
-// result.timedOut: boolean
-// result.error: string | null              (빈 문자열은 null로 정규화)
-// result.agentChannel: string | null
-// result.bridgeId: string | null
-// result.whisperPlayed: boolean
-if (result.connected) {
-  console.log('bridged:', result.agentChannel);
-} else if (result.timedOut) {
-  await gw.say(linkedId, '담당자 연결에 실패했습니다.', tts);
-}
 ```
 
 동작 규칙:
 - 빈 `destination` → Python `ValueError` / TS `Error('destination is required')`.
 - `timeout_ms` / `timeoutMs` 가 0 이하 → Python `ValueError` / TS `Error('timeoutMs must be > 0')`.
-- `whisper_text`, `hold_audio_url` 빈 문자열이면 서버 기본값이 적용되도록 body에서 생략됩니다.
+- `whisper_text`, `hold_audio_url`, `cid_number`, `cid_name`, `account_code` 빈 문자열이면 body 에서 생략됩니다.
 - 응답의 `error` / `agentChannel` / `bridgeId` 빈 문자열은 Python/TS 모두 `None` / `null` 로 정규화.
 - 네트워크 오류는 기존 HTTP transport 예외가 그대로 전파됩니다.
 
-**현재 제한 (whisper 합성 미구현)**:
-- SDK 파라미터 `whisper_text` / `whisperText` 는 게이트웨이에 전달되지만, 현재 게이트웨이는 whisper 오디오를 합성하지 않습니다. 응답의 `whisper_played` / `whisperPlayed` 는 일반적으로 `False` / `false` 입니다.
-- 원본 스펙의 `whisper_tts: TtsAdapter` 파라미터는 혼선 방지를 위해 이번 릴리즈 SDK에서는 제공하지 않습니다. 게이트웨이 측 whisper 합성 기능이 추가되면 다음 마이너 버전에서 도입 예정이며, 그때도 기존 시그니처는 깨지지 않습니다.
+**Whisper 동작 조건**:
+- 게이트웨이가 활성 클라우드 TTS 프로바이더(테넌트별 또는 글로벌)를 갖고 있어야 합니다. 없으면 whisper 가 조용히 스킵되고 `whisper_played=false` 가 반환됩니다 — 트랜스퍼 자체는 성공.
+- 게이트웨이는 합성한 PCM 을 `GW_WARM_TRANSFER_WHISPER_DIR`(기본 `/var/lib/dvgateway/whisper`)에 `.sln16` 임시 파일로 저장한 뒤 ARI Play 로 에이전트 채널에 재생합니다. 이 디렉터리는 Asterisk 프로세스가 읽을 수 있어야 하며, 재생 완료/타임아웃(기본 20초) 후 자동 삭제됩니다.
 
 게이트웨이 REST:
-- `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, holdAudioUrl?, timeoutMs}`
-- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":false}`
+- `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, holdAudioUrl?, timeoutMs?, outbound?, cidNumber?, cidName?, accountCode?}`
+- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false}`
 - 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false}`
 - 실패: `400` / `403` / `503` with `{"error":"..."}`
 
