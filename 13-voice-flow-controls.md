@@ -282,19 +282,20 @@ sudo apt install -y ffmpeg
 
 통화를 상담원 내선 또는 외부 PSTN 번호로 이관합니다. 게이트웨이가 상담원 레그를 새로 발신하고, 상담원이 수신하면 양 레그를 브릿지합니다. 이관 중에는 발신자에게 대기 음악을 재생할 수 있고, 상담원이 응답한 직후 — 브릿지 *전* — 에 상담 준비 정보(whisper)를 상담원에게만 들려줄 수 있습니다.
 
-**SDK 1.6.5 / Gateway 1.3.9.8 부터:**
+**SDK 1.6.5 / Gateway 1.3.9.9 부터:**
 
 - 외부 휴대폰/유선번호로의 이관 지원 (`outbound=True` 옵션)
 - whisper TTS 실제 재생 — 게이트웨이가 테넌트별 클라우드 TTS 프로바이더로 16 kHz PCM 을 합성하여 상담원 채널에 ARI Play 로 주입. 활성 TTS 프로바이더가 없으면 whisper 만 조용히 스킵 (이관 자체는 정상)
 - 상담원 레그 outbound caller-ID / accountcode 지정 (`cid_number`, `cid_name`, `account_code`)
 
-> **Gateway 1.3.9.5 / 1.3.9.6 / 1.3.9.7 회귀 안내**:
+> **Gateway 1.3.9.5 / 1.3.9.6 / 1.3.9.7 / 1.3.9.8 회귀 안내**:
 >
 > - **1.3.9.5**: `outbound=True` 시 게이트웨이가 상담원 leg 에 ExternalMedia 를 자동 부착하여 customer↔agent audio bridge 가 형성되지 않음. 1.3.9.6 에서 수정.
 > - **1.3.9.6**: ARI Originate 가 만든 Local 채널 pair 가 트렁크 응답 시점에 자동 optimize 되어 `400 Channel not found` 로 실패. 1.3.9.7 에서 endpoint 에 `/n` (no-optimize) 플래그를 추가해 해결.
-> - **1.3.9.7**: AddToBridge REST 호출이 두 채널을 comma-joined string 으로 보냈는데 일부 Asterisk 버전 (20.x 이상에서 관찰) 의 JSON body 파서가 split 을 하지 않아 전체 문자열을 단일 채널 ID 로 lookup 하면서 `find_channel_control: Couldn't find 'CHA,CHB'` 패턴으로 실패. 1.3.9.8 에서 채널당 별도 POST 로 변경해 해결 (autonomous 모드의 `addChannelToBridge` 와 동일 패턴).
+> - **1.3.9.7**: AddToBridge REST 호출이 두 채널을 comma-joined string 으로 보냈는데 일부 Asterisk 버전 (20.x 이상에서 관찰) 의 JSON body 파서가 split 을 하지 않아 전체 문자열을 단일 채널 ID 로 lookup 하면서 `find_channel_control: Couldn't find 'CHA,CHB'` 패턴으로 실패. 1.3.9.8 에서 채널당 별도 POST 로 변경해 해결.
+> - **1.3.9.8**: 단일 채널 POST 로 바뀐 이후에도, customer leg 를 채널 NAME (`PJSIP/DKCT-...`) 로 lookup 하면 일부 Asterisk 버전이 JSON body 의 name 기반 lookup 을 거부하여 `400 Channel not found` 가 다시 발생. 1.3.9.9 에서 customer leg 도 채널 ID (Asterisk uniqueid) 로 전환하여 해결 (autonomous 모드의 `addChannelToBridge` 와 동일하게 ID 사용).
 >
-> **외부 PSTN 이관을 사용한다면 반드시 1.3.9.8 이상을 배포하세요.** 내부 내선 이관(`outbound=False`, digit-only destination → `PJSIP/{ext}`)은 모든 버전에서 정상 동작합니다 — Local 채널을 사용하지 않기 때문.
+> **외부 PSTN 이관을 사용한다면 반드시 1.3.9.9 이상을 배포하세요.** 내부 내선 이관(`outbound=False`, digit-only destination → `PJSIP/{ext}`)은 모든 버전에서 정상 동작합니다 — Local 채널을 사용하지 않기 때문.
 
 ### 파라미터
 
