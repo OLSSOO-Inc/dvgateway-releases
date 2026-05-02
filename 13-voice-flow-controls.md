@@ -282,11 +282,18 @@ sudo apt install -y ffmpeg
 
 통화를 상담원 내선 또는 외부 PSTN 번호로 이관합니다. 게이트웨이가 상담원 레그를 새로 발신하고, 상담원이 수신하면 양 레그를 브릿지합니다. 이관 중에는 발신자에게 대기 음악을 재생할 수 있고, 상담원이 응답한 직후 — 브릿지 *전* — 에 상담 준비 정보(whisper)를 상담원에게만 들려줄 수 있습니다.
 
-**SDK 1.6.5 / Gateway 1.3.9.9 부터:**
+**SDK 1.6.5 / Gateway 1.3.9.9 부터 (외부 PSTN 이관 안정 동작):**
 
 - 외부 휴대폰/유선번호로의 이관 지원 (`outbound=True` 옵션)
 - whisper TTS 실제 재생 — 게이트웨이가 테넌트별 클라우드 TTS 프로바이더로 16 kHz PCM 을 합성하여 상담원 채널에 ARI Play 로 주입. 활성 TTS 프로바이더가 없으면 whisper 만 조용히 스킵 (이관 자체는 정상)
 - 상담원 레그 outbound caller-ID / accountcode 지정 (`cid_number`, `cid_name`, `account_code`)
+
+**SDK 1.6.6 / Gateway 1.4.0.0 부터 (mixed audio capture stream):**
+
+- `stream_mixed_to_external_media=True` 옵션으로 customer↔agent 합성 audio 를 ExternalMedia → `/api/v1/ws/stream?linkedid=<lid>&dir=both` 로 실시간 송출. STT / 통화 transcript / Voice Flow 요약 파이프라인이 warm transfer 이후에도 끊김 없이 audio 수신 가능.
+- 결과 객체에 `mixed_stream_started` (bool), `mixed_stream_url` (Optional[str]) 추가.
+- 포맷: mono slin16 (16 kHz, 20 ms / 640 B 프레임). stereo split 은 미지원 (Deepgram nova-3 등의 mono diarization 으로 화자 분리 권장).
+- warm transfer 가 성공하더라도 capture 부착에 실패하면 `mixed_stream_started=False` 로 graceful degrade — 이관 자체는 정상 유지.
 
 > **Gateway 1.3.9.5 / 1.3.9.6 / 1.3.9.7 / 1.3.9.8 회귀 안내**:
 >
@@ -311,6 +318,7 @@ sudo apt install -y ffmpeg
 | Outbound CID 번호 | `cid_number` | `cidNumber` | `""` | 상담원 레그 caller-ID 번호. `CALLERID(num)` + `EXTERNAL_CID_NUMBER` 양쪽에 주입되어 트렁크 측 P-Asserted-Identity 에 반영 |
 | Outbound CID 이름 | `cid_name` | `cidName` | `""` | 상담원 레그 caller-ID 이름 (`CALLERID(name)`) |
 | 계정 코드 | `account_code` | `accountCode` | `""` | CDR 계정 코드 (`CHANNEL(accountcode)`) |
+| Mixed audio capture | `stream_mixed_to_external_media` | `streamMixedToExternalMedia` | `False` | `True` 시 warm bridge 의 mixed audio 를 `/api/v1/ws/stream?linkedid=<lid>` 로 실시간 송출 (1.6.6+) |
 
 ### 반환값 (WarmTransferResult)
 
@@ -322,6 +330,8 @@ sudo apt install -y ffmpeg
 | 상담원 채널 | `agent_channel` | `agentChannel` | 연결된 상담원 채널 이름. 실패 시 `None`/`null` |
 | 브릿지 ID | `bridge_id` | `bridgeId` | 생성된 브릿지 ID. 실패 시 `None`/`null` |
 | 귀속 재생 여부 | `whisper_played` | `whisperPlayed` | whisper 가 실제로 재생 완료된 경우 `True`. 활성 TTS 프로바이더 없거나 합성/재생 실패 시 `False` |
+| Mixed stream 시작 | `mixed_stream_started` | `mixedStreamStarted` | capture stream 부착 성공 시 `True` (1.6.6+, 옵션 활성 시에만 의미) |
+| Mixed stream URL | `mixed_stream_url` | `mixedStreamUrl` | capture stream WS URL. 미부착/실패 시 `None`/`null` (1.6.6+) |
 
 ### Python 예제 — 내부 내선
 

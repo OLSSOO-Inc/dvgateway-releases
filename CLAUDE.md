@@ -270,7 +270,7 @@ const s = await gw.getAudioStatus(linkedId);
 |------------|--------|------|
 | `hangup(linkedId)` | `hangup(linked_id)` | 통화 종료 |
 | `redirect(linkedId, dest)` | `redirect(linked_id, dest)` | 통화 전환 |
-| `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 — 내선/외부 PSTN, whisper 재생, outbound CID/accountcode (1.6.5+) |
+| `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 — 내선/외부 PSTN, whisper 재생, outbound CID/accountcode, mixed audio capture (1.6.6+) |
 | **`attachAudio(linkedId, dir?)`** | **`attach_audio(linked_id, dir)`** | **통화 중 오디오 스트리밍 부착 (flow=true 통화 전용, gateway 1.3.9.4+)** |
 | **`detachAudio(linkedId)`** | **`detach_audio(linked_id)`** | **오디오 분리 — 통화는 holding bridge에 유지** |
 | **`getAudioStatus(linkedId)`** | **`get_audio_status(linked_id)`** | **현재 오디오 attach 상태 조회 (flowMode/attached/extMediaId/bridgeId)** |
@@ -1100,10 +1100,17 @@ const result = await gw.warmTransfer({
 - 게이트웨이가 활성 클라우드 TTS 프로바이더(테넌트별 또는 글로벌)를 갖고 있어야 합니다. 없으면 whisper 가 조용히 스킵되고 `whisper_played=false` 가 반환됩니다 — 트랜스퍼 자체는 성공.
 - 게이트웨이는 합성한 PCM 을 `GW_WARM_TRANSFER_WHISPER_DIR`(기본 `/var/lib/dvgateway/whisper`)에 `.sln16` 임시 파일로 저장한 뒤 ARI Play 로 에이전트 채널에 재생합니다. 이 디렉터리는 Asterisk 프로세스가 읽을 수 있어야 하며, 재생 완료/타임아웃(기본 20초) 후 자동 삭제됩니다.
 
+**Mixed audio capture stream (SDK 1.6.6+ / Gateway 1.4.0.0+)**:
+- `stream_mixed_to_external_media=True` / `streamMixedToExternalMedia: true` 옵션 시 게이트웨이가 warm bridge 에 별도 ExternalMedia 채널을 부착하여 customer↔agent mixed audio 를 동일 customer linkedID 의 fanout 으로 송출.
+- 호출자는 응답 객체의 `mixed_stream_url` / `mixedStreamUrl` (보통 `ws://<gw>:8080/api/v1/ws/stream?linkedid=<lid>&dir=both`) 로 (재)연결하여 audio 수신.
+- 포맷: mono slin16 (16 kHz, 20 ms / 640 B 프레임). stereo split 미지원 — Deepgram nova-3 등의 mono diarization 으로 화자 분리.
+- 부착 실패 시 `mixed_stream_started=False` 로 graceful degrade. warm transfer 자체는 성공 유지.
+- 통화 종료 (warm bridge dissolve) 시 ExternalMedia 자동 정리.
+
 게이트웨이 REST:
-- `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, holdAudioUrl?, timeoutMs?, outbound?, cidNumber?, cidName?, accountCode?}`
-- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false}`
-- 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false}`
+- `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, holdAudioUrl?, timeoutMs?, outbound?, cidNumber?, cidName?, accountCode?, streamMixedToExternalMedia?}`
+- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false,"mixedStreamStarted":true|false,"mixedStreamUrl":"ws://..."|""}`
+- 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false,"mixedStreamStarted":false}`
 - 실패: `400` / `403` / `503` with `{"error":"..."}`
 
 #### `tts:complete` 이벤트 — TTS 재생 완료 감지
