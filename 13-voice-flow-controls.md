@@ -295,6 +295,13 @@ sudo apt install -y ffmpeg
 - 포맷: mono slin16 (16 kHz, 20 ms / 640 B 프레임). stereo split 은 미지원 (Deepgram nova-3 등의 mono diarization 으로 화자 분리 권장).
 - warm transfer 가 성공하더라도 capture 부착에 실패하면 `mixed_stream_started=False` 로 graceful degrade — 이관 자체는 정상 유지.
 
+**Gateway 1.4.0.1 부터 (bridge teardown 안정화):**
+
+- warm transfer 이후 customer 또는 agent 한쪽이 hangup 하면 자동으로 다른 쪽도 hangup 되고 mixing bridge 가 destroy 됩니다. 1.4.0.0 에서는 ARI mixing bridge 의 기본 동작 (한 명이 떠나도 나머지 alive 유지) 으로 인해 한쪽 hangup 시 다른 쪽 통화가 영원히 끝나지 않는 회귀가 보고됨.
+- 게이트웨이가 ARI `ChannelLeftBridge` 이벤트를 구독하여 customer/agent 중 어느 한쪽이 leave 하면 나머지 + (옵션) mixed-stream ExternalMedia 까지 cascade hangup 후 bridge destroy. `Dial()`-스타일 semantics 와 동일.
+- 동시 hangup race 는 `sync.Map.CompareAndDelete` 로 단일 firing 보장.
+- attachMixedStream 진입 결정 (skipped / requested / attached / failed) 모두 `[WARM-TRANSFER] mixed stream …` 로 로깅 — `mixed_stream_started=false` 디버깅 시 즉시 path 식별 가능.
+
 > **Gateway 1.3.9.5 / 1.3.9.6 / 1.3.9.7 / 1.3.9.8 회귀 안내**:
 >
 > - **1.3.9.5**: `outbound=True` 시 게이트웨이가 상담원 leg 에 ExternalMedia 를 자동 부착하여 customer↔agent audio bridge 가 형성되지 않음. 1.3.9.6 에서 수정.
