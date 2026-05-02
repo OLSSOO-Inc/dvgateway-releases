@@ -302,6 +302,11 @@ sudo apt install -y ffmpeg
 - 동시 hangup race 는 `sync.Map.CompareAndDelete` 로 단일 firing 보장.
 - attachMixedStream 진입 결정 (skipped / requested / attached / failed) 모두 `[WARM-TRANSFER] mixed stream …` 로 로깅 — `mixed_stream_started=false` 디버깅 시 즉시 path 식별 가능.
 
+**Gateway 1.4.0.2 부터 (mixed stream Stasis-app race 해결):**
+
+- 1.4.0.0/1.4.0.1 에서 `attachMixedStream` 이 `createExternalMedia` 직후 `addChannel` 을 호출하면 chan_websocket 채널이 Stasis app 에 enter 하기 전이라 ARI 가 `422 Channel not in Stasis application` 으로 거부 — `mixed_stream_started=False` 의 실제 root cause. 1.4.0.1 의 진단 로그가 이 패턴을 노출시킴.
+- 1.4.0.2: autonomous 모드의 표준 패턴 (5회 × 200 ms = 1초 천장) 으로 retry 적용. 동일 race 를 해결하는 검증된 코드 경로 재사용. retry 마다 `[WARM-TRANSFER] mixed stream addToBridge retry n/5 ...` 로깅.
+
 > **Gateway 1.3.9.5 / 1.3.9.6 / 1.3.9.7 / 1.3.9.8 회귀 안내**:
 >
 > - **1.3.9.5**: `outbound=True` 시 게이트웨이가 상담원 leg 에 ExternalMedia 를 자동 부착하여 customer↔agent audio bridge 가 형성되지 않음. 1.3.9.6 에서 수정.
