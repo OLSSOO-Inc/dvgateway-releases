@@ -282,11 +282,13 @@ sudo apt install -y ffmpeg
 
 통화를 상담원 내선 또는 외부 PSTN 번호로 이관합니다. 게이트웨이가 상담원 레그를 새로 발신하고, 상담원이 수신하면 양 레그를 브릿지합니다. 이관 중에는 발신자에게 대기 음악을 재생할 수 있고, 상담원이 응답한 직후 — 브릿지 *전* — 에 상담 준비 정보(whisper)를 상담원에게만 들려줄 수 있습니다.
 
-**SDK 1.6.5 / Gateway 1.3.9.5 부터:**
+**SDK 1.6.5 / Gateway 1.3.9.6 부터:**
 
 - 외부 휴대폰/유선번호로의 이관 지원 (`outbound=True` 옵션)
 - whisper TTS 실제 재생 — 게이트웨이가 테넌트별 클라우드 TTS 프로바이더로 16 kHz PCM 을 합성하여 상담원 채널에 ARI Play 로 주입. 활성 TTS 프로바이더가 없으면 whisper 만 조용히 스킵 (이관 자체는 정상)
 - 상담원 레그 outbound caller-ID / accountcode 지정 (`cid_number`, `cid_name`, `account_code`)
+
+> **Gateway 1.3.9.5 회귀 안내**: 1.3.9.5 는 `outbound=True` 시 게이트웨이가 상담원 leg 에 ExternalMedia 를 자동 부착하여 customer↔agent audio bridge 가 형성되지 않는 버그가 있습니다. 외부 PSTN 이관을 사용한다면 **반드시 1.3.9.6 이상**을 배포하세요. 내부 내선 이관(`outbound=False` 기본)은 1.3.9.5 에서도 정상 동작합니다.
 
 ### 파라미터
 
