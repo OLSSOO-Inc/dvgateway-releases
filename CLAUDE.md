@@ -572,7 +572,7 @@ asyncio.run(main())
 | `conf:ended` | 회의 종료 | `confId` |
 | **`tts:complete`** | **TTS 재생 완료** | **`linkedId`, `tenantId`, `serverId`** |
 | **`call:dtmf`** | **DTMF 키 입력 (AMI DTMFBegin/DTMFEnd 기반)** | **`linkedId`, `digit`, `phase` (`begin`/`end`), `durationMs` (end 단계), `direction` (`received`/`sent`), `tenantId`, `serverId`, `ts`** |
-| **`channel:state`** *(SDK 1.5.3+)* | **Asterisk 채널 상태 변화 (AMI Newstate / DialEnd 기반)** | **`linkedId`, `channelId`, `leg` (`a`/`b`), `state` (`ring`/`up`/`down`/`busy`/`no_answer`/`rejected`), `direction` (`inbound`/`outbound`), `sipResponseCode` (선택), `tenantId`, `serverId`, `ts`** |
+| **`channel:state`** *(SDK 1.5.3+, identity fields SDK 1.6.8+)* | **Asterisk 채널 상태 변화 (AMI Newstate / DialEnd 기반)** | **`linkedId`, `channelId`, `leg` (`a`/`b`), `state` (`ring`/`up`/`down`/`busy`/`no_answer`/`rejected`), `direction` (`inbound`/`outbound`), `sipResponseCode` (선택), `did`/`caller`/`callerName`/`callee` (선택 · 게이트웨이 v1.4.3.1+ · `call:new` 등록 이후의 이벤트에만 채워짐), `tenantId`, `serverId`, `ts`** |
 | **`audio:playback`** *(SDK 1.6.0+)* | **`play_audio()` 라이프사이클** | **`linkedId`, `playbackId`, `url`, `phase` (`start`/`complete`/`canceled`/`failed`), `durationMs`, `errorReason` (failed 시), `tenantId`, `serverId`, `ts`** |
 | **`tts:playback`** *(SDK 1.6.1+)* | **`inject_tts()` 라이프사이클** | **`linkedId`, `injectId`, `phase` (`start`/`complete`/`canceled`/`failed`), `durationMs` (frames × 20ms — RTP-paced), `errorReason` (canceled: `preempted`/`barge_in`/`hangup`/`user_request` · failed: `channel_lost`/`playback_failed`), `tenantId`, `serverId`, `ts`** |
 
@@ -606,11 +606,17 @@ asyncio.run(main())
   "state": "up",
   "direction": "outbound",
   "sipResponseCode": 200,
+  "did": "025550100",
+  "caller": "01012345678",
+  "callerName": "Hong Gildong",
+  "callee": "1001",
   "tenantId": "tenant-xyz",
   "serverId": "gw-seoul-01",
   "ts": 1713779200123
 }
 ```
+
+> **신규 필드** (게이트웨이 v1.4.3.1+ · SDK 1.6.8+): `did`/`caller`/`callerName`/`callee` 는 `call:new` 가 registry 에 세션을 등록한 *뒤* 발생한 `channel:state` 이벤트에만 채워집니다. 그 이전(매우 이른 Newstate)에는 비어 있을 수 있으니 `if event.caller:` 패턴으로 가드하세요. SDK 는 빈 문자열도 `undefined`/`None` 으로 정규화합니다.
 
 **Python**:
 
