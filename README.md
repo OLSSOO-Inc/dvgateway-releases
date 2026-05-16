@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.6.8** | 업데이트: 2026-03-24
+> **최신 버전: 1.6.8** | 업데이트: 2026-05-16
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -24,6 +24,8 @@
 | 11 | [PBX 관리 + 캠페인](11-pbx-management.md) | 착신전환, 발신자표시, 클릭투콜, 아웃바운드 캠페인, 이벤트 모니터링 |
 | 12 | [통화 음질 문제 분석 (TTS+STT)](12-tts-audio-troubleshooting.md) | TTS/STT 증상 분류, 로그 분석, SDK 점검, 환경변수, 에스컬레이션 기준 |
 | 13 | [음성 플로우 제어 API](13-voice-flow-controls.md) | DTMF 수집, STT 음소거, 오디오 파일 재생, 상담원 이관 |
+| 14 | [신규 테넌트 가이드 — 통화 이벤트 + 고정 음원 재생](14-tenant-fixed-audio-guide.md) | SaaS 테넌트 가입 후 5분 만에 callinfo 수신 + TTS 주입까지 |
+| 15 | [같은 테넌트 멀티 구독자 충돌 방지](15-multi-subscriber-tenant-isolation.md) | 봇 + 모니터 + 데모를 한 테넌트로 운영할 때의 책임 분리, preempt 감지 |
 
 ---
 
@@ -79,4 +81,4 @@ python examples/python/01_basic_voice_bot.py
 
 ---
 
-_Last updated: 2026-03-24_
+_Last updated: 2026-05-16_
