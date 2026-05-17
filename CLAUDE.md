@@ -270,7 +270,7 @@ const s = await gw.getAudioStatus(linkedId);
 |------------|--------|------|
 | `hangup(linkedId)` | `hangup(linked_id)` | 통화 종료 |
 | `redirect(linkedId, dest)` | `redirect(linked_id, dest)` | 통화 전환 |
-| `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 — 내선/외부 PSTN, whisper 재생, outbound CID/accountcode, mixed audio capture (1.6.6+) |
+| `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 — 내선/외부 PSTN, whisper 재생 (SDK 측 `TtsAdapter` 또는 gateway TTS), outbound CID/accountcode, mixed audio capture (1.6.6+), `whisper_skip_reason` 진단 코드 (1.6.9+) |
 | **`attachAudio(linkedId, dir?)`** | **`attach_audio(linked_id, dir)`** | **통화 중 오디오 스트리밍 부착 (flow=true 통화 전용, gateway 1.3.9.4+)** |
 | **`detachAudio(linkedId)`** | **`detach_audio(linked_id)`** | **오디오 분리 — 통화는 holding bridge에 유지** |
 | **`getAudioStatus(linkedId)`** | **`get_audio_status(linked_id)`** | **현재 오디오 attach 상태 조회 (flowMode/attached/extMediaId/bridgeId)** |
@@ -1036,9 +1036,14 @@ await gw.stopAudio(linkedId);
 
 `outbound=True`/`outbound: true` 를 지정하면 `destination`을 PJSIP 내부 peer 가 아닌 다이얼플랜 컨텍스트(`Local/{destination}@{context}`)로 라우팅합니다 — 외부 휴대폰/유선번호로 트렁크를 통해 발신할 때 필요합니다. 이 모드에서 `cid_number` / `cid_name` / `account_code` 가 트렁크 측 caller-ID 와 CDR 에 반영됩니다.
 
-Whisper TTS 는 게이트웨이의 테넌트별 클라우드 TTS 설정(`/api/v1/tts/synthesize` 와 동일한 프로바이더)을 그대로 사용합니다. 클라우드 TTS 가 구성되지 않은 테넌트에서는 `whisper_text` 가 무시되고 `whisper_played` 는 `False` 입니다.
+Whisper TTS 는 두 가지 모드로 동작합니다:
 
-Python — 내부 내선:
+1. **SDK-side 합성 (권장)** — `whisper_tts` / `whisperTts` 에 직접 보유한 `TtsAdapter` (ElevenLabs / OpenAI / Gemini 등) 를 전달. SDK 가 사용자 API 키로 로컬 합성 후 PCM 을 게이트웨이로 전송. **프로바이더 키가 게이트웨이를 거치지 않음** (보안 우선). `client.say()` 와 동일한 패턴.
+2. **Gateway-side 합성 (관리형)** — `whisper_text` / `whisperText` 만 전달. 게이트웨이가 `/etc/dvgateway/apikeys/<tenantId>.json` 의 테넌트별 클라우드 TTS 설정(`/api/v1/tts/synthesize` 와 동일한 프로바이더)으로 서버에서 합성.
+
+두 경로 모두 실패하면 `whisper_played=False` 이고 `whisper_skip_reason` 에 사유 코드가 포함됩니다. 트랜스퍼 자체는 항상 영향 없음 — whisper 는 best-effort.
+
+Python — 내부 내선 (관리형, 게이트웨이 측 TTS):
 
 ```python
 result = await gw.warm_transfer(
@@ -1051,9 +1056,16 @@ result = await gw.warm_transfer(
 )
 ```
 
-Python — 외부 PSTN:
+Python — 외부 PSTN, SDK 보유 TTS 프로바이더 사용 (권장):
 
 ```python
+from dvgateway.adapters.tts import ElevenLabsAdapter
+
+tts = ElevenLabsAdapter(
+    api_key=os.environ["ELEVENLABS_KEY"],
+    voice_id="21m00Tcm4TlvDq8ikWAM",
+)
+
 result = await gw.warm_transfer(
     linked_id,
     destination="01026132471",
@@ -1063,6 +1075,7 @@ result = await gw.warm_transfer(
     cid_name="회사명",
     account_code="07045144800",
     whisper_text="고객: 홍길동, 용건: 환불 문의",
+    whisper_tts=tts,                  # ← 사용자 키로 SDK 측 합성
     hold_audio_url="https://cdn.example.com/hold.mp3",
     timeout_ms=90_000,
 )
@@ -1072,8 +1085,13 @@ result = await gw.warm_transfer(
 # result.agent_channel: str | None          ("PJSIP/...-...")
 # result.bridge_id: str | None              ("bridge-xyz")
 # result.whisper_played: bool
+# result.whisper_skip_reason: str | None    ("no_tts_provider" / "synthesize_failed" /
+#                                            "bad_pcm_format" / "play_failed" /
+#                                            "timeout" / "cancelled" / None)
 if result.connected:
     print(f"bridged: agent={result.agent_channel}")
+    if not result.whisper_played:
+        print(f"whisper 스킵: {result.whisper_skip_reason}")
 elif result.timed_out:
     await gw.say(linked_id, "담당자 연결에 실패했습니다.", tts)
 ```
@@ -1081,6 +1099,13 @@ elif result.timed_out:
 TypeScript:
 
 ```typescript
+import { ElevenLabsAdapter } from 'dvgateway-adapters';
+
+const tts = new ElevenLabsAdapter({
+  apiKey: process.env.ELEVENLABS_KEY!,
+  voiceId: '21m00Tcm4TlvDq8ikWAM',
+});
+
 const result = await gw.warmTransfer({
   linkedId,
   destination: '01026132471',
@@ -1090,21 +1115,42 @@ const result = await gw.warmTransfer({
   cidName: '회사명',
   accountCode: '07045144800',
   whisperText: '고객: 홍길동, 용건: 환불 문의',
+  whisperTts: tts,                    // ← 사용자 키로 SDK 측 합성
   holdAudioUrl: 'https://cdn.example.com/hold.mp3',
   timeoutMs: 90_000,
 });
+if (result.connected && !result.whisperPlayed) {
+  console.warn('whisper 스킵:', result.whisperSkipReason);
+}
 ```
 
 동작 규칙:
 - 빈 `destination` → Python `ValueError` / TS `Error('destination is required')`.
 - `timeout_ms` / `timeoutMs` 가 0 이하 → Python `ValueError` / TS `Error('timeoutMs must be > 0')`.
 - `whisper_text`, `hold_audio_url`, `cid_number`, `cid_name`, `account_code` 빈 문자열이면 body 에서 생략됩니다.
-- 응답의 `error` / `agentChannel` / `bridgeId` 빈 문자열은 Python/TS 모두 `None` / `null` 로 정규화.
+- `whisper_tts` 가 있고 `whisper_text` 가 비어 있으면 합성을 시도하지 않고 body 에 `whisperPcm` 포함되지 않습니다 (no-op).
+- `whisper_tts` 가 0 바이트 PCM 을 반환하면 SDK 가 `whisperPcm` 을 생략 → 게이트웨이가 `whisper_text` 로 fallback (`whisper_skip_reason="no_tts_provider"` 가능).
+- 응답의 `error` / `agentChannel` / `bridgeId` / `whisperSkipReason` 빈 문자열은 Python/TS 모두 `None` / `null` 로 정규화.
 - 네트워크 오류는 기존 HTTP transport 예외가 그대로 전파됩니다.
 
 **Whisper 동작 조건**:
-- 게이트웨이가 활성 클라우드 TTS 프로바이더(테넌트별 또는 글로벌)를 갖고 있어야 합니다. 없으면 whisper 가 조용히 스킵되고 `whisper_played=false` 가 반환됩니다 — 트랜스퍼 자체는 성공.
-- 게이트웨이는 합성한 PCM 을 `GW_WARM_TRANSFER_WHISPER_DIR`(기본 `/var/lib/dvgateway/whisper`)에 `.sln16` 임시 파일로 저장한 뒤 ARI Play 로 에이전트 채널에 재생합니다. 이 디렉터리는 Asterisk 프로세스가 읽을 수 있어야 하며, 재생 완료/타임아웃(기본 20초) 후 자동 삭제됩니다.
+- SDK-side: 사용자가 보유한 `TtsAdapter` 가 `synthesize(text)` 로 16 kHz mono 16-bit slin16 PCM 청크를 emit 해야 합니다 (`ElevenLabsAdapter`, `OpenAITtsAdapter`, `GeminiTtsAdapter`, `CosyVoiceAdapter` 등 내장 어댑터 모두 충족).
+- Gateway-side: 게이트웨이가 활성 클라우드 TTS 프로바이더(`/etc/dvgateway/apikeys/<tenantId>.json` 또는 `/api/v1/config/apikeys` 로 설정) 를 갖고 있어야 합니다. 없으면 `whisper_skip_reason="no_tts_provider"` 로 스킵.
+- 게이트웨이는 PCM 을 `GW_WARM_TRANSFER_WHISPER_DIR`(기본 `/var/lib/dvgateway/whisper`)에 `.sln16` 임시 파일로 저장한 뒤 ARI Play 로 에이전트 채널에 재생합니다. 이 디렉터리는 Asterisk 프로세스가 읽을 수 있어야 하며, 재생 완료/타임아웃(기본 20초) 후 자동 삭제됩니다.
+- 최대 PCM 크기: 약 1.92 MB (60초 분량의 16 kHz mono 16-bit). 초과 시 게이트웨이가 `413 Request Entity Too Large` 반환.
+
+**`whisper_skip_reason` 값 가이드**:
+
+| 값 | 원인 | 권장 조치 |
+|----|------|----------|
+| `null` | whisper 정상 재생 또는 미요청 | 없음 |
+| `"no_request"` | `whisper_text` 와 `whisper_tts` 모두 미설정 | 의도된 동작 — 무시 가능 |
+| `"no_tts_provider"` | SDK 어댑터 없고 게이트웨이도 키 없음 | `whisper_tts` 전달하거나 게이트웨이 `/api/v1/config/apikeys` 설정 |
+| `"synthesize_failed"` | 게이트웨이 측 합성 실패 (HTTP/quota/network) | 게이트웨이 로그 확인 + 프로바이더 quota 점검 |
+| `"bad_pcm_format"` | SDK PCM 이 2-byte aligned 아님 (slin16 아님) | 어댑터가 16 kHz mono 16-bit LE 를 emit 하는지 확인 |
+| `"play_failed"` | ARI Play 가 audio 파일 거부 | 게이트웨이 로그 + `GW_WARM_TRANSFER_WHISPER_DIR` 권한 확인 |
+| `"timeout"` | PlaybackFinished 가 timeout 안에 안 옴 | 오디오는 재생됐을 가능성 큼 — `GW_WARM_TRANSFER_WHISPER_TIMEOUT_MS` 조정 |
+| `"cancelled"` | caller context 가 취소됨 | 클라이언트가 요청을 abort 한 경우 — 정상 |
 
 **Mixed audio capture stream (SDK 1.6.6+ / Gateway 1.4.0.0+)**:
 - `stream_mixed_to_external_media=True` / `streamMixedToExternalMedia: true` 옵션 시 게이트웨이가 warm bridge 에 별도 ExternalMedia 채널을 부착하여 customer↔agent mixed audio 를 동일 customer linkedID 의 fanout 으로 송출.
@@ -1114,10 +1160,11 @@ const result = await gw.warmTransfer({
 - 통화 종료 (warm bridge dissolve) 시 ExternalMedia 자동 정리.
 
 게이트웨이 REST:
-- `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, holdAudioUrl?, timeoutMs?, outbound?, cidNumber?, cidName?, accountCode?, streamMixedToExternalMedia?}`
-- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false,"mixedStreamStarted":true|false,"mixedStreamUrl":"ws://..."|""}`
-- 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false,"mixedStreamStarted":false}`
-- 실패: `400` / `403` / `503` with `{"error":"..."}`
+- `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, whisperPcm?, holdAudioUrl?, timeoutMs?, outbound?, cidNumber?, cidName?, accountCode?, streamMixedToExternalMedia?}`
+- `whisperPcm`: base64-encoded 16 kHz mono 16-bit signed-linear LE PCM. SDK 가 자동으로 채움 (사용자가 `whisper_tts` 지정 시).
+- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false,"whisperSkipReason":""|"...","mixedStreamStarted":true|false,"mixedStreamUrl":"ws://..."|""}`
+- 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false,"whisperSkipReason":"...","mixedStreamStarted":false}`
+- 실패: `400` (잘못된 base64 / destination 누락) / `403` (테넌트 권한) / `413` (whisperPcm 크기 초과) / `503` (warm_transfer disabled) with `{"error":"..."}`
 
 #### `tts:complete` 이벤트 — TTS 재생 완료 감지
 
