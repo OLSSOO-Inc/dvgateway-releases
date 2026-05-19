@@ -1,9 +1,36 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.6.9** | 업데이트: 2026-05-16
+> **최신 버전: 1.7.0** | 업데이트: 2026-05-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
+
+---
+
+## 👋 비전공자 / 의사결정자라면
+
+기술 세부사항보다 **"우리 회사에 어떤 활용이 가능한가?"**가 궁금하다면
+먼저 **[초보자 활용 가이드](../beginner-guides/README.md)**를 보세요.
+5가지 대표 활용 시나리오(AI 상담원·무인 안내·회의록·콜센터 어시스턴트·YouTube 라이브)를
+각각 5~30분 안에 이해할 수 있도록 정리했습니다.
+
+---
+
+## 🚀 처음이신가요? — 코드 없이 5분 체험
+
+SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브라우저에서
+통화 이벤트·TTS·DTMF·STT 를 클릭으로 체험할 수 있습니다.
+
+**[Web Playground 빠른 시작 →](16-web-playground-quickstart.md)**
+
+1. [GitHub Releases](https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest) 에서
+   `web-playground.zip` 다운로드 (또는 [`examples/web-playground/`](https://github.com/OLSSOO-Inc/dvgateway-releases/tree/main/examples/web-playground) 폴더를 복사).
+2. 압축 풀고 `python3 -m http.server 8000` 한 줄로 띄움.
+3. 브라우저에서 Host / Tenant ID / Password 입력 → 휴대폰으로 전화 →
+   클릭으로 TTS·DTMF·STT 체험.
+
+각 데모는 동등한 SDK 코드도 함께 보여주므로, 마음에 드는 흐름을 그대로
+프로젝트에 가져갈 수 있습니다.
 
 ---
 
@@ -26,6 +53,8 @@
 | 13 | [음성 플로우 제어 API](13-voice-flow-controls.md) | DTMF 수집, STT 음소거, 오디오 파일 재생, 상담원 이관 |
 | 14 | [신규 테넌트 가이드 — 통화 이벤트 + 고정 음원 재생](14-tenant-fixed-audio-guide.md) | SaaS 테넌트 가입 후 5분 만에 callinfo 수신 + TTS 주입까지 |
 | 15 | [같은 테넌트 멀티 구독자 충돌 방지](15-multi-subscriber-tenant-isolation.md) | 봇 + 모니터 + 데모를 한 테넌트로 운영할 때의 책임 분리, preempt 감지 |
+| 16 | [Web Playground 빠른 시작 — 코드 없이 5분 체험](16-web-playground-quickstart.md) | 브라우저만으로 통화 이벤트·TTS·DTMF·STT 클릭 체험, 본인 TTS/STT 키 테스트 |
+| 17 | [최소 비용 IVR 봇 (`mode=lite`)](17-lite-mode-ivr.md) | 안내 멘트 + DTMF만 받는 통화에 STT/LLM/TTS 없이 ARI Playback만 쓰는 표준 패턴. 비용·동시통화 효율 극대화 |
 
 ---
 

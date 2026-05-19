@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DVGateway Web Playground</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>DVGateway</strong> <span class="muted">Web Playground</span>
+    </div>
+    <nav class="topnav">
+      <a href="https://github.com/OLSSOO-Inc/dvgateway-releases" target="_blank" rel="noopener" class="topnav-link" title="DVGateway SDK · 바이너리 · install.sh">
+        <span class="dot-link"></span> dvgateway-releases ↗
+      </a>
+      <a href="https://github.com/OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway/tree/master/docs/sdk-guide" target="_blank" rel="noopener" class="topnav-link" title="SDK 가이드 (한국어)">
+        SDK 가이드 ↗
+      </a>
+    </nav>
+    <div class="status">
+      <span id="conn-tenant" class="pill hidden"></span>
+      <span id="conn-dot" class="dot off"></span>
+      <span id="conn-text" class="muted">disconnected</span>
+    </div>
+  </header>
+
+  <div id="key-warning" class="banner">
+    페이지에 입력하는 테넌트 비밀번호와 호스트는 이 브라우저의 <code>localStorage</code>에만 저장됩니다.
+    공용 PC에서는 사용 후 <b>Clear credentials</b>를 누르세요.
+  </div>
+  <div id="ext-actor-banner" class="banner banner-warn hidden"></div>
+  <div id="preempt-toast" class="banner banner-err hidden"></div>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>1. 테넌트 자격증명</h2>
+        <label>Gateway Host
+          <input id="cred-host" type="text" placeholder="gw.example.com" />
+        </label>
+        <label>Tenant ID
+          <input id="cred-tid" type="text" placeholder="tenant-acme" autocomplete="username" />
+        </label>
+        <label>Tenant Password
+          <input id="cred-pw" type="password" placeholder="비밀번호" autocomplete="current-password" />
+        </label>
+        <details class="advanced">
+          <summary>고급 (포트 / TLS)</summary>
+          <label><input id="cred-tls" type="checkbox" /> TLS 사용 (https / wss)</label>
+          <label>Login port
+            <input id="cred-login-port" type="number" value="8081" min="1" max="65535" />
+          </label>
+          <label>API port
+            <input id="cred-api-port" type="number" value="8080" min="1" max="65535" />
+          </label>
+        </details>
+        <div class="row">
+          <button id="btn-connect" class="primary">Connect</button>
+          <button id="btn-disconnect">Disconnect</button>
+        </div>
+        <div class="row">
+          <button id="btn-clear" class="ghost">Clear credentials</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>2. 프로바이더 API 키</h2>
+        <p class="hint muted small">데모용 STT/TTS provider 키. 비워두면 게이트웨이의 기본 설정을 사용합니다.</p>
+        <div class="provider-mode">
+          <label class="radio">
+            <input type="radio" name="provider-mode" value="A" checked />
+            <span>Mode A — 게이트웨이에 저장</span>
+            <span class="muted small">권장. 게이트웨이가 키를 받아 직접 합성·전사</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="provider-mode" value="B" />
+            <span>Mode B — 브라우저에서 직접 호출 (TTS 전용)</span>
+            <span class="muted small">키가 브라우저→provider로 직접. ElevenLabs / Gemini만</span>
+          </label>
+        </div>
+
+        <details open id="prov-tts-details">
+          <summary>TTS</summary>
+          <label>Provider
+            <select id="prov-tts-provider">
+              <option value="elevenlabs">ElevenLabs</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+          </label>
+          <label>API Key
+            <input id="prov-tts-key" type="password" placeholder="xi-api-key 또는 AIza..." />
+          </label>
+          <label>Voice (선택)
+            <input id="prov-tts-voice" type="text" placeholder="비워두면 기본값" />
+          </label>
+          <div class="row">
+            <button id="btn-prov-tts-save" class="primary small">키 저장</button>
+            <button id="btn-prov-tts-test" class="small">테스트 합성</button>
+          </div>
+          <p id="prov-tts-status" class="hint muted small"></p>
+        </details>
+
+        <details id="prov-stt-details">
+          <summary>STT (Mode A 전용)</summary>
+          <p class="hint muted small">STT 결과는 게이트웨이가 callinfo로 다시 전달하므로 브라우저 직접 호출은 지원하지 않습니다.</p>
+          <label>Provider
+            <select id="prov-stt-provider">
+              <option value="deepgram">Deepgram</option>
+              <option value="openai">OpenAI Realtime / Whisper</option>
+              <option value="google">Google Cloud STT</option>
+            </select>
+          </label>
+          <label>API Key
+            <input id="prov-stt-key" type="password" placeholder="provider API key" />
+          </label>
+          <div class="row">
+            <button id="btn-prov-stt-save" class="primary small">키 저장</button>
+          </div>
+          <p id="prov-stt-status" class="hint muted small"></p>
+        </details>
+      </section>
+
+      <section class="panel">
+        <h2>3. 데모 템플릿</h2>
+        <ul id="template-menu" class="menu"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>4. 활성 통화</h2>
+        <div id="call-list" class="call-list">
+          <p class="muted small">아직 활성 통화가 없습니다.</p>
+        </div>
+      </section>
+    </aside>
+
+    <section class="main">
+      <div class="tabs">
+        <button class="tab active" data-tab="demo">Demo</button>
+        <button class="tab" data-tab="code">Code</button>
+        <button class="tab" data-tab="log">Event log</button>
+      </div>
+
+      <div class="tab-panel" data-panel="demo">
+        <div id="demo-header">
+          <h2 id="demo-title">템플릿을 선택하세요</h2>
+          <p id="demo-desc" class="muted"></p>
+        </div>
+        <div id="demo-body"></div>
+        <section id="inline-log" class="inline-log">
+          <header class="inline-log-head">
+            <span class="muted small">라이브 이벤트</span>
+            <span id="inline-log-count" class="muted small">0 events</span>
+            <button id="btn-inline-log-clear" class="ghost small">Clear</button>
+            <button id="btn-inline-log-toggle" class="ghost small" title="접기/펴기">▼</button>
+          </header>
+          <div id="inline-log-feed" class="inline-log-feed"></div>
+        </section>
+      </div>
+
+      <div class="tab-panel hidden" data-panel="code">
+        <p class="muted small">현재 템플릿의 핵심 코드 — 그대로 복사해 자기 앱에 붙여넣을 수 있습니다.
+           SDK 가이드 <code>docs/sdk-guide/14-tenant-fixed-audio-guide.md</code> 의 흐름과 동일합니다.</p>
+        <pre><code id="code-view">// 템플릿을 선택하면 여기에 표시됩니다.</code></pre>
+      </div>
+
+      <div class="tab-panel hidden" data-panel="log">
+        <div class="row">
+          <button id="btn-log-clear" class="ghost small">Clear</button>
+          <span id="log-count" class="muted small">0 events</span>
+        </div>
+        <div id="event-log" class="event-log"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

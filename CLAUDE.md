@@ -25,6 +25,7 @@
 | `1.6.0+` | ✅ 신규 | `audio:playback` 이벤트 추가 — `play_audio()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `play_audio()`/`playAudio()` 가 `playback_id`/`playbackId` 반환. **게이트웨이 v1.3.9.2+ 필요** (`PublishAudioPlayback` publish 지원) |
 | `1.6.1+` | ✅ 신규 | `tts:playback` 이벤트 추가 — `inject_tts()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `phase="canceled"` 의 `error_reason` 으로 선점 (`preempted`) / barge-in (`barge_in`) / 통화 종료 (`hangup`) / 사용자 요청 (`user_request`) 구분 가능. `inject_tts()` / `injectTts()` / `say()` 가 `InjectTtsResult { inject_id }` 반환. **게이트웨이 v1.3.9.3+ 필요** (`PublishTTSPlayback` publish 지원) |
 | `1.6.2+` | ✅ 신규 | **VoiceFlow + 온디맨드 오디오** — `gw.flow()` 빌더 (stage 그래프 기반 IVR 런타임), `attachAudio()`/`detachAudio()`/`getAudioStatus()` 신규 메서드 추가. 다이얼플랜에서 `Stasis(dvgateway, flow=true, ...)`로 진입한 통화는 ExternalMedia/Bridge가 자동 생성되지 않고 holding 상태로 시작 → SDK가 stage onEnter/onExit 시점에 명시적으로 attach/detach. DTMF 메뉴 단계에서 STT/TTS 비용 0, 통화 중 단계별로 Asterisk 채널 수 동적 변동 가능. `flow=true` 미지정 통화는 기존 동작 그대로(회귀 영향 0). **게이트웨이 v1.3.9.4+ 필요** (`flow` Stasis arg + `/api/v1/audio/{linkedId}` 엔드포인트 + `audio:attached`/`audio:detached` 대시보드 이벤트 지원). 자세한 내용은 [VoiceFlow 섹션](#voiceflow--stage-그래프-ivr-자동화-gateway-1394) 참조 |
+| `1.7.0+` | ✅ 신규 | `call:rejected` 이벤트 추가 — 라이선스 전역 한도 또는 테넌트 동시통화 한도(`TENANT_LIMITS`) 도달 시 SDK가 거부 사실을 명시 신호로 수신. `reason`(`license_global`/`tenant_limit`), `currentActive`, `limit` 포함. **게이트웨이 v1.4.4.0+ 필요** (`PublishCallRejected` + `/api/v1/config/tenant-limits` hot-reload API 지원) |
 
 **v1.3.7 버그 상세:**
 - `OpenAIRealtimeAdapter._pipe_audio_in()`이 `chunk.samples` (AudioChunk)를 기대하지만, 실제로는 `bytes`가 전달되는 경우가 있어 `AttributeError`로 background task가 사일런트 종료됨
@@ -448,6 +449,76 @@ await gw.set_early_media(
 | `stopThinking(linkedId)` | `stop_thinking(linked_id)` | Comfort noise 종료 |
 | `postVad(linkedId, side, speaking)` | `post_vad(linked_id, side, speaking)` | 대시보드 VAD 인디케이터 전달 (OpenAI Realtime VAD 등) |
 
+### Playback — `mode=lite` 통화용 ARI 직접 재생 (SDK 1.7+, gateway 1.4.3+)
+
+`mode=lite` Stasis 통화는 ExternalMedia·Snoop·Bridge를 만들지 않는 최소 리소스 프로파일입니다 (단순 IVR / 안내 멘트 / DTMF 입력 수집 용도). PCM 주입 경로(`play_audio`, `inject_tts`, `say`)는 ExternalMedia가 필요하므로 lite 통화에선 동작하지 않습니다. 대신 **ARI Playback API**를 직접 호출해 Asterisk 사운드 파일(또는 숫자/구분음)을 재생합니다.
+
+| TypeScript | Python | 설명 |
+|------------|--------|------|
+| `playback({ linkedId, media })` | `playback(linked_id, media)` | ARI Playback 시작. 즉시 반환되고 `playback_id`를 돌려줍니다. 완료는 `audio:playback` 이벤트(`lifecycle: done`)로 알 수 있습니다 |
+| `stopPlayback(linkedId, playbackId)` | `stop_playback(linked_id, playback_id)` | 진행 중인 playback 중단. 이미 끝난 경우도 안전 (no-op) |
+
+**`media` URI 포맷** (Asterisk 규약):
+- `sound:hello-world` — `sounds/{lang}/hello-world.{format}`
+- `sound:/abs/path-without-ext` — 절대경로, 확장자 자동 감지
+- `number:1234` — 숫자 읽어주기 ("천이백삼십사")
+- `digits:1234` — 자리별 읽기 ("일 이 삼 사")
+- `characters:abc` — 글자 한 자씩 ("에이 비 시")
+- `tone:dial` / `tone:busy` 등 — `indications.conf` 톤
+
+**DTMF 수신**: lite 모드에서도 AMI DTMF가 정상 발생하므로 기존 callinfo 이벤트(`call:dtmf`)와 `collectDtmf()` 도우미가 그대로 동작합니다 — SDK 측 추가 코드 없음.
+
+**TypeScript 예시 — 간단 IVR**:
+```typescript
+const gw = new DVGatewayClient({ baseUrl, auth: { type: 'apiKey', apiKey } });
+
+gw.onCallEvent(async (evt) => {
+  if (evt.type !== 'call:new' || evt.session.mode !== 'lite') return;
+  const { linkedId } = evt.session;
+
+  // 1) 안내 멘트
+  await gw.playback({ linkedId, media: 'sound:welcome' });
+
+  // 2) DTMF 입력 수집 (기존 collectDtmf 그대로 사용)
+  const res = await gw.collectDtmf({ linkedId, maxDigits: 4, timeoutMs: 8000 });
+
+  // 3) 수신 번호 읽어주기
+  await gw.playback({ linkedId, media: `digits:${res.digits}` });
+
+  // 4) 종료
+  await gw.hangup(linkedId);
+});
+```
+
+**Python 예시**:
+```python
+async def on_call(evt):
+    if evt.type != "call:new" or evt.session.mode != "lite":
+        return
+    lid = evt.session.linked_id
+    await gw.playback(lid, media="sound:welcome")
+    res = await gw.collect_dtmf(lid, max_digits=4, timeout_ms=8000)
+    await gw.playback(lid, media=f"digits:{res.digits}")
+    await gw.hangup(lid)
+
+gw.on_call_event(on_call)
+```
+
+**다이얼플랜 예시** (PBX 측 설정):
+```ini
+exten => _8X.,1,NoOp(간단 IVR — lite 모드)
+ same => n,Stasis(dvgateway,mode=lite,did=${EXTEN},callid=${UNIQUEID},tenantid=${TENANTID})
+ same => n,Hangup()
+```
+
+**언제 lite 모드를 쓰면 좋은가**:
+- 단순 안내 멘트 + DTMF 메뉴 (예: "1번 영업, 2번 기술지원")
+- 본인 인증 코드 안내 (`digits:`로 번호 읽기)
+- 통화 녹음 동의 안내 후 DTMF 컨펌
+- STT/LLM/실시간 음성 분석이 **필요 없는** 모든 통화
+
+리소스 절감(통화당): ExtMedia goroutine + Snoop audiohook + Mixing bridge + STT 세션 + ~4KB 오디오 버퍼 + downstream fan-out 4096-슬롯이 통째로 사라집니다. 라이선스 동시통화 카운터·CDR·테넌트 격리·대시보드 표시는 일반 모드와 동일하게 동작합니다.
+
 ### 시뮬레이션 (게이트웨이 · 전화번호 불필요)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
@@ -567,6 +638,7 @@ asyncio.run(main())
 |--------|-----------|---------|
 | `call:new` | 새 통화 시작 | `session` (CallSession), `tenantId` |
 | `call:ended` | 통화 종료 | `linkedId`, `durationSec` |
+| **`call:rejected`** *(SDK 1.7.0+ · 게이트웨이 v1.4.4.0+)* | **통화 수용 거부 — 라이선스 전역 한도 또는 테넌트 동시통화 한도 도달** | **`linkedId`, `tenantId`, `reason` (`license_global`/`tenant_limit`), `currentActive` (거부 시점 활성 세션 수), `limit` (도달한 한도), `serverId`** |
 | `conf:join` | 회의 참여 | `linkedId`, `confId`, `caller` |
 | `conf:leave` | 회의 퇴장 | `linkedId`, `confId` |
 | `conf:ended` | 회의 종료 | `confId` |
@@ -664,6 +736,52 @@ else:
     # 1.0.x 폴백: 기존 휴리스틱 유지
     ...
 ```
+
+#### `call:rejected` 이벤트 — 동시통화 한도 초과 감지
+
+**SDK 1.7.0+** (게이트웨이 **v1.4.4.0+** 필요) — 새 통화가 라이선스 전역 한도 또는 테넌트별 동시통화 한도에 막혀 게이트웨이가 수용을 거부했을 때 발사됩니다. 이벤트가 도착하는 시점에는 WebSocket 연결이 이미 닫혔거나 ConfBridge 참여자가 강제 퇴장된 상태이므로 **순수 알림(informational)** 입니다 — 게이트웨이 측 정리는 끝났고, SDK 측은 사용자에게 "capacity exceeded" UI/메트릭만 노출하면 됩니다.
+
+**`reason` enum**:
+
+| reason | 의미 | 트리거 |
+|--------|------|--------|
+| `license_global` | 게이트웨이 라이선스의 `maxConcurrentCalls` 도달 | 모든 테넌트 합산 활성 세션 = 한도 |
+| `tenant_limit` | 해당 테넌트의 `TENANT_LIMITS` / `/api/v1/config/tenant-limits` 한도 도달 | 단일 테넌트 활성 세션 = 테넌트 한도 |
+
+**Wire format** (`/api/v1/ws/callinfo`):
+
+```json
+{
+  "event": "call:rejected",
+  "linkedId": "1775805184.495",
+  "tenantId": "tenant-a",
+  "reason": "tenant_limit",
+  "currentActive": 5,
+  "limit": 5,
+  "serverId": "gw-seoul-01"
+}
+```
+
+**라우팅**: `call:new` / `call:ended` 와 동일한 fail-CLOSED 테넌트 필터를 사용 — admin 토큰은 모든 거부 이벤트를 수신하고, 테넌트 토큰은 자기 테넌트의 거부만 수신합니다. 다른 테넌트의 한도 초과는 노출되지 않습니다.
+
+**활용 예** (테넌트 SDK 측):
+
+```typescript
+gw.on('call:rejected', (event) => {
+  console.warn(`call rejected reason=${event.reason} ${event.currentActive}/${event.limit}`);
+  metrics.incrCounter('calls_rejected', { reason: event.reason });
+  // 호출자에게 "현재 동시통화 한도에 도달했습니다" 안내
+});
+```
+
+```python
+@gw.on("call:rejected")
+async def on_rejected(evt):
+    logger.warning("call rejected linked=%s reason=%s %d/%d",
+                   evt.linked_id, evt.reason, evt.current_active, evt.limit)
+```
+
+> **참고**: 한도는 게이트웨이 측에서 hot-reloadable 합니다. admin 토큰으로 `PUT /api/v1/config/tenant-limits` (body: `{"tenant-a":5,"tenant-b":10}`) 또는 대시보드 "👥 테넌트 동시통화 한도" 탭에서 변경하면 즉시 반영됩니다. 게이트웨이 재시작 불필요.
 
 #### `audio:playback` 이벤트 — `play_audio()` 라이프사이클 정확 측정
 
