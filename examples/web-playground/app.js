@@ -699,36 +699,64 @@ function init() {
     if (paramTid) $("cred-tid").value = paramTid;
     // URL 파라미터 제거 (보안: 토큰이 히스토리에 남지 않게)
     history.replaceState(null, "", location.pathname);
-    // 토큰을 직접 주입하여 login() 없이 연결
+    // 토큰을 직접 주입하여 login() 없이 연결.
+    // 폼 채우기와 자동 연결이 별개의 실패 모드를 가지므로 try/catch로 분리하지 않고
+    // connectWithToken 내부에서 단일 실패 경로(setStatus + log)로 수렴시킨다.
+    log("info", "auto-login:start", { host: paramHost, tid: paramTid || "" });
     connectWithToken({ host: paramHost, token: paramToken, tid: paramTid });
+  } else if (paramHost || paramToken) {
+    // 한쪽만 있으면 사용자가 직접 만든 URL일 가능성이 큼 — 무시하지 않고 알려준다.
+    log("warn", "auto-login:skipped", {
+      reason: "host/token must be provided together",
+      hasHost: !!paramHost,
+      hasToken: !!paramToken,
+    });
+    setStatus("off", "URL 파라미터 부족 — 직접 로그인");
   }
 }
 
 async function connectWithToken({ host, token, tid }) {
-  if (state.client) state.client.disconnect();
-  const client = new GatewayClient({ host, tenantId: tid || "", password: "" });
-  client.token = token;
-  state.client = client;
+  setStatus("connecting", "대시보드 토큰으로 자동 로그인 중…");
+  try {
+    if (state.client) state.client.disconnect();
 
-  client.addEventListener("status", (e) => {
-    const s = e.detail.state;
-    if (s === "open") setStatus("on", `연결됨 · ${host}`);
-    else if (s === "connecting") setStatus("connecting", "연결 중…");
-    else if (s === "closed") setStatus("off", "연결 안 됨");
-    else if (s === "error") setStatus("off", "오류");
-  });
-  client.addEventListener("event", (e) => onCallinfoEvent(e.detail));
+    const claims = parseJwt(token);
+    if (!claims) {
+      throw new Error("토큰 형식이 잘못되었습니다 (JWT 디코딩 실패)");
+    }
+    // exp는 unix epoch seconds. 클라이언트/서버 시계 차이 5초 허용.
+    if (claims.exp && claims.exp * 1000 + 5000 < Date.now()) {
+      throw new Error("토큰이 만료되었습니다 — 대시보드에서 다시 로그인하세요");
+    }
 
-  stopPolling();
-  state.pollTimer = setInterval(reconcileSessions, POLL_INTERVAL_MS);
+    const client = new GatewayClient({ host, tenantId: tid || "", password: "" });
+    client.token = token;
+    state.client = client;
 
-  const claims = parseJwt(token);
-  const tenantId = tid || claims?.tid || "";
-  setTenantPill(tenantId);
-  log("ok", "login:ok", { tid: tenantId, via: "dashboard" });
-  client.connectCallinfo();
-  // 현재 활성 세션 즉시 동기화
-  reconcileSessions();
+    client.addEventListener("status", (e) => {
+      const s = e.detail.state;
+      if (s === "open") setStatus("on", `연결됨 · ${host}`);
+      else if (s === "connecting") setStatus("connecting", "연결 중…");
+      else if (s === "closed") setStatus("off", "연결 안 됨");
+      else if (s === "error") setStatus("off", "오류 — 직접 연결 시도 필요");
+    });
+    client.addEventListener("event", (e) => onCallinfoEvent(e.detail));
+
+    stopPolling();
+    state.pollTimer = setInterval(reconcileSessions, POLL_INTERVAL_MS);
+
+    const tenantId = tid || claims.tid || "";
+    setTenantPill(tenantId);
+    log("ok", "login:ok", { tid: tenantId, via: "dashboard" });
+    client.connectCallinfo();
+    // 현재 활성 세션 즉시 동기화
+    reconcileSessions();
+  } catch (err) {
+    // 자동 로그인 실패: silent 금지. 사용자가 좌측 폼으로 수동 로그인 가능하도록 안내.
+    const msg = err && err.message ? err.message : String(err);
+    setStatus("off", `자동 로그인 실패: ${msg}`);
+    log("err", "auto-login:fail", { error: msg, host, tid: tid || "" });
+  }
 }
 
 function parseJwt(token) {

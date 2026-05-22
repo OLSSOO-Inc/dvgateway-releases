@@ -173,6 +173,29 @@ gw.on('call:ended', async (event) => {
 console.log('🎙️ OpenAI Realtime 봇이 준비되었습니다.');
 ```
 
+### 리얼타임 통역 모드 (gpt-realtime-translate)
+
+동일한 어댑터로 **실시간 통역 파이프라인**을 구성할 수 있습니다. `model: 'gpt-realtime-translate'` + `inputLanguage` + `outputLanguage` 세 가지만 지정하면 SDK가 OpenAI 통역 가이드 권장 프롬프트(충실 번역, 사족 금지, 고유명사/숫자 보존, 화자 속도 유지)를 자동 생성합니다.
+
+```
+통화 음성 (한국어) → [gpt-realtime-translate] → 영어 음성 → 통화에 재생
+```
+
+```typescript
+const interpreter = new OpenAIRealtimeAdapter({
+  apiKey:         process.env['OPENAI_API_KEY']!,
+  model:          'gpt-realtime-translate',
+  voice:          'alloy',
+  inputLanguage:  'ko',  // 발화자 언어
+  outputLanguage: 'en',  // 청취자 언어
+  // instructions 미지정 시 SDK가 통역 프롬프트 자동 합성
+});
+```
+
+- 지원 언어: 입력 70+ / 출력 13 (OpenAI Realtime translate 기준).
+- 직접 `instructions`를 지정하면 SDK 자동 합성을 덮어쓰므로 도메인 용어집/존댓말 규칙 커스텀 시 사용.
+- 실행 가능 예제: [examples/10-realtime-translate-ko-en.ts](../../examples/10-realtime-translate-ko-en.ts) · [examples/python/05_realtime_translate_ko_en.py](../../examples/python/05_realtime_translate_ko_en.py)
+
 ### 리얼타임 vs 파이프라인 비교
 
 | 항목 | STT→LLM→TTS 파이프라인 | OpenAI Realtime |

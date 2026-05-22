@@ -2068,6 +2068,40 @@ realtime = OpenAIRealtimeAdapter(
 )
 ```
 
+#### Live 통역 모드 (gpt-realtime-translate)
+
+`model: 'gpt-realtime-translate'` + `inputLanguage` + `outputLanguage` 세 가지만 지정하면 SDK가 OpenAI Realtime 통역 가이드 권장 system prompt(충실 번역, 사족 금지, 고유명사/숫자 보존, 화자 속도 유지)를 자동 합성합니다. `instructions`를 직접 지정하면 SDK 자동 합성을 덮어쓰므로 도메인 용어집/존댓말 규칙 등 커스텀이 필요할 때 사용하세요.
+
+```typescript
+// TypeScript — 한국어 → 영어 실시간 통역
+import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+
+const interpreter = new OpenAIRealtimeAdapter({
+  apiKey:         process.env['OPENAI_API_KEY']!,
+  model:          'gpt-realtime-translate',
+  voice:          'alloy',
+  inputLanguage:  'ko',   // 발화자 언어
+  outputLanguage: 'en',   // 청취자 언어
+  // instructions를 지정하지 않으면 SDK가 통역 프롬프트를 자동 생성
+});
+```
+
+```python
+# Python — 한국어 → 영어 실시간 통역
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter
+
+interpreter = OpenAIRealtimeAdapter(
+    api_key=os.environ["OPENAI_API_KEY"],
+    model="gpt-realtime-translate",
+    voice="alloy",
+    input_language="ko",    # 발화자 언어
+    output_language="en",   # 청취자 언어
+    # instructions를 지정하지 않으면 SDK가 통역 프롬프트를 자동 생성
+)
+```
+
+지원 언어: 입력 70+ / 출력 13 (OpenAI Realtime translate 모델 기준). 동작 검증 예제는 [examples/10-realtime-translate-ko-en.ts](../examples/10-realtime-translate-ko-en.ts) / [examples/python/05_realtime_translate_ko_en.py](../examples/python/05_realtime_translate_ko_en.py) 참고.
+
 #### S2S vs 기존 파이프라인 비교
 
 | | 기존 파이프라인 (STT→LLM→TTS) | S2S (OpenAI Realtime) |
