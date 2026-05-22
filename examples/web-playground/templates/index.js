@@ -24,7 +24,7 @@ export const templates = [
   {
     id: "lite-ivr",
     title: "1. ⚡ Lite IVR",
-    desc: "mode=lite 통화 전용 — ARI Playback + DTMF 수집 + Hangup. ExternalMedia/STT/TTS 없음, 최소 자원 IVR.",
+    desc: "음성 안내 재생 + 키 입력 수집 + 통화 종료 — 최소 자원으로 동작하는 자동 응답.",
     module: liteIvr,
   },
   {
