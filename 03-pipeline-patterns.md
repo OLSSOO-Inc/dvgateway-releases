@@ -110,8 +110,10 @@ const realtimeAdapter = new OpenAIRealtimeAdapter({
   apiKey: process.env.OPENAI_API_KEY!,
 
   // 모델 선택:
-  //   gpt-4o-realtime-preview          — 최고 품질 (기본값)
-  //   gpt-4o-mini-realtime-preview     — 비용 절감형 (Audio 1.5)
+  //   gpt-realtime-2                   — 신모델 (GPT-5급 추론, 2026-05)
+  //   gpt-realtime-translate           — 실시간 통역
+  //   gpt-4o-realtime-preview          — 레거시 (현 SDK 기본값)
+  //   gpt-4o-mini-realtime-preview     — 레거시 비용 절감형 (Audio 1.5)
   model: 'gpt-4o-mini-realtime-preview',
 
   // AI 응답 음성 선택

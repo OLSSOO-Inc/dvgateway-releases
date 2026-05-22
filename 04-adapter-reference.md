@@ -391,10 +391,21 @@ const realtime = new OpenAIRealtimeAdapter({
   // ── 모델 선택 ─────────────────────────────────────────────
   model: 'gpt-4o-realtime-preview',
   // 옵션:
-  //   'gpt-4o-realtime-preview'                     — 최고 품질 (기본값, 항상 최신)
-  //   'gpt-4o-realtime-preview-2024-12-17'          — 고정 버전 (재현성 필요 시)
-  //   'gpt-4o-mini-realtime-preview'                — 비용 절감형 (Audio 1.5)
-  //   'gpt-4o-mini-realtime-preview-2024-12-17'     — 고정 버전 (미니)
+  //   'gpt-realtime-2'                              — 신모델 (GPT-5급 추론, 2026-05)
+  //   'gpt-realtime-translate'                      — 실시간 통역 (70+ → 13 언어)
+  //   'gpt-realtime-1.5'                            — 이전 세대
+  //   'gpt-4o-realtime-preview'                     — 레거시 (현 SDK 기본값)
+  //   'gpt-4o-realtime-preview-2024-12-17'          — 레거시 고정 버전
+  //   'gpt-4o-mini-realtime-preview'                — 레거시 비용 절감형 (Audio 1.5)
+  //   'gpt-4o-mini-realtime-preview-2024-12-17'     — 레거시 고정 미니
+
+  // ── 입력 transcription 모델 (선택) ──────────────────────────
+  // inputTranscriptionModel: 'whisper-1',
+  // 옵션:
+  //   'whisper-1'              — 기본값
+  //   'gpt-4o-transcribe'      — 다국어 정확도 향상
+  //   'gpt-4o-mini-transcribe' — 저비용
+  //   'gpt-realtime-whisper'   — 스트리밍 라이브 transcription (2026-05)
 
   // ── AI 음성 선택 ──────────────────────────────────────────
   voice: 'alloy',    // alloy | echo | nova | shimmer | ash | coral | sage | verse

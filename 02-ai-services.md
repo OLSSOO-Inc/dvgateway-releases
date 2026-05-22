@@ -33,8 +33,10 @@
 
 | 서비스 | 어댑터 클래스 | 추천 모델 | 특징 |
 |--------|------------|---------|------|
-| **OpenAI Realtime** | `OpenAIRealtimeAdapter` | `gpt-4o-realtime-preview` | STT+LLM+TTS 통합, 최저 지연 |
-| **OpenAI Realtime Mini** | `OpenAIRealtimeAdapter` | `gpt-4o-mini-realtime-preview` | 비용 효율적, Audio 1.5 엔진 |
+| **OpenAI Realtime 2** | `OpenAIRealtimeAdapter` | `gpt-realtime-2` | GPT-5급 추론, 신모델 (2026-05) |
+| **OpenAI Realtime Translate** | `OpenAIRealtimeAdapter` | `gpt-realtime-translate` | 실시간 통역 (70+ → 13 언어) |
+| **OpenAI Realtime** (legacy) | `OpenAIRealtimeAdapter` | `gpt-4o-realtime-preview` | STT+LLM+TTS 통합, 최저 지연 (현 기본값) |
+| **OpenAI Realtime Mini** (legacy) | `OpenAIRealtimeAdapter` | `gpt-4o-mini-realtime-preview` | 비용 효율적, Audio 1.5 엔진 |
 
 ### 클라우드 STT 서비스 — 내장 게이트웨이 어댑터
 
@@ -43,7 +45,7 @@
 | 서비스 | 게이트웨이 어댑터 | 프로토콜 | API Key 형식 | 한국어 | 특징 |
 |--------|-----------------|---------|-------------|--------|------|
 | **Deepgram** | `deepgram` | WebSocket | 단일 API Key | ✅ `nova-3` | 최저 레이턴시, 화자 구분(diarization), 스트리밍 |
-| **OpenAI Whisper** | `openai` | WebSocket | API Key (`sk-...`) | ✅ `gpt-4o-transcribe` | 높은 정확도, VAD 내장, Realtime API 기반 |
+| **OpenAI Whisper** | `openai` | WebSocket | API Key (`sk-...`) | ✅ `gpt-4o-transcribe` / `gpt-realtime-whisper` | 높은 정확도, VAD 내장, Realtime API 기반 |
 | **Google Cloud STT** | `google` | REST (청크) | 서비스 계정 JSON Key | ✅ `latest_long` | 서울 리전(`asia-northeast3`), 기업 안정성 |
 | **Azure Speech** | `azure` | WebSocket | 구독 키 + 리전 | ✅ | 한국 리전, 실시간 스트리밍 |
 | **Qwen-ASR (DashScope)** | `qwen` | WebSocket | DashScope API Key | ✅ `paraformer-realtime-v2` | 52개 언어, 중국 리전 최적 |

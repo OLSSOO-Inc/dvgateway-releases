@@ -124,7 +124,7 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 
 1. API 키에 Realtime 모델 접근 권한이 있는지 확인
 2. `OpenAI-Beta: realtime=v1` 헤더가 설정되어 있는지 확인 (어댑터가 자동 처리)
-3. 모델명이 정확한지 확인: `gpt-4o-realtime-preview`
+3. 모델명이 정확한지 확인: `gpt-4o-realtime-preview` (현 SDK 기본값) 또는 신모델 `gpt-realtime-2` / `gpt-realtime-translate` / `gpt-realtime-1.5`
 
 ### 지연 시간이 너무 김
 
