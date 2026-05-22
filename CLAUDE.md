@@ -451,12 +451,16 @@ await gw.set_early_media(
 
 ### Playback — `mode=lite` 통화용 ARI 직접 재생 (SDK 1.7+, gateway 1.4.3+)
 
-`mode=lite` Stasis 통화는 ExternalMedia·Snoop·Bridge를 만들지 않는 최소 리소스 프로파일입니다 (단순 IVR / 안내 멘트 / DTMF 입력 수집 용도). PCM 주입 경로(`play_audio`, `inject_tts`, `say`)는 ExternalMedia가 필요하므로 lite 통화에선 동작하지 않습니다. 대신 **ARI Playback API**를 직접 호출해 Asterisk 사운드 파일(또는 숫자/구분음)을 재생합니다.
+`mode=lite` Stasis 통화는 ExternalMedia·Snoop·Bridge를 만들지 않는 최소 리소스 프로파일입니다 (단순 IVR / 안내 멘트 / DTMF 입력 수집 용도). PCM 스트리밍 주입 경로(`play_audio`, `inject_tts`, `say`)는 ExternalMedia가 필요하므로 lite 통화에선 동작하지 않습니다. 대신:
+
+- **사운드 파일·숫자·톤 재생** → `playback()` (ARI Playback API 직접 호출)
+- **자유 텍스트 TTS 재생** → `liteTtsPlayback()` (SDK 1.7.2+, gateway 1.4.5.7+) — 게이트웨이가 합성 → sln16 캐시 → ARI Playback 까지 한 번에 처리
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `playback({ linkedId, media })` | `playback(linked_id, media)` | ARI Playback 시작. 즉시 반환되고 `playback_id`를 돌려줍니다. 완료는 `audio:playback` 이벤트(`lifecycle: done`)로 알 수 있습니다 |
-| `stopPlayback(linkedId, playbackId)` | `stop_playback(linked_id, playback_id)` | 진행 중인 playback 중단. 이미 끝난 경우도 안전 (no-op) |
+| `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+)* | `lite_tts_playback(linked_id, text, provider=None, voice=None)` | 텍스트 → cloud TTS 합성 → ARI Playback. 동일 (tenant, provider, voice, text) 재호출 시 게이트웨이가 캐시 적중으로 즉시 재생 (`cache_hit=True`). cloud 키 미설정 시 espeak-ng 로컬 폴백. **게이트웨이 1.4.5.7+ 필요** (이전 버전은 404) |
+| `stopPlayback(linkedId, playbackId)` | `stop_playback(linked_id, playback_id)` | 진행 중인 playback 중단. 이미 끝난 경우도 안전 (no-op). `playback()` / `liteTtsPlayback()` 모두 동일 메서드로 중단 |
 
 **`media` URI 포맷** (Asterisk 규약):
 - `sound:hello-world` — `sounds/{lang}/hello-world.{format}`
@@ -503,6 +507,63 @@ async def on_call(evt):
 
 gw.on_call_event(on_call)
 ```
+
+**TypeScript 예시 — 자유 텍스트 TTS (1.7.2+)**:
+```typescript
+gw.onCallEvent(async (evt) => {
+  if (evt.type !== 'call:new' || evt.session.mode !== 'lite') return;
+  const { linkedId } = evt.session;
+
+  // 1) 동적 안내 멘트 — 사전 녹음 없이 텍스트 그대로 합성
+  const customerName = await lookupCustomer(evt.session.callerNum);
+  const result = await gw.liteTtsPlayback({
+    linkedId,
+    text: `${customerName}님 환영합니다. 1번 영업, 2번 기술지원을 눌러주세요.`,
+    provider: 'google',  // 옵션 — 미지정 시 테넌트 기본 provider
+  });
+  console.log('synth:', result.synthesizedBytes, 'bytes', result.cacheHit ? '(캐시)' : '(새로 합성)');
+
+  // 2) DTMF 수집
+  const dtmf = await gw.collectDtmf({ linkedId, maxDigits: 1, timeoutMs: 8000 });
+
+  // 3) 응답도 TTS 로
+  const reply = dtmf.digits === '1' ? '영업 부서로 연결합니다' : '기술지원 부서로 연결합니다';
+  await gw.liteTtsPlayback({ linkedId, text: reply });
+
+  await gw.hangup(linkedId);
+});
+```
+
+**Python 예시 — 자유 텍스트 TTS (1.7.2+)**:
+```python
+async def on_call(evt):
+    if evt.type != "call:new" or evt.session.mode != "lite":
+        return
+    lid = evt.session.linked_id
+
+    name = await lookup_customer(evt.session.caller_num)
+    result = await gw.lite_tts_playback(
+        lid,
+        f"{name}님 환영합니다. 1번 영업, 2번 기술지원을 눌러주세요.",
+        provider="google",  # None → 테넌트 기본
+    )
+    print(f"synth: {result.synthesized_bytes} bytes, cache_hit={result.cache_hit}")
+
+    dtmf = await gw.collect_dtmf(lid, max_digits=1, timeout_ms=8000)
+    reply = "영업 부서로 연결합니다" if dtmf.digits == "1" else "기술지원 부서로 연결합니다"
+    await gw.lite_tts_playback(lid, reply)
+
+    await gw.hangup(lid)
+
+gw.on_call_event(on_call)
+```
+
+**`liteTtsPlayback()` 동작 디테일**:
+- **캐시 키**: `sha256(tenant | provider | voice | text)`. 같은 인풋 재호출 시 게이트웨이의 디스크 캐시(`GW_TTS_CACHE_DIR`, 기본 `/var/lib/dvgateway/tts-cache/{tenant}/{hash}.sln16`) 에서 바로 ARI Playback — 합성 RTT 0, 응답 보통 50ms 이내. `cache_hit=true` 로 보고.
+- **provider/voice 해상**: 명시한 값 > 테넌트 primary 키 > espeak-ng 로컬 폴백. cloud provider 실패 시(예: 키 만료, 네트워크) 자동으로 espeak 로 fallback (영어 음성), 로그 `[PLAYBACK-TTS] cloud synth failed ... falling back to espeak-ng` 남김.
+- **저장 형식**: 16 kHz signed-linear PCM (`.sln16`) — Asterisk 네이티브, 트랜스코드 불필요. PBX 의 `asterisk` 사용자가 게이트웨이의 `dvgateway` 사용자와 다른 OS 계정이어도 파일이 world-readable (`0644`) 로 저장돼 그대로 읽힘.
+- **중단**: 일반 playback 과 동일하게 `stopPlayback(linkedId, playbackId)` / `stop_playback(linked_id, playback_id)` 호출.
+- **이벤트 channel**: `audio:playback` 이벤트가 그대로 발화됨 (`lifecycle: playing → done`). 별도 `tts:playback` 이벤트는 발화되지 않음 (그건 ExternalMedia 기반 `inject_tts` 전용).
 
 **다이얼플랜 예시** (PBX 측 설정):
 ```ini

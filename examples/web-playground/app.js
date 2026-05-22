@@ -712,6 +712,17 @@ function init() {
       hasToken: !!paramToken,
     });
     setStatus("off", "URL 파라미터 부족 — 직접 로그인");
+  } else {
+    // URL 파라미터가 없으면 — localStorage 에 저장된 자격증명 (이전 연결에서
+    // saveCreds() 가 기록한 host/tid/pw 셋) 이 모두 있으면 그걸로 자동 connect.
+    // 사용자가 명시적으로 disconnect 한 직후라도 페이지 새로고침 시 다시 붙는
+    // 동작이 활성 테스트 흐름에 맞고, opt-out 은 좌측 "Clear credentials" 로
+    // 단순함. 자격증명이 한 개라도 비어있으면 폼이 채워진 채 대기만 한다.
+    const saved = readCreds();
+    if (saved.host && saved.tenantId && saved.password) {
+      log("info", "auto-connect:start", { tid: saved.tenantId, via: "localStorage" });
+      connect();
+    }
   }
 }
 

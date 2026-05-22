@@ -35,7 +35,7 @@
 - AGC / RMS / VAD 처리 루프
 - 오디오 PCM 버퍼 (~4 KB)
 
-또한 **외부 STT/TTS API 호출이 0건**이므로 클라우드 음성 처리 비용도 0원입니다.
+또한 **STT 호출이 0건**이고, 사운드 파일 (`sound:`/`number:`/`digits:`/`tone:`)만 쓰는 IVR이라면 **TTS 호출도 0건**입니다. 동적 TTS가 필요하면 `liteTtsPlayback()` 으로 추가 가능하며, 같은 문장은 게이트웨이 캐시 적중으로 1회만 합성하므로 cloud TTS 호출 비용도 호출당이 아니라 **문장당**으로 떨어집니다.
 
 ---
 
@@ -199,12 +199,50 @@ const res = await gw.collectDtmf({
 | `redirect(linkedId, { context, exten })` / `redirect(lid, context=..., exten=...)` | 다이얼플랜의 다른 익스텐션으로 전환 (상담원 큐, 본사 라우팅 등) |
 
 `mode=lite`에선 **사용 불가** 메서드 (ExternalMedia 필요):
-- ❌ `playAudio` / `play_audio` (URL → ffmpeg → PCM 주입)
-- ❌ `injectTts` / `inject_tts` (PCM TTS 주입)
+- ❌ `playAudio` / `play_audio` (URL → ffmpeg → 스트리밍 PCM 주입)
+- ❌ `injectTts` / `inject_tts` (PCM TTS 스트리밍 주입)
 - ❌ `say` / `broadcast_say` (TTS 어댑터 경유)
 - ❌ `streamAudio` / `stream_audio` (오디오 수신)
 
-→ 이런 기능이 필요하면 `mode=lite` 대신 `mode=both`(기본) 사용.
+→ 실시간 PCM 스트림 / STT 같은 기능이 필요하면 `mode=lite` 대신 `mode=both`(기본) 사용.
+
+### 4.3 `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+ · gateway 1.4.5.7+)*
+
+**자유 텍스트 → 음성 재생** — 사전 녹음 없이 동적 안내음을 만들고 싶을 때 씁니다. 사운드 파일 키(`sound:welcome` 등)는 정적 콘텐츠에 적합하지만, **고객명·잔액·동적 메시지** 같은 게 끼면 매번 파일을 미리 만들 수 없으므로 이 메서드가 필요합니다.
+
+```typescript
+const result = await gw.liteTtsPlayback({
+  linkedId,
+  text: `${customerName}님 안녕하세요. 잔액은 ${balance}원입니다.`,
+  provider: 'google',  // 옵션 — 미지정 시 테넌트 기본
+  voice: 'ko-KR-Wavenet-A',  // 옵션 — 미지정 시 provider 기본
+});
+console.log(result.playbackId, result.cacheHit);
+```
+
+```python
+result = await gw.lite_tts_playback(
+    lid,
+    f"{name}님 안녕하세요. 잔액은 {balance}원입니다.",
+    provider="google",        # None → 테넌트 기본
+)
+print(result.playback_id, result.cache_hit)
+```
+
+**파라미터**:
+- `text` — 합성할 텍스트 (필수). 빈 문자열은 `ValueError` / 클라이언트 에러.
+- `provider` — `google` / `elevenlabs` / `openai` / `gemini` / `cosyvoice`. 생략 시 테넌트의 primary TTS 키 사용.
+- `voice` — provider별 음성 ID (예: `ko-KR-Wavenet-A`). 생략 시 provider 기본 음성.
+
+**반환값**: `{ linkedId, playbackId, state, media, synthesizedBytes, cacheHit, provider, voice }`. `cacheHit=true`면 게이트웨이가 디스크 캐시에서 즉시 재생한 것이고, 합성 RTT가 0입니다.
+
+**캐시 동작**: `sha256(tenant | provider | voice | text)` 키로 `.sln16` 파일을 디스크에 저장 (기본 `/var/lib/dvgateway/tts-cache/{tenant}/{hash}.sln16`). **같은 문장을 N번 호출하면 1번만 합성**, 나머지는 50ms 이내 응답. 반복 안내(메뉴, 환영 멘트)에서 효과 큼. 캐시 위치는 게이트웨이의 `GW_TTS_CACHE_DIR` 환경변수로 변경 가능.
+
+**Provider 실패 시**: cloud TTS 호출이 실패하면 게이트웨이가 자동으로 espeak-ng 로컬 합성으로 fallback (영어 발음, 품질은 낮지만 통화 끊김은 방지). 게이트웨이 로그에 `[PLAYBACK-TTS] cloud synth failed ... falling back to espeak-ng`.
+
+**중단**: 일반 playback과 동일 — `stopPlayback(linkedId, playbackId)` / `stop_playback(linked_id, playback_id)`.
+
+**이벤트**: `audio:playback` 이벤트 (`lifecycle: playing` → `done`) 가 발화됨. `tts:playback` 이벤트(`inject_tts` 라이프사이클) 는 발화되지 **않음** — 그건 ExternalMedia 기반 PCM 주입 전용이고 이 메서드는 ARI Playback 경로라서.
 
 ---
 
