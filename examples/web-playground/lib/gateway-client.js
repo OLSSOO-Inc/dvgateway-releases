@@ -191,6 +191,39 @@ export class GatewayClient extends EventTarget {
     return true;
   }
 
+  // ── lite-mode IVR (SDK 1.7.0) ────────────────────────────────────
+  // POST /api/v1/playback/{linkedId} → { playbackId, state }
+  async litePlayback(linkedId, media) {
+    if (!media) throw new Error("media is required");
+    const res = await fetch(`${this.apiBase}/api/v1/playback/${encodeURIComponent(linkedId)}`, {
+      method: "POST",
+      headers: this._authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ media }),
+    });
+    if (!res.ok) throw await mkApiError(res, "litePlayback");
+    return res.json(); // { playbackId, state }
+  }
+
+  // DELETE /api/v1/playback/{linkedId}/{playbackId}
+  async liteStopPlayback(linkedId, playbackId) {
+    if (!playbackId) throw new Error("playbackId is required");
+    const res = await fetch(
+      `${this.apiBase}/api/v1/playback/${encodeURIComponent(linkedId)}/${encodeURIComponent(playbackId)}`,
+      { method: "DELETE", headers: this._authHeaders() },
+    );
+    return res.ok;
+  }
+
+  // POST /api/v1/calls/{linkedId}/hangup
+  async hangup(linkedId) {
+    const res = await fetch(`${this.apiBase}/api/v1/calls/${encodeURIComponent(linkedId)}/hangup`, {
+      method: "POST",
+      headers: this._authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({}),
+    });
+    return res.ok;
+  }
+
   // ── provider API keys (Mode A — gateway-side storage) ────────────
   // Mirrors what the gateway dashboard's "API Keys" panel does. Lets demo
   // users register their own STT/TTS/LLM provider keys against the
