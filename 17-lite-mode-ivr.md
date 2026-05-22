@@ -206,7 +206,7 @@ const res = await gw.collectDtmf({
 
 → 실시간 PCM 스트림 / STT 같은 기능이 필요하면 `mode=lite` 대신 `mode=both`(기본) 사용.
 
-### 4.3 `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+ · gateway 1.4.5.7+)*
+### 4.3 `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+ · gateway 1.4.5.8+)*
 
 **자유 텍스트 → 음성 재생** — 사전 녹음 없이 동적 안내음을 만들고 싶을 때 씁니다. 사운드 파일 키(`sound:welcome` 등)는 정적 콘텐츠에 적합하지만, **고객명·잔액·동적 메시지** 같은 게 끼면 매번 파일을 미리 만들 수 없으므로 이 메서드가 필요합니다.
 

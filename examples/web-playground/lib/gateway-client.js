@@ -204,6 +204,23 @@ export class GatewayClient extends EventTarget {
     return res.json(); // { playbackId, state }
   }
 
+  // POST /api/v1/playback/{linkedId}/tts → { playbackId, media, synthesizedBytes, cacheHit, provider, voice }
+  // Synthesize text via cloud TTS and play it via ARI on a lite-mode call.
+  // Provider/voice optional — fall through to the tenant's primary TTS.
+  async liteTtsPlayback(linkedId, text, provider, voice) {
+    if (!text || !text.trim()) throw new Error("text is required");
+    const body = { text };
+    if (provider) body.provider = provider;
+    if (voice) body.voice = voice;
+    const res = await fetch(`${this.apiBase}/api/v1/playback/${encodeURIComponent(linkedId)}/tts`, {
+      method: "POST",
+      headers: this._authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw await mkApiError(res, "liteTtsPlayback");
+    return res.json();
+  }
+
   // DELETE /api/v1/playback/{linkedId}/{playbackId}
   async liteStopPlayback(linkedId, playbackId) {
     if (!playbackId) throw new Error("playbackId is required");

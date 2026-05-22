@@ -454,12 +454,12 @@ await gw.set_early_media(
 `mode=lite` Stasis 통화는 ExternalMedia·Snoop·Bridge를 만들지 않는 최소 리소스 프로파일입니다 (단순 IVR / 안내 멘트 / DTMF 입력 수집 용도). PCM 스트리밍 주입 경로(`play_audio`, `inject_tts`, `say`)는 ExternalMedia가 필요하므로 lite 통화에선 동작하지 않습니다. 대신:
 
 - **사운드 파일·숫자·톤 재생** → `playback()` (ARI Playback API 직접 호출)
-- **자유 텍스트 TTS 재생** → `liteTtsPlayback()` (SDK 1.7.2+, gateway 1.4.5.7+) — 게이트웨이가 합성 → sln16 캐시 → ARI Playback 까지 한 번에 처리
+- **자유 텍스트 TTS 재생** → `liteTtsPlayback()` (SDK 1.7.2+, gateway 1.4.5.8+) — 게이트웨이가 합성 → sln16 캐시 → ARI Playback 까지 한 번에 처리
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `playback({ linkedId, media })` | `playback(linked_id, media)` | ARI Playback 시작. 즉시 반환되고 `playback_id`를 돌려줍니다. 완료는 `audio:playback` 이벤트(`lifecycle: done`)로 알 수 있습니다 |
-| `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+)* | `lite_tts_playback(linked_id, text, provider=None, voice=None)` | 텍스트 → cloud TTS 합성 → ARI Playback. 동일 (tenant, provider, voice, text) 재호출 시 게이트웨이가 캐시 적중으로 즉시 재생 (`cache_hit=True`). cloud 키 미설정 시 espeak-ng 로컬 폴백. **게이트웨이 1.4.5.7+ 필요** (이전 버전은 404) |
+| `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+)* | `lite_tts_playback(linked_id, text, provider=None, voice=None)` | 텍스트 → cloud TTS 합성 → ARI Playback. 동일 (tenant, provider, voice, text) 재호출 시 게이트웨이가 캐시 적중으로 즉시 재생 (`cache_hit=True`). cloud 키 미설정 시 espeak-ng 로컬 폴백. **게이트웨이 1.4.5.8+ 필요** (1.4.5.7 이하는 404) |
 | `stopPlayback(linkedId, playbackId)` | `stop_playback(linked_id, playback_id)` | 진행 중인 playback 중단. 이미 끝난 경우도 안전 (no-op). `playback()` / `liteTtsPlayback()` 모두 동일 메서드로 중단 |
 
 **`media` URI 포맷** (Asterisk 규약):

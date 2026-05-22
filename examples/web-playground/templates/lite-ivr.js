@@ -96,6 +96,28 @@ function mount(ctx) {
           <button id="li-stop" class="warn-btn">■ 중단</button>
           <button id="li-hangup" class="danger-btn">☎ 통화 종료</button>
         </div>
+
+        <div class="field" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
+          <label>TTS 텍스트 재생 (자유 입력)
+            <input id="li-tts-text" type="text" placeholder="안녕하세요, 무엇을 도와드릴까요?" />
+          </label>
+          <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;">
+            <select id="li-tts-provider" style="width:auto;">
+              <option value="">기본 provider</option>
+              <option value="google">Google</option>
+              <option value="elevenlabs">ElevenLabs</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Gemini</option>
+              <option value="cosyvoice">CosyVoice</option>
+            </select>
+            <button id="li-tts-play" class="primary">🔊 TTS 합성 + 재생</button>
+          </div>
+          <p class="help muted small">
+            텍스트 → 클라우드 TTS 합성 → ARI Playback. 같은 문장은 캐시 적중으로 즉시 재생.
+            게이트웨이 1.4.5.8+ 필요.
+          </p>
+        </div>
+
         <p class="help" id="li-status">통화를 선택하고 재생을 누르세요.</p>
       </div>
 
@@ -193,6 +215,9 @@ function mount(ctx) {
   const dtmfBuf    = ctx.body.querySelector("#li-dtmf-buf");
   const dtmfClear  = ctx.body.querySelector("#li-dtmf-clear");
   const timeline   = ctx.body.querySelector("#li-timeline");
+  const ttsText    = ctx.body.querySelector("#li-tts-text");
+  const ttsProv    = ctx.body.querySelector("#li-tts-provider");
+  const ttsPlayBtn = ctx.body.querySelector("#li-tts-play");
   const dtmfCells  = new Map();
   ctx.body.querySelectorAll(".dtmf-cell").forEach((c) => dtmfCells.set(c.dataset.key, c));
 
@@ -304,6 +329,39 @@ function mount(ctx) {
       ctx.log("err", "lite:playback:fail", { error: err.message });
     } finally {
       playBtn.disabled = false;
+    }
+  });
+
+  // ── TTS 합성 + 재생 (게이트웨이 1.4.5.8+) ────────────────────────────
+  ttsPlayBtn.addEventListener("click", async () => {
+    const linkedId = callSel.value;
+    if (!linkedId) { statusEl.textContent = "활성 통화를 선택하세요."; return; }
+    const text = ttsText.value.trim();
+    if (!text) { statusEl.textContent = "TTS 텍스트를 입력하세요."; return; }
+    if (!ctx.client) { statusEl.textContent = "먼저 Connect 하세요."; return; }
+
+    ttsPlayBtn.disabled = true;
+    statusEl.textContent = `🔊 TTS 합성 중… (${text.length}자)`;
+    try {
+      const provider = ttsProv.value || "";
+      const data = await ctx.client.liteTtsPlayback(linkedId, text, provider);
+      currentPlaybackId = data.playbackId || null;
+      const preview = text.length > 28 ? text.substring(0, 28) + "…" : text;
+      const cacheTag = data.cacheHit ? " (캐시)" : "";
+      statusEl.textContent = `✓ TTS 재생: "${preview}"${cacheTag}`;
+      ctx.log("ok", "lite:tts-playback:start", {
+        linkedId, playbackId: currentPlaybackId,
+        synthesizedBytes: data.synthesizedBytes, cacheHit: data.cacheHit,
+        provider: data.provider, voice: data.voice,
+      });
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      // 1.4.5.8 미만에선 404 — 사용자에게 명확한 가이드
+      const hint = /404/.test(msg) ? " (게이트웨이 1.4.5.8+ 필요)" : "";
+      statusEl.textContent = `✗ TTS 실패: ${msg}${hint}`;
+      ctx.log("err", "lite:tts-playback:fail", { error: msg });
+    } finally {
+      ttsPlayBtn.disabled = false;
     }
   });
 
