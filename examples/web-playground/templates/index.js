@@ -23,7 +23,7 @@ import liteIvr from "./lite-ivr.js";
 export const templates = [
   {
     id: "lite-ivr",
-    title: "1. ⚡ Lite IVR (SDK 1.7.0)",
+    title: "1. ⚡ Lite IVR",
     desc: "mode=lite 통화 전용 — ARI Playback + DTMF 수집 + Hangup. ExternalMedia/STT/TTS 없음, 최소 자원 IVR.",
     module: liteIvr,
   },

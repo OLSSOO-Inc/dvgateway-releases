@@ -56,28 +56,28 @@ const MEDIA_PRESETS = [
 function mount(ctx) {
   ctx.body.innerHTML = `
     <div class="lite-badge">
-      <span class="badge-lite">mode=lite</span>
-      <span class="muted small">ExternalMedia / Snoop / Bridge 없음 · 최소 자원 IVR</span>
+      <span class="badge-lite">⚡ 경량 모드</span>
+      <span class="muted small">음성 안내 재생 + 키 입력 수집 + 통화 종료 — 최소 자원으로 동작하는 자동 응답</span>
     </div>
 
     <div class="panel-row">
       <!-- 왼쪽: 직접 제어 -->
       <div class="lite-panel">
-        <h3>직접 제어 <span class="muted small">(브라우저 → Gateway API)</span></h3>
+        <h3>직접 제어</h3>
 
         <div class="field">
           <label>대상 통화
             <select id="li-call">
-              <option value="">(활성 통화 없음)</option>
+              <option value="">(진행 중인 통화 없음)</option>
             </select>
           </label>
           <p class="help muted small" id="li-mode-warn" style="display:none;color:var(--warn)">
-            ⚠ 선택한 통화가 lite 모드가 아닙니다. playback()은 동작하지만 TTS 주입과 STT는 없습니다.
+            ⚠ 이 통화는 경량 모드가 아닙니다. 음성 재생은 가능하지만 음성 인식·합성은 지원되지 않습니다.
           </p>
         </div>
 
         <div class="field">
-          <label>Media URI
+          <label>재생할 안내음
             <div class="media-row">
               <input id="li-media" type="text" placeholder="sound:hello-world" value="sound:hello-world" />
               <select id="li-media-preset">
@@ -87,21 +87,21 @@ function mount(ctx) {
             </div>
           </label>
           <p class="help muted small">
-            <code>sound:&lt;이름&gt;</code> · <code>number:1234</code> · <code>digits:1234</code> · <code>tone:ring</code>
+            예: <code>sound:hello-world</code> · <code>number:1234</code> · <code>digits:1234</code> · <code>tone:ring</code>
           </p>
         </div>
 
         <div class="row" style="gap:8px;flex-wrap:wrap;">
-          <button id="li-play" class="primary">▶ Playback 시작</button>
+          <button id="li-play" class="primary">▶ 재생</button>
           <button id="li-stop" class="warn-btn">■ 중단</button>
-          <button id="li-hangup" class="danger-btn">☎ Hangup</button>
+          <button id="li-hangup" class="danger-btn">☎ 통화 종료</button>
         </div>
-        <p class="help" id="li-status">통화를 선택하고 Playback을 누르세요.</p>
+        <p class="help" id="li-status">통화를 선택하고 재생을 누르세요.</p>
       </div>
 
-      <!-- 오른쪽: DTMF 입력 모니터 -->
+      <!-- 오른쪽: 키 입력 모니터 -->
       <div class="lite-panel">
-        <h3>DTMF 모니터 <span class="muted small">(callinfo 이벤트)</span></h3>
+        <h3>키 입력 모니터</h3>
         <div class="dtmf-grid">
           ${["1","2","3","4","5","6","7","8","9","*","0","#"]
             .map((k) => `<div class="dtmf-cell" data-key="${k}">${k}</div>`).join("")}
@@ -109,15 +109,15 @@ function mount(ctx) {
         <div id="li-dtmf-buf" class="dtmf-buf">
           <span class="muted small">입력 대기 중…</span>
         </div>
-        <button id="li-dtmf-clear" class="ghost small" style="margin-top:8px">버퍼 초기화</button>
+        <button id="li-dtmf-clear" class="ghost small" style="margin-top:8px">초기화</button>
       </div>
     </div>
 
-    <!-- Playback 이벤트 타임라인 -->
+    <!-- 재생 이력 -->
     <div class="field" style="margin-top:16px;">
-      <h3>audio:playback 이벤트 타임라인</h3>
+      <h3>재생 이력</h3>
       <div id="li-timeline" class="lite-timeline">
-        <p class="muted small">audio:playback 이벤트를 기다리는 중…</p>
+        <p class="muted small">재생 이벤트를 기다리는 중…</p>
       </div>
     </div>
 
@@ -236,24 +236,18 @@ function mount(ctx) {
   });
 
   // ── 타임라인 헬퍼 ─────────────────────────────────────────────────────
+  const phaseLabel = { playing: "재생 중", done: "완료", stopped: "중단", failed: "실패" };
+  const phaseClass = { playing: "lite-tl-playing", done: "lite-tl-done", stopped: "lite-tl-stopped", failed: "lite-tl-failed" };
+
   function addTimeline(phase, playbackId, extra) {
-    const phaseClass = {
-      playing: "lite-tl-playing",
-      done:    "lite-tl-done",
-      stopped: "lite-tl-stopped",
-      failed:  "lite-tl-failed",
-    }[phase] || "";
     const t = new Date().toLocaleTimeString();
-    const id = playbackId ? playbackId.slice(0, 8) + "…" : "";
     const extraStr = extra ? ` · ${extra}` : "";
-    const entry = { phase, playbackId, t, id, extraStr };
+    const entry = { phase, playbackId, t, extraStr };
     tlEntries.push(entry);
     if (tlEntries.length > 50) tlEntries.shift();
     timeline.innerHTML = tlEntries.slice(-20).reverse().map((e) => `
-      <div class="lite-tl-entry ${
-        { playing:"lite-tl-playing", done:"lite-tl-done", stopped:"lite-tl-stopped", failed:"lite-tl-failed" }[e.phase] || ""
-      }">
-        ${e.t} <b>${e.phase}</b> ${e.id}${e.extraStr}
+      <div class="lite-tl-entry ${phaseClass[e.phase] || ""}">
+        ${e.t} <b>${phaseLabel[e.phase] || e.phase}</b>${e.extraStr}
       </div>
     `).join("");
   }
@@ -299,11 +293,11 @@ function mount(ctx) {
     if (!ctx.client) { statusEl.textContent = "먼저 Connect 하세요."; return; }
 
     playBtn.disabled = true;
-    statusEl.textContent = `▶ Playback 시작 중… (${media})`;
+    statusEl.textContent = `▶ 재생 시작 중… (${media})`;
     try {
       const data = await ctx.client.litePlayback(linkedId, media);
       currentPlaybackId = data.playbackId || null;
-      statusEl.textContent = `✓ Playback 시작 — playbackId: ${currentPlaybackId || "?"}`;
+      statusEl.textContent = `✓ 재생 시작됨`;
       ctx.log("ok", "lite:playback:start", { linkedId, media, playbackId: currentPlaybackId });
     } catch (err) {
       statusEl.textContent = `✗ 실패: ${err.message}`;
@@ -313,18 +307,18 @@ function mount(ctx) {
     }
   });
 
-  // ── Playback 중단 ────────────────────────────────────────────────────
+  // ── 재생 중단 ────────────────────────────────────────────────────
   stopBtn.addEventListener("click", async () => {
     const linkedId = callSel.value;
-    if (!linkedId) { statusEl.textContent = "활성 통화를 선택하세요."; return; }
-    if (!currentPlaybackId) { statusEl.textContent = "중단할 Playback이 없습니다."; return; }
-    if (!ctx.client) { statusEl.textContent = "먼저 Connect 하세요."; return; }
+    if (!linkedId) { statusEl.textContent = "통화를 선택하세요."; return; }
+    if (!currentPlaybackId) { statusEl.textContent = "중단할 재생이 없습니다."; return; }
+    if (!ctx.client) { statusEl.textContent = "먼저 연결하세요."; return; }
 
     stopBtn.disabled = true;
-    statusEl.textContent = `■ Playback 중단 중…`;
+    statusEl.textContent = `■ 재생 중단 중…`;
     try {
       await ctx.client.liteStopPlayback(linkedId, currentPlaybackId);
-      statusEl.textContent = `✓ Playback 중단됨 — ${currentPlaybackId}`;
+      statusEl.textContent = `✓ 재생 중단됨`;
       ctx.log("ok", "lite:playback:stop", { linkedId, playbackId: currentPlaybackId });
       currentPlaybackId = null;
     } catch (err) {
@@ -335,18 +329,18 @@ function mount(ctx) {
     }
   });
 
-  // ── Hangup ───────────────────────────────────────────────────────────
+  // ── 통화 종료 ───────────────────────────────────────────────────────────
   hangupBtn.addEventListener("click", async () => {
     const linkedId = callSel.value;
-    if (!linkedId) { statusEl.textContent = "활성 통화를 선택하세요."; return; }
-    if (!ctx.client) { statusEl.textContent = "먼저 Connect 하세요."; return; }
-    if (!confirm(`정말로 통화를 종료하시겠습니까?\n${linkedId}`)) return;
+    if (!linkedId) { statusEl.textContent = "통화를 선택하세요."; return; }
+    if (!ctx.client) { statusEl.textContent = "먼저 연결하세요."; return; }
+    if (!confirm(`통화를 종료하시겠습니까?`)) return;
 
     hangupBtn.disabled = true;
-    statusEl.textContent = `☎ Hangup 전송 중…`;
+    statusEl.textContent = `☎ 통화 종료 중…`;
     try {
       await ctx.client.hangup(linkedId);
-      statusEl.textContent = `✓ Hangup 전송됨 — ${linkedId}`;
+      statusEl.textContent = `✓ 통화가 종료됐습니다`;
       ctx.log("ok", "lite:hangup", { linkedId });
     } catch (err) {
       statusEl.textContent = `✗ 실패: ${err.message}`;

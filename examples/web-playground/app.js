@@ -685,7 +685,59 @@ function init() {
   $("btn-inline-log-toggle")?.addEventListener("click", () => {
     $("inline-log")?.classList.toggle("collapsed");
   });
-  selectTemplate("callinfo");
+  selectTemplate("lite-ivr");
+
+  // URL 파라미터로 대시보드에서 넘어온 경우 자동 연결
+  // ?host=<hostname>&token=<jwt>[&tid=<tenantId>]
+  const urlParams = new URLSearchParams(location.search);
+  const paramHost = urlParams.get("host");
+  const paramToken = urlParams.get("token");
+  const paramTid = urlParams.get("tid");
+  if (paramHost && paramToken) {
+    // 폼에 호스트 채우기 (비밀번호 불필요 — 토큰 직접 사용)
+    $("cred-host").value = paramHost;
+    if (paramTid) $("cred-tid").value = paramTid;
+    // URL 파라미터 제거 (보안: 토큰이 히스토리에 남지 않게)
+    history.replaceState(null, "", location.pathname);
+    // 토큰을 직접 주입하여 login() 없이 연결
+    connectWithToken({ host: paramHost, token: paramToken, tid: paramTid });
+  }
+}
+
+async function connectWithToken({ host, token, tid }) {
+  if (state.client) state.client.disconnect();
+  const client = new GatewayClient({ host, tenantId: tid || "", password: "" });
+  client.token = token;
+  state.client = client;
+
+  client.addEventListener("status", (e) => {
+    const s = e.detail.state;
+    if (s === "open") setStatus("on", `연결됨 · ${host}`);
+    else if (s === "connecting") setStatus("connecting", "연결 중…");
+    else if (s === "closed") setStatus("off", "연결 안 됨");
+    else if (s === "error") setStatus("off", "오류");
+  });
+  client.addEventListener("event", (e) => onCallinfoEvent(e.detail));
+
+  stopPolling();
+  state.pollTimer = setInterval(reconcileSessions, POLL_INTERVAL_MS);
+
+  const claims = parseJwt(token);
+  const tenantId = tid || claims?.tid || "";
+  setTenantPill(tenantId);
+  log("ok", "login:ok", { tid: tenantId, via: "dashboard" });
+  client.connectCallinfo();
+  // 현재 활성 세션 즉시 동기화
+  reconcileSessions();
+}
+
+function parseJwt(token) {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64 + "=".repeat((4 - b64.length % 4) % 4)));
+  } catch { return null; }
 }
 
 init();
