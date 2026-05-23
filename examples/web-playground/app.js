@@ -308,6 +308,9 @@ function eventLevel(name) {
 
 // ── active call cards ──────────────────────────────────────────────
 function renderCalls() {
+  // 통화 목록이 바뀌면 메뉴 호환성 배지도 갱신 (active 항목은 renderTemplateMenu 내부에서 반영)
+  renderTemplateMenu();
+
   const list = $("call-list");
   if (state.activeCalls.size === 0) {
     list.innerHTML = '<p class="muted small">아직 활성 통화가 없습니다.</p>';
@@ -583,20 +586,66 @@ function escapeHtml(s) {
   return String(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
 }
 
+// ── active call mode helpers ────────────────────────────────────────
+// 현재 활성 통화 중 lite / 풀스트림 존재 여부를 반환.
+// mode 필드가 없는 구버전 GW 응답은 풀스트림으로 간주.
+function activeCallModes() {
+  let hasLite = false;
+  let hasFull = false;
+  for (const c of state.activeCalls.values()) {
+    if (c.mode === "lite") hasLite = true;
+    else hasFull = true;
+  }
+  return { hasLite, hasFull };
+}
+
+// 템플릿이 현재 활성 통화에서 동작하는지 여부.
+//   modes="any"  → 항상 OK
+//   modes="lite" → lite 통화가 한 건이라도 있어야 OK (풀스트림만 있으면 경고)
+//   modes="full" → 풀스트림 통화가 있어야 OK (lite만 있으면 경고)
+//   activeCalls 가 0이면 경고 없음 (통화 없을 때는 모든 메뉴 정상 표시)
+function templateCompatibility(tpl) {
+  const { hasLite, hasFull } = activeCallModes();
+  if (state.activeCalls.size === 0) return "ok";
+  if (tpl.modes === "any") return "ok";
+  if (tpl.modes === "lite") return hasLite ? "ok" : "full-only";
+  if (tpl.modes === "full") return hasFull ? "ok" : "lite-only";
+  return "ok";
+}
+
 // ── templates ──────────────────────────────────────────────────────
-function renderTemplateMenu() {
+// 메뉴 클릭 이벤트는 init()에서 한 번만 등록 (renderTemplateMenu는 DOM만 갱신)
+function wireTemplateMenu() {
   const ul = $("template-menu");
-  ul.innerHTML = templates.map((t) => `
-    <li data-id="${t.id}">
-      <span>${escapeHtml(t.title)}</span>
-      <span class="desc">${escapeHtml(t.desc)}</span>
-    </li>
-  `).join("");
   ul.addEventListener("click", (e) => {
     const li = e.target.closest("li");
     if (!li) return;
     selectTemplate(li.dataset.id);
   });
+}
+
+// 활성 통화 모드에 따라 호환성 배지·회색 처리를 포함해 메뉴를 다시 그린다.
+// 이벤트 리스너는 wireTemplateMenu()에서 상위 ul에 위임(event delegation)으로
+// 이미 달려있으므로 여기서는 innerHTML 교체만 수행한다.
+function renderTemplateMenu() {
+  const ul = $("template-menu");
+  const activeId = state.currentTemplate ? state.currentTemplate.id : null;
+  ul.innerHTML = templates.map((t) => {
+    const compat = templateCompatibility(t);
+    const dimmed = compat !== "ok" ? " dimmed" : "";
+    let badge = "";
+    if (compat === "lite-only") {
+      badge = `<span class="mode-badge mode-badge-warn" title="현재 활성 통화가 mode=lite 입니다. 이 데모는 ExternalMedia(풀스트림) 통화에서만 동작합니다.">⚠ lite 통화 전용 아님</span>`;
+    } else if (compat === "full-only") {
+      badge = `<span class="mode-badge mode-badge-info" title="이 데모는 mode=lite 통화 전용입니다. 현재 활성 통화가 풀스트림입니다.">⚡ lite 전용</span>`;
+    }
+    return `
+    <li data-id="${t.id}"${activeId === t.id ? ' class="active"' : ""}>
+      <span class="tpl-title${dimmed}">${escapeHtml(t.title)}</span>
+      ${badge}
+      <span class="desc${dimmed}">${escapeHtml(t.desc)}</span>
+    </li>`;
+  }).join("");
 }
 
 function selectTemplate(id) {
@@ -665,6 +714,7 @@ function init() {
   loadCreds();
   wireProviderUI();
   renderTemplateMenu();
+  wireTemplateMenu();
   wireTabs();
   $("btn-connect").addEventListener("click", connect);
   $("btn-disconnect").addEventListener("click", disconnect);

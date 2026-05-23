@@ -20,53 +20,65 @@ import sttLive from "./stt-live.js";
 import callEnded from "./call-ended.js";
 import liteIvr from "./lite-ivr.js";
 
+// modes: 이 템플릿이 어떤 통화 모드에서 동작하는지
+//   "any"  — mode=lite / mode=both|customer|agent 모두 OK (이벤트 구독만)
+//   "lite" — mode=lite 전용 (ARI Playback 기반, ExternalMedia 불필요)
+//   "full" — 풀스트림 전용 (ExternalMedia/injectAudio/STT 사용, mode=lite 에선 동작 안 함)
 export const templates = [
   {
     id: "lite-ivr",
     title: "1. ⚡ Lite IVR",
     desc: "음성 안내 재생 + 키 입력 수집 + 통화 종료 — 최소 자원으로 동작하는 자동 응답.",
+    modes: "lite",
     module: liteIvr,
   },
   {
     id: "callinfo",
     title: "2. Callinfo 모니터",
     desc: "가장 단순한 첫 체험 — 통화 이벤트를 실시간으로 표시합니다.",
+    modes: "any",
     module: callinfoMonitor,
   },
   {
     id: "greeting-tts",
     title: "3. 전화 수신 시 인사말 TTS",
     desc: "call:new 또는 channel:state(up) 트리거 → 지정 텍스트 TTS를 통화에 주입.",
+    modes: "full",
     module: greetingTts,
   },
   {
     id: "click-tts",
     title: "4. Click-to-TTS",
     desc: "활성 통화를 선택하고 텍스트를 입력 → 즉시 TTS 주입.",
+    modes: "full",
     module: clickTts,
   },
   {
     id: "sample-playback",
     title: "5. 샘플 음원 재생",
     desc: "WAV/MP3 파일 업로드 → 게이트웨이가 ffmpeg로 변환 후 통화에 주입.",
+    modes: "full",
     module: samplePlayback,
   },
   {
     id: "dtmf-receive",
     title: "6. DTMF 수신",
     desc: "통화에서 누른 키패드 입력을 표시. IVR 데모의 기본.",
+    modes: "any",
     module: dtmfReceive,
   },
   {
     id: "stt-live",
     title: "7. STT 실시간 자막 (회의)",
     desc: "회의 ID에 대해 클라우드 STT를 시작하고 결과를 자막으로 표시.",
+    modes: "full",
     module: sttLive,
   },
   {
     id: "call-ended",
     title: "8. 통화 종료 후 후처리",
     desc: "call:ended를 받아 통화 시간과 함께 종료 이벤트 로그를 누적.",
+    modes: "any",
     module: callEnded,
   },
 ];

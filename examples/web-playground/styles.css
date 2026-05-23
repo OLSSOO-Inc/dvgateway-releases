@@ -248,6 +248,37 @@ button.danger { background: var(--err); border-color: var(--err); color: white; 
   margin-top: 2px;
   font-weight: normal;
 }
+/* 템플릿 호환성 배지 ─────────────────────────────────────────────── */
+.menu li .tpl-title {
+  display: block;
+}
+/* dimmed: 현재 활성 통화 모드와 호환되지 않는 템플릿 */
+.menu li .tpl-title.dimmed,
+.menu li .desc.dimmed {
+  opacity: 0.45;
+}
+.mode-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 3px;
+  margin: 4px 0 2px;
+  letter-spacing: .03em;
+  cursor: default;
+}
+/* ⚠ lite 통화 전용 아님 — 풀스트림 통화에서만 동작 */
+.mode-badge-warn {
+  background: rgba(251, 191, 36, .12);
+  border: 1px solid rgba(251, 191, 36, .45);
+  color: #d4a012;
+}
+/* ⚡ lite 전용 — 현재 활성 통화가 풀스트림 */
+.mode-badge-info {
+  background: rgba(91, 158, 255, .12);
+  border: 1px solid rgba(91, 158, 255, .45);
+  color: #5b9eff;
+}
 
 .call-list {
   max-height: 300px;
