@@ -25,20 +25,20 @@ async function injectTts(linkedId, text) {
 function mount(ctx) {
   ctx.body.innerHTML = `
     <div class="field">
-      <label>대상 통화
+      <label>어떤 통화에 보낼까요?
         <select id="ct-call"></select>
       </label>
     </div>
     <div class="field">
-      <label>전송할 텍스트
+      <label>들려드릴 문장
         <textarea id="ct-text" placeholder="예: 잠시만 기다려 주세요. 담당자에게 연결해 드리겠습니다."></textarea>
       </label>
     </div>
     <div class="row">
-      <button id="ct-send" class="primary">TTS 주입</button>
-      <button id="ct-stop">진행중 주입 중단</button>
+      <button id="ct-send" class="primary">🔊 문장을 음성으로 보내기</button>
+      <button id="ct-stop">재생 중단</button>
     </div>
-    <p class="help" id="ct-status">통화가 활성화되면 드롭다운에 나타납니다.</p>
+    <p class="help" id="ct-status">진행 중인 통화가 생기면 위 목록에 나타나요.</p>
   `;
 
   const callSel = ctx.body.querySelector("#ct-call");
@@ -51,7 +51,7 @@ function mount(ctx) {
     const calls = Array.from(ctx.getActiveCalls().values());
     const cur = callSel.value;
     callSel.innerHTML = calls.length === 0
-      ? '<option value="">(활성 통화 없음)</option>'
+      ? '<option value="">(진행 중인 통화가 없어요)</option>'
       : calls.map((c) => `<option value="${c.linkedId}">${c.linkedId} · ${c.caller || "?"} → ${c.callee || "?"}</option>`).join("");
     if (cur && calls.find((c) => c.linkedId === cur)) callSel.value = cur;
   }
@@ -62,17 +62,17 @@ function mount(ctx) {
   sendBtn.addEventListener("click", async () => {
     const linkedId = callSel.value;
     const text = textEl.value.trim();
-    if (!linkedId) { statusEl.textContent = "활성 통화를 선택하세요."; return; }
-    if (!text) { statusEl.textContent = "텍스트를 입력하세요."; return; }
-    if (!ctx.client) { statusEl.textContent = "먼저 Connect 하세요."; return; }
+    if (!linkedId) { statusEl.textContent = "보낼 통화를 골라 주세요."; return; }
+    if (!text) { statusEl.textContent = "보낼 문장을 입력해 주세요."; return; }
+    if (!ctx.client) { statusEl.textContent = "먼저 왼쪽에서 서버에 연결해 주세요."; return; }
     sendBtn.disabled = true;
-    statusEl.textContent = "주입 중…";
+    statusEl.textContent = "🔊 문장을 음성으로 만들고 통화에 보내는 중이에요…";
     try {
       await ctx.safeInjectText(linkedId, text);
-      statusEl.textContent = `✓ 주입 완료 (${linkedId}) · Mode ${ctx.providerMode?.() || "A"}`;
+      statusEl.textContent = `✓ 통화 ${linkedId} 에 음성을 들려드렸어요`;
       ctx.log("ok", "click-tts:injected", { linkedId, text, mode: ctx.providerMode?.() });
     } catch (err) {
-      statusEl.textContent = `✗ 주입 실패: ${err.message}`;
+      statusEl.textContent = `✗ 음성을 보내지 못했어요: ${err.message}`;
       ctx.log("err", "click-tts:fail", { error: err.message });
     } finally {
       sendBtn.disabled = false;
@@ -84,9 +84,9 @@ function mount(ctx) {
     if (!linkedId || !ctx.client) return;
     try {
       await ctx.client.stopInjection(linkedId);
-      statusEl.textContent = `진행중 주입 중단 요청됨 (${linkedId})`;
+      statusEl.textContent = `통화 ${linkedId} 의 재생을 중단했어요`;
     } catch (err) {
-      statusEl.textContent = `중단 실패: ${err.message}`;
+      statusEl.textContent = `중단하지 못했어요: ${err.message}`;
     }
   });
 

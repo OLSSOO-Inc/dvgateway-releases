@@ -58,7 +58,20 @@ body {
   display: inline-block;
 }
 
+.brand { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .brand strong { font-size: 16px; }
+.gw-version {
+  display: inline-block;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 7px;
+  letter-spacing: .02em;
+}
+.gw-version.hidden { display: none; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
@@ -127,7 +140,24 @@ body {
   border-bottom: 1px solid #463a16;
   color: #fbbf24;
   font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
+.banner .banner-text { flex: 1; }
+.banner-dismiss {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: 3px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.75;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.banner-dismiss:hover { opacity: 1; background: rgba(255, 255, 255, 0.06); }
 .banner.hidden { display: none; }
 .banner-warn {
   background: #2a1414;
@@ -481,3 +511,185 @@ code { font-family: "SF Mono", Menlo, Consolas, monospace; }
 }
 .transcript .line .speaker { color: var(--accent); font-weight: 600; margin-right: 8px; }
 .transcript .line.interim { opacity: 0.6; font-style: italic; }
+
+/* ─────────────────────────────────────────────────────────────────
+   친화 UX: 처음 가이드 카드 · 환영 모달 · 용어 사전 · intro 박스
+   ───────────────────────────────────────────────────────────────── */
+
+/* 사이드바 단계 가이드 카드 */
+.guide-card {
+  background: linear-gradient(180deg, rgba(91,158,255,.08), rgba(91,158,255,.02));
+  border-color: rgba(91,158,255,.35);
+}
+.guide-card h2 { color: var(--accent); }
+.guide-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.guide-steps li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(91,158,255,.04);
+  border: 1px solid rgba(91,158,255,.15);
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.guide-steps li.step-done {
+  opacity: 0.55;
+  background: rgba(74,222,128,.06);
+  border-color: rgba(74,222,128,.25);
+}
+.guide-steps li.step-active {
+  background: rgba(91,158,255,.14);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(91,158,255,.25) inset;
+}
+.guide-steps .step-num {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--muted);
+  text-align: center;
+  font-weight: 700;
+  line-height: 24px;
+  font-size: 12px;
+}
+.guide-steps li.step-done .step-num { background: var(--ok); color: #0a2410; }
+.guide-steps li.step-done .step-num::after { content: "✓"; }
+.guide-steps li.step-done .step-num span { display: none; }
+.guide-steps li.step-active .step-num { background: var(--accent); color: #0a1018; }
+.guide-steps .step-text { flex: 1; line-height: 1.45; font-size: 12px; }
+
+/* 사이드바 미니 용어 사전 */
+.glossary-card { font-size: 12px; }
+.glossary-mini { margin: 4px 0 0; }
+.glossary-mini dt {
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 8px;
+  font-size: 12px;
+}
+.glossary-mini dt:first-child { margin-top: 0; }
+.glossary-mini dd {
+  margin: 2px 0 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* 모달 공통 */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal.hidden { display: none; }
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 8, 12, 0.72);
+  backdrop-filter: blur(2px);
+}
+.modal-card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px 32px 24px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal-card-wide { max-width: 720px; }
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.modal-close:hover { color: var(--text); border-color: var(--accent); }
+.modal-card h2 { margin-top: 0; }
+.modal-card p { line-height: 1.6; }
+.welcome-steps {
+  margin: 14px 0;
+  padding-left: 22px;
+  line-height: 1.7;
+}
+.welcome-steps li { margin-bottom: 8px; }
+
+/* 용어 사전 — 전체 */
+.glossary-full {
+  margin: 16px 0 0;
+  display: grid;
+  gap: 14px;
+}
+.glossary-full dt {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 14px;
+  margin: 0;
+}
+.glossary-full dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  line-height: 1.6;
+  font-size: 13px;
+}
+.glossary-full code {
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+/* 데모 화면 상단 intro 박스 (각 템플릿이 mount 직후 삽입) */
+.demo-intro {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0 0 18px;
+}
+@media (max-width: 760px) { .demo-intro { grid-template-columns: 1fr; } }
+.demo-intro-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.demo-intro-box h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: .02em;
+  color: var(--accent);
+}
+.demo-intro-box ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text);
+}
+.demo-intro-box ul li { margin-bottom: 3px; }
+.demo-intro-box.prep h4 { color: var(--warn); }

@@ -32,23 +32,23 @@ ws.onmessage = async (msg) => {
 function mount(ctx) {
   ctx.body.innerHTML = `
     <div class="field">
-      <label>인사말 텍스트
+      <label>전화에 들려드릴 인사말
         <textarea id="gt-text">안녕하세요. Dynamic VoIP 게이트웨이 데모입니다. 무엇을 도와드릴까요?</textarea>
       </label>
     </div>
     <div class="field">
-      <label>트리거 이벤트
+      <label>언제 인사말을 보낼까요?
         <select id="gt-trigger">
-          <option value="channel:state-up">channel:state(up) — 상대방이 받았을 때 (권장)</option>
-          <option value="call:new">call:new — 통화 시작 즉시</option>
+          <option value="channel:state-up">📞 상대방이 전화를 받았을 때 (권장)</option>
+          <option value="call:new">🔔 전화가 들어온 즉시</option>
         </select>
       </label>
-      <p class="help">아웃바운드/click-to-call 또는 자동응답 다이얼플랜에서는 channel:state(up)이 더 정확합니다.</p>
+      <p class="help">아웃바운드 통화나 자동응답 환경에서는 "상대방이 받았을 때" 옵션이 더 자연스러워요.</p>
     </div>
     <div class="field">
-      <label><input type="checkbox" id="gt-enable" /> 트리거 활성화 (체크 시 다음 통화부터 자동 주입)</label>
+      <label><input type="checkbox" id="gt-enable" /> ✅ 자동 인사말 켜기 (체크하면 다음 통화부터 자동으로 들려드려요)</label>
     </div>
-    <p class="help" id="gt-status">대기 중.</p>
+    <p class="help" id="gt-status">아직 보낸 인사말이 없어요. 위 체크박스를 켜고 새 통화가 오기를 기다려 보세요.</p>
   `;
 
   const textEl = ctx.body.querySelector("#gt-text");
@@ -70,13 +70,13 @@ function mount(ctx) {
     const text = textEl.value.trim();
     if (!text) return;
 
-    statusEl.textContent = `injecting "${text}" → ${evt.linkedId} (Mode ${ctx.providerMode?.() || "A"}) …`;
+    statusEl.textContent = `🔊 인사말 보내는 중… "${text.slice(0, 28)}${text.length > 28 ? "…" : ""}" → 통화 ${evt.linkedId}`;
     try {
       await ctx.safeInjectText(evt.linkedId, text);
-      statusEl.textContent = `✓ 주입 완료: ${evt.linkedId} · Mode ${ctx.providerMode?.() || "A"}`;
+      statusEl.textContent = `✓ 인사말을 들려드렸어요 (통화 ${evt.linkedId})`;
       ctx.log("ok", "greeting:injected", { linkedId: evt.linkedId, text, mode: ctx.providerMode?.() });
     } catch (err) {
-      statusEl.textContent = `✗ 주입 실패: ${err.message}`;
+      statusEl.textContent = `✗ 인사말을 보내지 못했어요: ${err.message}`;
       ctx.log("err", "greeting:fail", { error: err.message });
     }
   };

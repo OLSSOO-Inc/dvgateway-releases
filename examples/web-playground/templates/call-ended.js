@@ -18,14 +18,14 @@ ws.onmessage = (msg) => {
 
 function mount(ctx) {
   ctx.body.innerHTML = `
-    <p class="help">최근 종료된 통화를 누적해서 보여줍니다.
-       실제 운영에서는 이 지점에서 CRM 업로드 · 고객 설문 발송 · 회의록 다운로드 등을 수행합니다.</p>
+    <p class="help">최근에 끝난 통화들이 아래에 차곡차곡 쌓여요.
+       실제 운영에서는 이 지점에서 CRM 시스템에 통화 정보를 올리거나, 고객 설문 SMS를 보내거나, 회의록을 내려받는 작업을 자동으로 연결해요.</p>
     <div class="row">
-      <button id="ce-clear">목록 지우기</button>
+      <button id="ce-clear">목록 비우기</button>
       <span class="muted small" id="ce-count">0건</span>
     </div>
     <div class="transcript" id="ce-list" style="margin-top:12px;">
-      <p class="muted small">아직 종료된 통화가 없습니다.</p>
+      <p class="muted small">아직 끝난 통화가 없어요. 통화를 한 통 진행한 뒤 끊으면 여기에 정보가 나타나요.</p>
     </div>
   `;
 
@@ -58,7 +58,7 @@ function mount(ctx) {
   function render() {
     count.textContent = `${items.length}건`;
     if (items.length === 0) {
-      list.innerHTML = '<p class="muted small">아직 종료된 통화가 없습니다.</p>';
+      list.innerHTML = '<p class="muted small">아직 끝난 통화가 없어요. 통화를 한 통 진행한 뒤 끊으면 여기에 정보가 나타나요.</p>';
       return;
     }
     list.innerHTML = items.slice(-50).reverse().map((c) => `

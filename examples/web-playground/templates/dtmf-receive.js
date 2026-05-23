@@ -14,13 +14,12 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
 
 function mount(ctx) {
   ctx.body.innerHTML = `
-    <p class="help">전화기 키패드에서 DTMF가 눌리면 해당 셀이 강조됩니다.
-       phase="end" 이벤트만 사용하는 게 일반적입니다 (durationMs 포함).</p>
+    <p class="help">통화 중에 휴대폰 키패드를 눌러 보세요. 해당 버튼이 잠깐 깜빡이며 입력이 표시돼요.</p>
     <div class="dtmf-grid">
       ${KEYS.map((k) => `<div class="dtmf-cell" data-key="${k}">${k}</div>`).join("")}
     </div>
     <div class="transcript" id="dt-history" style="margin-top:20px;">
-      <p class="muted small">DTMF 히스토리가 여기 표시됩니다.</p>
+      <p class="muted small">아직 입력된 키가 없어요. 진행 중인 통화에서 키패드를 눌러 주세요.</p>
     </div>
   `;
 

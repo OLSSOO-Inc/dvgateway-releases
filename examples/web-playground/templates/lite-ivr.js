@@ -56,80 +56,80 @@ const MEDIA_PRESETS = [
 function mount(ctx) {
   ctx.body.innerHTML = `
     <div class="lite-badge">
-      <span class="badge-lite">⚡ 경량 모드</span>
-      <span class="muted small">음성 안내 재생 + 키 입력 수집 + 통화 종료 — 최소 자원으로 동작하는 자동 응답</span>
+      <span class="badge-lite">⚡ 경량 모드 전용</span>
+      <span class="muted small">안내음 재생 + 키패드 입력 받기 + 통화 종료 — 자원 소모가 가장 적은 자동응답이에요</span>
     </div>
 
     <div class="panel-row">
       <!-- 왼쪽: 직접 제어 -->
       <div class="lite-panel">
-        <h3>직접 제어</h3>
+        <h3>1️⃣ 직접 조작해 보기</h3>
 
         <div class="field">
-          <label>대상 통화
+          <label>어떤 통화에 보낼까요?
             <select id="li-call">
-              <option value="">(진행 중인 통화 없음)</option>
+              <option value="">(진행 중인 통화가 없어요)</option>
             </select>
           </label>
           <p class="help muted small" id="li-mode-warn" style="display:none;color:var(--warn)">
-            ⚠ 이 통화는 경량 모드가 아닙니다. 음성 재생은 가능하지만 음성 인식·합성은 지원되지 않습니다.
+            ⚠ 이 통화는 경량 모드가 아니에요. 안내음은 재생되지만 음성 인식·합성 같은 기능은 지원되지 않아요.
           </p>
         </div>
 
         <div class="field">
-          <label>재생할 안내음
+          <label>어떤 안내음을 들려드릴까요?
             <div class="media-row">
               <input id="li-media" type="text" placeholder="sound:hello-world" value="sound:hello-world" />
               <select id="li-media-preset">
-                <option value="">프리셋 선택…</option>
+                <option value="">자주 쓰는 안내음 고르기…</option>
                 ${MEDIA_PRESETS.map((p) => `<option value="${p.value}">${p.label}</option>`).join("")}
               </select>
             </div>
           </label>
           <p class="help muted small">
-            예: <code>sound:hello-world</code> · <code>number:1234</code> · <code>digits:1234</code> · <code>tone:ring</code>
+            예시: <code>sound:hello-world</code>(인사) · <code>digits:1234</code>(숫자 읽기) · <code>tone:ring</code>(벨 소리)
           </p>
         </div>
 
         <div class="row" style="gap:8px;flex-wrap:wrap;">
-          <button id="li-play" class="primary">▶ 재생</button>
+          <button id="li-play" class="primary">▶ 재생하기</button>
           <button id="li-stop" class="warn-btn">■ 중단</button>
-          <button id="li-hangup" class="danger-btn">☎ 통화 종료</button>
+          <button id="li-hangup" class="danger-btn">☎ 통화 끊기</button>
         </div>
 
         <div class="field" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
-          <label>TTS 텍스트 재생 (자유 입력)
+          <label>원하는 문장을 입력하면 음성으로 들려드려요
             <input id="li-tts-text" type="text" placeholder="안녕하세요, 무엇을 도와드릴까요?" />
           </label>
           <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;">
             <select id="li-tts-provider" style="width:auto;">
-              <option value="">기본 provider</option>
+              <option value="">기본 음성</option>
               <option value="google">Google</option>
               <option value="elevenlabs">ElevenLabs</option>
               <option value="openai">OpenAI</option>
               <option value="gemini">Gemini</option>
               <option value="cosyvoice">CosyVoice</option>
             </select>
-            <button id="li-tts-play" class="primary">🔊 TTS 합성 + 재생</button>
+            <button id="li-tts-play" class="primary">🔊 문장을 음성으로 들려주기</button>
           </div>
           <p class="help muted small">
-            텍스트 → 클라우드 TTS 합성 → ARI Playback. 같은 문장은 캐시 적중으로 즉시 재생.
-            게이트웨이 1.4.5.8+ 필요.
+            문장이 클라우드에서 음성으로 합성된 뒤 통화에 재생돼요. 같은 문장은 캐시 덕분에 바로 재생돼요.
+            (게이트웨이 1.4.5.8 이상에서 동작해요)
           </p>
         </div>
 
-        <p class="help" id="li-status">통화를 선택하고 재생을 누르세요.</p>
+        <p class="help" id="li-status">통화를 고르고 재생 버튼을 눌러 주세요.</p>
       </div>
 
       <!-- 오른쪽: 키 입력 모니터 -->
       <div class="lite-panel">
-        <h3>키 입력 모니터</h3>
+        <h3>2️⃣ 고객이 누른 키패드 보기</h3>
         <div class="dtmf-grid">
           ${["1","2","3","4","5","6","7","8","9","*","0","#"]
             .map((k) => `<div class="dtmf-cell" data-key="${k}">${k}</div>`).join("")}
         </div>
         <div id="li-dtmf-buf" class="dtmf-buf">
-          <span class="muted small">입력 대기 중…</span>
+          <span class="muted small">키패드 입력을 기다리고 있어요…</span>
         </div>
         <button id="li-dtmf-clear" class="ghost small" style="margin-top:8px">초기화</button>
       </div>
@@ -137,9 +137,9 @@ function mount(ctx) {
 
     <!-- 재생 이력 -->
     <div class="field" style="margin-top:16px;">
-      <h3>재생 이력</h3>
+      <h3>📜 재생 이력</h3>
       <div id="li-timeline" class="lite-timeline">
-        <p class="muted small">재생 이벤트를 기다리는 중…</p>
+        <p class="muted small">아직 재생된 안내음이 없어요. 위에서 재생을 눌러 보세요.</p>
       </div>
     </div>
 

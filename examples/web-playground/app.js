@@ -4,6 +4,8 @@ import { getBrowserTtsAdapter, listBrowserTtsProviders } from "./lib/providers/i
 
 const STORAGE_KEY = "dvgw-playground-creds-v2";
 const PROV_STORAGE_KEY = "dvgw-playground-provider-v1";
+const BANNER_DISMISS_KEY = "dvgw-playground-banner-dismissed-v1";
+const WELCOME_DISMISS_KEY = "dvgw-playground-welcome-dismissed-v1";
 const TERMINAL_CHANNEL_STATES = new Set(["down", "busy", "no_answer", "rejected"]);
 const POLL_INTERVAL_MS = 30000; // sessions reconciliation tick
 const state = {
@@ -78,7 +80,107 @@ function clearCreds() {
   // browser, including any cached provider keys (Mode B safety).
   clearProviderState();
   renderProviderUI();
+  // Clear credentials 는 공용 PC 시나리오 — 안내 배너도 다음 사용자를 위해
+  // 다시 노출 (다시 보지 않기 dismiss 플래그도 함께 제거).
+  localStorage.removeItem(BANNER_DISMISS_KEY);
+  applyBannerDismissState();
   log("ok", "creds:cleared");
+}
+
+// 안내 배너 dismiss 상태를 localStorage에서 읽어 DOM에 반영.
+// 페이지 로드 시 + Clear credentials 직후에 호출.
+function applyBannerDismissState() {
+  const banner = $("key-warning");
+  if (!banner) return;
+  const dismissed = localStorage.getItem(BANNER_DISMISS_KEY) === "1";
+  banner.classList.toggle("hidden", dismissed);
+}
+
+function wireBannerDismiss() {
+  const btn = $("key-warning-dismiss");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    localStorage.setItem(BANNER_DISMISS_KEY, "1");
+    applyBannerDismissState();
+    log("ok", "banner:dismissed");
+  });
+}
+
+// ── 환영 모달 · 용어 사전 모달 ────────────────────────────────────
+// 두 모달 모두 backdrop / ✕ / "시작하기" 클릭으로 닫힘. 환영 모달은
+// "다음부터 자동으로 열지 않기" 체크박스 상태를 localStorage 에 기록.
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.classList.remove("hidden");
+}
+function closeModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.classList.add("hidden");
+}
+function wireModal(id, onClose) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.action === "close") {
+      if (onClose) onClose();
+      closeModal(id);
+    }
+  });
+}
+function wireWelcomeModal() {
+  wireModal("welcome-modal", () => {
+    const dont = $("welcome-dontshow");
+    if (dont && dont.checked) {
+      localStorage.setItem(WELCOME_DISMISS_KEY, "1");
+      log("ok", "welcome:dismissed-permanent");
+    }
+  });
+  // 헤더 "처음 가이드" 버튼은 dismiss 상태 무시하고 항상 열기
+  const open = $("btn-welcome");
+  if (open) open.addEventListener("click", () => {
+    const dont = $("welcome-dontshow");
+    if (dont) dont.checked = false;
+    openModal("welcome-modal");
+  });
+  // 첫 방문 자동 노출
+  if (localStorage.getItem(WELCOME_DISMISS_KEY) !== "1") {
+    openModal("welcome-modal");
+  }
+}
+function wireGlossaryModal() {
+  wireModal("glossary-modal");
+  const open = $("btn-glossary");
+  if (open) open.addEventListener("click", () => openModal("glossary-modal"));
+}
+
+// ── 단계 가이드 진행상태 ──────────────────────────────────────────
+// 1) 서버 연결 → 2) 통화 발신 → 3) 데모 선택 → 4) 결과 확인
+//   step-done: 완료된 단계 (회색 + ✓)
+//   step-active: 현재 다음에 해야 할 단계 (강조)
+function updateGuideSteps() {
+  const ul = $("guide-steps");
+  if (!ul) return;
+  const connected = !!state.client;
+  const hasCall = state.activeCalls.size > 0;
+  const demoSelected = !!state.currentTemplate;
+  // "결과 확인" 은 callinfo 이벤트 1회 이상 수신을 기준으로 함
+  const sawEvents = state.logCount > 2;  // login:ok + snapshot 정도는 항상 옴 — 그 이상이면 데모 결과 보고 있을 가능성
+
+  const stateBy = {
+    connect: connected ? "done" : "active",
+    call: !connected ? "pending" : (hasCall ? "done" : "active"),
+    demo: (!connected || !hasCall) ? "pending" : (demoSelected ? "done" : "active"),
+    result: (!connected || !hasCall || !demoSelected) ? "pending" : (sawEvents ? "done" : "active"),
+  };
+  ul.querySelectorAll("li[data-step]").forEach((li) => {
+    const k = li.dataset.step;
+    li.classList.remove("step-done", "step-active");
+    if (stateBy[k] === "done") li.classList.add("step-done");
+    else if (stateBy[k] === "active") li.classList.add("step-active");
+  });
 }
 
 // ── connection ─────────────────────────────────────────────────────
@@ -86,6 +188,8 @@ function setStatus(state, text) {
   const dot = $("conn-dot");
   dot.className = `dot ${state}`;
   $("conn-text").textContent = text;
+  // 상태가 바뀔 때마다 단계 가이드도 갱신 (가벼운 작업이라 매번 OK)
+  if (typeof updateGuideSteps === "function") updateGuideSteps();
 }
 
 function setTenantPill(tid) {
@@ -98,10 +202,45 @@ function setTenantPill(tid) {
   }
 }
 
+// Show 'gw vX.Y.Z' next to the brand title. Fetched after connect()
+// /connectWithToken() succeeds. Hidden again on disconnect so the pill
+// never lies about which gateway it was talking to.
+function setGatewayVersionPill(version) {
+  const el = $("gw-version");
+  if (!el) return;
+  if (version) {
+    el.textContent = `gw v${version}`;
+    el.classList.remove("hidden");
+  } else {
+    el.textContent = "";
+    el.classList.add("hidden");
+  }
+}
+
+async function fetchGatewayVersion() {
+  if (!state.client) return;
+  try {
+    // GatewayClient doesn't have a getVersion() helper yet; hit the
+    // public version endpoint directly through the same apiBase.
+    const r = await fetch(`${state.client.apiBase}/api/v1/version`, {
+      headers: state.client.token ? { Authorization: `Bearer ${state.client.token}` } : {},
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data && data.version) {
+      setGatewayVersionPill(data.version);
+      log("ok", "gw:version", { version: data.version, product: data.product });
+    }
+  } catch (err) {
+    // 버전 표시는 nice-to-have — 실패는 조용히 무시하고 콘솔에만 남김.
+    log("err", "gw:version:fail", { error: String(err.message || err) });
+  }
+}
+
 async function connect() {
   const creds = readCreds();
   if (!creds.host || !creds.tenantId || !creds.password) {
-    alert("Gateway Host, Tenant ID, Password 모두 입력하세요.");
+    alert("서버 주소, 테넌트 ID, 비밀번호를 모두 입력해 주세요.");
     return;
   }
   saveCreds();
@@ -113,10 +252,10 @@ async function connect() {
 
   client.addEventListener("status", (e) => {
     const s = e.detail.state;
-    if (s === "open") setStatus("on", `connected · ${creds.host}:${creds.apiPort}`);
-    else if (s === "connecting") setStatus("connecting", "connecting…");
-    else if (s === "closed") setStatus("off", "disconnected");
-    else if (s === "error") setStatus("off", "error");
+    if (s === "open") setStatus("on", `연결됨 · ${creds.host}:${creds.apiPort}`);
+    else if (s === "connecting") setStatus("connecting", "연결하는 중…");
+    else if (s === "closed") setStatus("off", "연결이 끊겼어요");
+    else if (s === "error") setStatus("off", "오류가 났어요");
   });
 
   client.addEventListener("event", (e) => onCallinfoEvent(e.detail));
@@ -128,7 +267,7 @@ async function connect() {
   stopPolling();
   state.pollTimer = setInterval(reconcileSessions, POLL_INTERVAL_MS);
 
-  setStatus("connecting", "logging in…");
+  setStatus("connecting", "로그인하는 중…");
   try {
     const { tid, exp } = await client.login();
     if (tid && tid !== creds.tenantId) {
@@ -141,11 +280,17 @@ async function connect() {
     });
   } catch (err) {
     log("err", "login:fail", { error: String(err.message || err) });
-    setStatus("off", "login failed");
+    setStatus("off", "로그인 실패");
     setTenantPill(null);
     return;
   }
   client.connectCallinfo();
+  // Re-mount the current template now that state.client is real.
+  // Templates register their callinfo listeners inside mount(); if they
+  // mounted earlier with a null client, those listeners were skipped.
+  remountCurrentTemplate();
+  // Gateway version next to the brand title.
+  fetchGatewayVersion();
 }
 
 function disconnect() {
@@ -155,8 +300,9 @@ function disconnect() {
   }
   state.activeCalls.clear();
   renderCalls();
-  setStatus("off", "disconnected");
+  setStatus("off", "연결이 끊겼어요");
   setTenantPill(null);
+  setGatewayVersionPill(null);
   stopPolling();
 }
 
@@ -310,6 +456,7 @@ function eventLevel(name) {
 function renderCalls() {
   // 통화 목록이 바뀌면 메뉴 호환성 배지도 갱신 (active 항목은 renderTemplateMenu 내부에서 반영)
   renderTemplateMenu();
+  updateGuideSteps();
 
   const list = $("call-list");
   if (state.activeCalls.size === 0) {
@@ -648,6 +795,39 @@ function renderTemplateMenu() {
   }).join("");
 }
 
+// 각 데모 상단의 인트로 박스 — '이 데모로 할 수 있는 것' + '미리 준비할 것'
+// intro 객체 형태: { can: ["…", "…"], prep: ["…", "…"] }
+// templates/index.js 에서 템플릿마다 정의. demo-body 최상단에 prepend.
+function renderDemoIntro(bodyEl, intro) {
+  if (!intro || (!intro.can && !intro.prep)) return;
+  const div = document.createElement("div");
+  div.className = "demo-intro";
+  const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  const canHtml = (intro.can || []).map((s) => `<li>${esc(s)}</li>`).join("");
+  const prepHtml = (intro.prep || []).map((s) => `<li>${esc(s)}</li>`).join("");
+  div.innerHTML = `
+    <div class="demo-intro-box can">
+      <h4>✨ 이 데모로 할 수 있는 것</h4>
+      <ul>${canHtml || "<li>실시간 통화 이벤트를 보여드려요</li>"}</ul>
+    </div>
+    <div class="demo-intro-box prep">
+      <h4>📋 미리 준비할 것</h4>
+      <ul>${prepHtml || "<li>왼쪽에서 서버 연결을 먼저 해주세요</li>"}</ul>
+    </div>
+  `;
+  // mount() 가 innerHTML 을 통째로 다시 쓴 직후 호출되므로 firstChild 앞에 삽입.
+  bodyEl.insertBefore(div, bodyEl.firstChild);
+}
+
+// Re-mount the currently active template (or no-op if none). Called after
+// connect/connectWithToken so templates that mounted with a null
+// ctx.client get a chance to re-register their callinfo listeners
+// against the now-live client. Safe to call on an unconnected page —
+// state.currentTemplate is set by the init-time selectTemplate("lite-ivr").
+function remountCurrentTemplate() {
+  if (state.currentTemplate) selectTemplate(state.currentTemplate.id);
+}
+
 function selectTemplate(id) {
   const tpl = getTemplate(id);
   if (!tpl) return;
@@ -662,13 +842,21 @@ function selectTemplate(id) {
   });
 
   state.currentTemplate = tpl;
+  updateGuideSteps();
   $("demo-title").textContent = tpl.title;
   $("demo-desc").textContent = tpl.desc;
   const body = $("demo-body");
   body.innerHTML = "";
 
+  // ctx.client must be a getter — selectTemplate() can run before
+  // connect() completes (init() calls selectTemplate("lite-ivr") then
+  // kicks off connectWithToken/connect asynchronously). Captured plain
+  // values would freeze at the mount-time null and templates would
+  // miss every callinfo event. The getter always returns the current
+  // state.client so addEventListener() inside templates, once the
+  // template is re-mounted after connect, sees the live client.
   const ctx = {
-    client: state.client,
+    get client() { return state.client; },
     body,
     log,
     activeCalls: state.activeCalls,
@@ -688,6 +876,9 @@ function selectTemplate(id) {
   };
   try {
     state.templateDispose = tpl.module.mount(ctx) || null;
+    // mount() 가 ctx.body.innerHTML 을 통째로 다시 쓰기 때문에 인트로 박스는
+    // 반드시 mount 이후에 prepend 해야 살아남음. 템플릿 코드를 일일이 고칠 필요 없음.
+    if (tpl.intro) renderDemoIntro(body, tpl.intro);
   } catch (err) {
     body.innerHTML = `<p style="color:var(--err)">template error: ${escapeHtml(String(err))}</p>`;
     console.error(err);
@@ -712,10 +903,15 @@ function wireTabs() {
 // ── bootstrap ──────────────────────────────────────────────────────
 function init() {
   loadCreds();
+  applyBannerDismissState();
+  wireBannerDismiss();
+  wireWelcomeModal();
+  wireGlossaryModal();
   wireProviderUI();
   renderTemplateMenu();
   wireTemplateMenu();
   wireTabs();
+  updateGuideSteps();
   $("btn-connect").addEventListener("click", connect);
   $("btn-disconnect").addEventListener("click", disconnect);
   $("btn-clear").addEventListener("click", clearCreds);
@@ -812,6 +1008,11 @@ async function connectWithToken({ host, token, tid }) {
     client.connectCallinfo();
     // 현재 활성 세션 즉시 동기화
     reconcileSessions();
+    // Templates mounted before connectWithToken finished saw ctx.client=null;
+    // re-mount so their callinfo addEventListener actually attaches.
+    remountCurrentTemplate();
+    // 게이트웨이 버전 노출
+    fetchGatewayVersion();
   } catch (err) {
     // 자동 로그인 실패: silent 금지. 사용자가 좌측 폼으로 수동 로그인 가능하도록 안내.
     const msg = err && err.message ? err.message : String(err);

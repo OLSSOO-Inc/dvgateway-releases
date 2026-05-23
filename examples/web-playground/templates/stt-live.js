@@ -24,20 +24,19 @@ await fetch(\`http://\${HOST}:8080/api/v1/stt/conf/\${confId}/stop\`, {
 function mount(ctx) {
   ctx.body.innerHTML = `
     <div class="field">
-      <label>회의 ID (ConfBridge)
-        <input type="text" id="st-conf" placeholder="conf-1001" />
+      <label>회의 ID
+        <input type="text" id="st-conf" placeholder="예: conf-1001" />
       </label>
-      <p class="help">단순 1:1 통화가 아닌 회의(ConfBridge) ID를 입력하세요.
-         STT 라이선스가 활성화되어 있어야 합니다.</p>
+      <p class="help">참여자가 여러 명인 회의(ConfBridge)의 ID를 입력해 주세요. 음성 인식(STT) 기능이 활성화된 라이선스가 필요해요.</p>
     </div>
     <div class="row">
-      <button id="st-start" class="primary">STT 시작</button>
-      <button id="st-stop">STT 정지</button>
+      <button id="st-start" class="primary">📝 자막 시작</button>
+      <button id="st-stop">자막 정지</button>
     </div>
     <div class="transcript" id="st-transcript">
-      <p class="muted small">자막이 여기에 표시됩니다.</p>
+      <p class="muted small">자막이 여기에 표시될 거예요. 위에서 자막을 시작해 보세요.</p>
     </div>
-    <p class="help" id="st-status">대기 중.</p>
+    <p class="help" id="st-status">아직 자막이 시작되지 않았어요.</p>
   `;
 
   const confEl = ctx.body.querySelector("#st-conf");
@@ -57,10 +56,12 @@ function mount(ctx) {
         headers: { "Authorization": `Bearer ${ctx.client.token}` },
       });
       if (!res.ok) throw new Error(await res.text());
-      statusEl.textContent = `STT ${action}: ${confId}`;
+      const label = action === "start" ? "시작" : "정지";
+      statusEl.textContent = `✓ ${confId} 회의 자막을 ${label}했어요`;
       ctx.log("ok", `stt:${action}`, { confId });
     } catch (err) {
-      statusEl.textContent = `${action} 실패: ${err.message}`;
+      const label = action === "start" ? "시작" : "정지";
+      statusEl.textContent = `✗ 자막을 ${label}하지 못했어요: ${err.message}`;
       ctx.log("err", `stt:${action}:fail`, { error: err.message });
     }
   }

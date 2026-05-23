@@ -26,9 +26,8 @@ ws.onmessage = (msg) => {
 
 function mount(ctx) {
   ctx.body.innerHTML = `
-    <p class="help">아래는 게이트웨이가 푸시하는 모든 callinfo 이벤트의 최근 20건입니다.
-       JWT의 <code>tid</code> 클레임으로 자동 격리되어 내 테넌트의 이벤트만 도착합니다.
-       <b>Event log</b> 탭에서 전체 기록을 볼 수 있습니다.</p>
+    <p class="help">전화가 오고, 연결되고, 끊기는 모든 순간이 아래에 실시간으로 표시돼요 (최근 20건).
+       내 테넌트의 이벤트만 보이도록 자동으로 걸러져요. 더 자세한 전체 기록은 위쪽 <b>이벤트 로그</b> 탭에서 보실 수 있어요.</p>
     <div class="transcript" id="cim-feed"></div>
   `;
 
