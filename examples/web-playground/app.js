@@ -580,28 +580,22 @@ async function safeInject(linkedId, doInject) {
 // them from the gateway via getOutboundDefaults(), so a tenant whose
 // admin rotates the registered values sees the change immediately and
 // cannot operate stale values from this browser.
+// 단순화된 발신 패널은 수신 번호만 받습니다. caller(발신 내선)는
+// outbound-defaults.cidNumber를 자동으로 사용하고, cidName / custom
+// 값은 UI에서 노출하지 않습니다. UI에 입력이 거의 없으니 localStorage
+// 캐시는 수신 번호만 보관합니다.
 function loadOutboundForm() {
   try {
     const raw = localStorage.getItem(OUTBOUND_STORAGE_KEY);
     if (!raw) return;
     const p = JSON.parse(raw);
-    if (p.caller) $("ob-caller").value = p.caller;
     if (p.callee) $("ob-callee").value = p.callee;
-    if (p.cidName) $("ob-cidname").value = p.cidName;
-    if (p.cv1) $("ob-cv1").value = p.cv1;
-    if (p.cv2) $("ob-cv2").value = p.cv2;
-    if (p.cv3) $("ob-cv3").value = p.cv3;
   } catch {}
 }
 
 function saveOutboundForm() {
   localStorage.setItem(OUTBOUND_STORAGE_KEY, JSON.stringify({
-    caller:  $("ob-caller").value.trim(),
-    callee:  $("ob-callee").value.trim(),
-    cidName: $("ob-cidname").value.trim(),
-    cv1:     $("ob-cv1").value.trim(),
-    cv2:     $("ob-cv2").value.trim(),
-    cv3:     $("ob-cv3").value.trim(),
+    callee: $("ob-callee").value.trim(),
   }));
 }
 
@@ -614,6 +608,8 @@ function setOutboundEnabled(enabled, reason) {
 // "fixed values" box. Called once after every successful Connect. A 404 ⇒
 // the admin hasn't provisioned this tenant for outbound yet, so we
 // disable the Originate button rather than allow a click that would 412.
+// cidNumber 는 originate() 시 caller 로 자동 사용되므로 state.outboundDefaults
+// 에 캐시합니다.
 async function refreshOutboundDefaults() {
   const box = $("ob-fixed-box");
   const cidNumEl = $("ob-fixed-cidnumber");
@@ -627,6 +623,7 @@ async function refreshOutboundDefaults() {
       acctEl.textContent = "(미등록)";
       box.classList.add("unset");
       btn.disabled = true;
+      state.outboundDefaults = null;
       setOutboundEnabled(true, "발신표시번호·과금번호가 미등록입니다. 관리자에게 등록을 요청하세요.");
       log("err", "outbound:defaults:missing", { tid: state.client.tokenTid });
       return;
@@ -635,6 +632,7 @@ async function refreshOutboundDefaults() {
     acctEl.textContent = def.accountCode || "—";
     box.classList.remove("unset");
     btn.disabled = false;
+    state.outboundDefaults = def;
     setOutboundEnabled(true, "");
     log("ok", "outbound:defaults:loaded", { cidNumber: def.cidNumber, updatedAt: def.updatedAt });
   } catch (err) {
@@ -642,6 +640,7 @@ async function refreshOutboundDefaults() {
     acctEl.textContent = "(조회 실패)";
     box.classList.add("unset");
     btn.disabled = true;
+    state.outboundDefaults = null;
     setOutboundEnabled(true, `발신 고정값 조회 실패: ${err.message}`);
     log("err", "outbound:defaults:fail", { error: err.message });
   }
@@ -656,23 +655,23 @@ async function originate() {
     return;
   }
   saveOutboundForm();
-  const caller = $("ob-caller").value.trim();
   const callee = $("ob-callee").value.trim();
-  const cidName = $("ob-cidname").value.trim();
-  const cv1 = $("ob-cv1").value.trim();
-  const cv2 = $("ob-cv2").value.trim();
-  const cv3 = $("ob-cv3").value.trim();
-  if (!caller || !callee) {
+  if (!callee) {
     resultEl.classList.add("err");
-    resultEl.textContent = "발신 내선과 수신 번호는 필수입니다.";
+    resultEl.textContent = "수신 번호를 입력해 주세요.";
+    return;
+  }
+  // caller(발신 내선)는 등록된 cidNumber를 그대로 사용. 미등록 상태는
+  // refreshOutboundDefaults()에서 이미 버튼을 disable했지만 방어적으로 한 번 더 검사.
+  const caller = (state.outboundDefaults && state.outboundDefaults.cidNumber) || "";
+  if (!caller) {
+    resultEl.classList.add("err");
+    resultEl.textContent = "발신표시번호가 등록되지 않았습니다. 관리자에게 등록을 요청하세요.";
     return;
   }
   resultEl.textContent = `Originate 요청 중 … ${caller} → ${callee}`;
   try {
-    const res = await state.client.clickToCall({
-      caller, callee, cidName,
-      customValue1: cv1, customValue2: cv2, customValue3: cv3,
-    });
+    const res = await state.client.clickToCall({ caller, callee });
     pendingOutbound.set(callee, { ts: Date.now(), actionId: res?.actionId || "" });
     setTimeout(() => {
       const e = pendingOutbound.get(callee);
@@ -703,16 +702,12 @@ function wireOutboundPanel() {
   setOutboundEnabled(false, "먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.");
   $("btn-originate").addEventListener("click", () => originate());
   $("btn-ob-clear").addEventListener("click", () => {
-    ["ob-caller", "ob-callee", "ob-cidname", "ob-cv1", "ob-cv2", "ob-cv3"].forEach((id) => {
-      $(id).value = "";
-    });
+    $("ob-callee").value = "";
     saveOutboundForm();
     $("ob-result").classList.add("hidden");
   });
   // Persist as the user types so a reload doesn't lose the demo input.
-  ["ob-caller", "ob-callee", "ob-cidname", "ob-cv1", "ob-cv2", "ob-cv3"].forEach((id) => {
-    $(id).addEventListener("change", saveOutboundForm);
-  });
+  $("ob-callee").addEventListener("change", saveOutboundForm);
 }
 
 // ── event log ──────────────────────────────────────────────────────
