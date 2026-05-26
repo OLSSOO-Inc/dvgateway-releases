@@ -5,6 +5,7 @@ import { getBrowserTtsAdapter, listBrowserTtsProviders } from "./lib/providers/i
 const STORAGE_KEY = "dvgw-playground-creds-v2";
 const PROV_STORAGE_KEY = "dvgw-playground-provider-v1";
 const OUTBOUND_STORAGE_KEY = "dvgw-playground-outbound-v1";
+const WELCOME_DISMISS_KEY = "dvgw-playground-welcome-dismissed-v1";
 const TERMINAL_CHANNEL_STATES = new Set(["down", "busy", "no_answer", "rejected"]);
 const POLL_INTERVAL_MS = 30000; // sessions reconciliation tick
 
@@ -84,6 +85,9 @@ function clearCreds() {
   // browser, including any cached provider keys (Mode B safety).
   clearProviderState();
   renderProviderUI();
+  // 공용 PC 안전: 환영 모달 dismiss 상태도 함께 제거 → 다음 사용자에게
+  // 처음 가이드가 다시 노출됨.
+  localStorage.removeItem(WELCOME_DISMISS_KEY);
   log("ok", "creds:cleared");
 }
 
@@ -904,11 +908,61 @@ function wireTabs() {
   });
 }
 
+// ── 환영 모달 (처음 사용 가이드) ───────────────────────────────────
+// 첫 방문 시 자동 노출, "다음부터 자동으로 열지 않기" 체크 시 localStorage에
+// dvgw-playground-welcome-dismissed-v1 = "1" 저장. 헤더 우측 👋 처음 가이드
+// 버튼은 dismiss 상태와 무관하게 항상 열림 → 사용자가 언제든 다시 볼 수 있음.
+// "저장 정보 지우기" 버튼은 이 키도 함께 제거하므로 공용 PC에서 안전.
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.classList.remove("hidden");
+}
+function closeModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.classList.add("hidden");
+}
+function wireModal(id, onClose) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.action === "close") {
+      if (onClose) onClose();
+      closeModal(id);
+    }
+  });
+}
+function wireWelcomeModal() {
+  wireModal("welcome-modal", () => {
+    const dont = $("welcome-dontshow");
+    if (dont && dont.checked) {
+      localStorage.setItem(WELCOME_DISMISS_KEY, "1");
+      log("ok", "welcome:dismissed-permanent");
+    }
+  });
+  // 헤더 "처음 가이드" 버튼은 dismiss 상태 무시하고 항상 열기 (사용자가
+  // 일부러 다시 보겠다고 누른 거니까 체크박스도 초기화해서 두 번 끄지
+  // 않도록 함).
+  const open = $("btn-welcome");
+  if (open) open.addEventListener("click", () => {
+    const dont = $("welcome-dontshow");
+    if (dont) dont.checked = false;
+    openModal("welcome-modal");
+  });
+  // 첫 방문 자동 노출
+  if (localStorage.getItem(WELCOME_DISMISS_KEY) !== "1") {
+    openModal("welcome-modal");
+  }
+}
+
 // ── bootstrap ──────────────────────────────────────────────────────
 function init() {
   loadCreds();
   wireProviderUI();
   wireOutboundPanel();
+  wireWelcomeModal();
   renderTemplateMenu();
   wireTabs();
   $("btn-connect").addEventListener("click", connect);

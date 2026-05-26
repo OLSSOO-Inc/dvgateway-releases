@@ -12,6 +12,7 @@
       <strong>DVGateway</strong> <span class="muted">Web Playground</span>
     </div>
     <nav class="topnav">
+      <button id="btn-welcome" class="topnav-link" type="button" title="처음 사용 가이드를 다시 봐요">👋 처음 가이드</button>
       <a href="https://github.com/OLSSOO-Inc/dvgateway-releases" target="_blank" rel="noopener" class="topnav-link" title="DVGateway SDK · 바이너리 · install.sh">
         <span class="dot-link"></span> dvgateway-releases ↗
       </a>
@@ -216,6 +217,27 @@
       </div>
     </section>
   </main>
+
+  <!-- 환영 모달 — 첫 방문 시에만 자동 노출, 상단 '처음 가이드' 버튼으로 다시 열기 가능 -->
+  <div id="welcome-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-card">
+      <button class="modal-close" type="button" data-action="close" aria-label="닫기">✕</button>
+      <h2 id="welcome-title">👋 DVGateway 체험 페이지에 오신 것을 환영해요</h2>
+      <p>여기는 <b>전화 통화에 음성을 보내거나, 통화에서 들리는 음성을 처리하는</b> 여러 기능을 직접 눌러보며 체험해 볼 수 있는 페이지예요.</p>
+      <ol class="welcome-steps">
+        <li><b>왼쪽에서 서버 정보를 넣고 연결</b>해요. (관리자에게 받은 주소·테넌트·비밀번호)</li>
+        <li><b>테스트용 전화를 한 통 걸어요.</b> 게이트웨이가 통화를 인식하면 진행 중인 통화 목록에 나타나요.</li>
+        <li><b>왼쪽 데모 목록에서 마음에 드는 항목</b>을 골라 클릭해요.</li>
+        <li><b>오른쪽 화면에 안내된 대로 버튼을 눌러 보세요.</b> 결과가 통화에 즉시 반영돼요.</li>
+      </ol>
+      <p class="muted small">처음에는 <b>Callinfo 모니터</b> 데모로 시작하시는 것을 추천해요. 전화 이벤트가 실시간으로 나타나는 모습만 봐도 게이트웨이가 어떻게 동작하는지 감이 잡혀요.</p>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:14px;">
+        <label class="muted small"><input id="welcome-dontshow" type="checkbox" /> 다음부터 자동으로 열지 않기</label>
+        <button class="primary" type="button" data-action="close">시작하기</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>
