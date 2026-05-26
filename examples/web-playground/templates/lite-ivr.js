@@ -401,7 +401,12 @@ function mount(ctx) {
     const linkedId = callSel.value;
     if (!linkedId) { statusEl.textContent = "통화를 선택하세요."; return; }
     if (!ctx.client) { statusEl.textContent = "먼저 연결하세요."; return; }
-    if (!confirm(`통화를 종료하시겠습니까?`)) return;
+    // 시스템 confirm() 대신 playground 공용 모달 사용. window.dvgwConfirm은
+    // app.js의 openConfirm — Promise<boolean> 반환.
+    const ok = window.dvgwConfirm
+      ? await window.dvgwConfirm("통화를 종료하시겠습니까?", { title: "통화 종료", okLabel: "종료" })
+      : confirm("통화를 종료하시겠습니까?");
+    if (!ok) return;
 
     hangupBtn.disabled = true;
     statusEl.textContent = `☎ 통화 종료 중…`;

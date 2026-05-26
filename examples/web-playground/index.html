@@ -10,6 +10,7 @@
   <header class="topbar">
     <div class="brand">
       <strong>DVGateway</strong> <span class="muted">Web Playground</span>
+      <span id="gw-version" class="gw-version hidden" title="현재 연결된 게이트웨이 버전"></span>
     </div>
     <nav class="topnav">
       <button id="btn-welcome" class="topnav-link" type="button" title="처음 사용 가이드를 다시 봐요">👋 처음 가이드</button>
@@ -85,17 +86,13 @@
         <details open id="prov-tts-details">
           <summary>TTS</summary>
           <label>Provider
-            <select id="prov-tts-provider">
-              <option value="elevenlabs">ElevenLabs</option>
-              <option value="gemini">Google Gemini</option>
-            </select>
+            <!-- options populated dynamically by app.js from lib/providers/index.js -->
+            <select id="prov-tts-provider"></select>
           </label>
           <label>API Key
             <input id="prov-tts-key" type="password" placeholder="xi-api-key 또는 AIza..." />
           </label>
-          <label>Voice (선택)
-            <input id="prov-tts-voice" type="text" placeholder="비워두면 기본값" />
-          </label>
+          <p class="hint muted small">목소리는 한국어 기본 음성으로 자동 선택돼요. 다른 음성이 필요하면 SDK를 직접 사용해 주세요.</p>
           <div class="row">
             <button id="btn-prov-tts-save" class="primary small">키 저장</button>
             <button id="btn-prov-tts-test" class="small">테스트 합성</button>
@@ -107,11 +104,8 @@
           <summary>STT (Mode A 전용)</summary>
           <p class="hint muted small">STT 결과는 게이트웨이가 callinfo로 다시 전달하므로 브라우저 직접 호출은 지원하지 않습니다.</p>
           <label>Provider
-            <select id="prov-stt-provider">
-              <option value="deepgram">Deepgram</option>
-              <option value="openai">OpenAI Realtime / Whisper</option>
-              <option value="google">Google Cloud STT</option>
-            </select>
+            <!-- options populated dynamically by app.js from lib/providers/index.js -->
+            <select id="prov-stt-provider"></select>
           </label>
           <label>API Key
             <input id="prov-stt-key" type="password" placeholder="provider API key" />
@@ -128,10 +122,14 @@
         <p class="hint muted small" id="ob-conn-hint">먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.</p>
 
         <fieldset id="ob-fieldset" disabled>
-          <label>수신 번호
+          <label>수신 번호 *
             <input id="ob-callee" type="text" placeholder="01012345678" />
           </label>
-          <p class="hint muted small">E.164 / 국내번호 모두 허용</p>
+
+          <label>발신 통화 후 연결할 번호 *
+            <input id="ob-caller" type="text" placeholder="예: 45144801 (자동응답 ARS 번호나 내선)" />
+          </label>
+          <p class="hint muted small">상대방이 전화를 받은 뒤 어디로 연결할지 지정하는 번호예요. 보통 자동응답(IVR) 진입 번호나 상담사 내선을 넣어요.</p>
 
           <div id="ob-fixed-box" class="ob-fixed">
             <div class="ob-fixed-title">고정값 (테넌트 등록값 · 변경 불가) 🔒</div>
@@ -219,6 +217,19 @@
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:14px;">
         <label class="muted small"><input id="welcome-dontshow" type="checkbox" /> 다음부터 자동으로 열지 않기</label>
         <button class="primary" type="button" data-action="close">시작하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 공용 확인 모달 — 통화 종료 등 destructive 액션 confirm() 대체. openConfirm()이 동적으로 텍스트/콜백 주입. -->
+  <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="modal-backdrop" data-action="confirm-cancel"></div>
+    <div class="modal-card" style="max-width:420px;">
+      <h2 id="confirm-title" style="font-size:16px;margin-bottom:10px;">확인</h2>
+      <p id="confirm-message" style="margin:0 0 18px 0;"></p>
+      <div class="row" style="justify-content:flex-end;gap:8px;">
+        <button class="ghost" type="button" data-action="confirm-cancel">취소</button>
+        <button class="primary" type="button" data-action="confirm-ok" id="confirm-ok-btn">확인</button>
       </div>
     </div>
   </div>

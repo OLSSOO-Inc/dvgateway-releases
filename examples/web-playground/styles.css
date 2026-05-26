@@ -63,6 +63,19 @@ body {
 .small { font-size: 12px; }
 
 .status { display: flex; align-items: center; gap: 8px; }
+.gw-version {
+  margin-left: 10px;
+  padding: 3px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--accent);
+  vertical-align: middle;
+}
+.gw-version.hidden { display: none; }
+
 .pill {
   background: var(--panel-2);
   border: 1px solid var(--border);

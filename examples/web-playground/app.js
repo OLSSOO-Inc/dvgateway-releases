@@ -1,6 +1,6 @@
 import { GatewayClient } from "./lib/gateway-client.js";
 import { templates, getTemplate } from "./templates/index.js";
-import { getBrowserTtsAdapter, listBrowserTtsProviders } from "./lib/providers/index.js";
+import { getBrowserTtsAdapter, listBrowserTtsProviders, listTtsProviders, listSttProviders } from "./lib/providers/index.js";
 
 const STORAGE_KEY = "dvgw-playground-creds-v2";
 const PROV_STORAGE_KEY = "dvgw-playground-provider-v1";
@@ -108,6 +108,39 @@ function setTenantPill(tid) {
   }
 }
 
+// setGatewayVersionPill / fetchGatewayVersion: 1.4.5.10(#600)에서 도입된
+// 헤더 좌측 'gw vX.Y.Z' 표시. 사용자가 어느 게이트웨이에 붙어있는지
+// 한눈에 보고 운영자와 소통할 때 버전을 인용하기 쉽도록 함.
+function setGatewayVersionPill(version) {
+  const el = $("gw-version");
+  if (!el) return;
+  if (version) {
+    el.textContent = `gw v${version}`;
+    el.classList.remove("hidden");
+  } else {
+    el.textContent = "";
+    el.classList.add("hidden");
+  }
+}
+
+async function fetchGatewayVersion() {
+  if (!state.client) return;
+  try {
+    const r = await fetch(`${state.client.apiBase}/api/v1/version`, {
+      headers: state.client.token ? { Authorization: `Bearer ${state.client.token}` } : {},
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data && data.version) {
+      setGatewayVersionPill(data.version);
+      log("ok", "gw:version", { version: data.version, product: data.product });
+    }
+  } catch (err) {
+    // nice-to-have이므로 실패는 로그만.
+    log("err", "gw:version:fail", { error: String(err.message || err) });
+  }
+}
+
 async function connect() {
   const creds = readCreds();
   if (!creds.host || !creds.tenantId || !creds.password) {
@@ -161,6 +194,8 @@ async function connect() {
   // client에 등록되도록 함. init() 시점에 client=null로 mount된 상태라면
   // listener가 영구히 안 달려있던 회귀를 방지.
   remountCurrentTemplate();
+  // 헤더 좌측에 게이트웨이 버전 표시.
+  fetchGatewayVersion();
 }
 
 function disconnect() {
@@ -174,6 +209,7 @@ function disconnect() {
   renderCalls();
   setStatus("off", "disconnected");
   setTenantPill(null);
+  setGatewayVersionPill(null);
   stopPolling();
 }
 
@@ -408,24 +444,61 @@ function clearProviderState() {
   state.provider = { mode: "A", ttsProvider: "elevenlabs", ttsKey: "", ttsVoice: "", sttProvider: "deepgram", sttKey: "" };
 }
 
+// renderTtsProviderOptions / renderSttProviderOptions: SSOT인
+// lib/providers/index.js 의 메타데이터로 select 옵션을 동적 생성.
+// HTML에는 빈 <select>만 있고, mode 전환 시 TTS 옵션 목록이 바뀌어야
+// 하므로(Mode B는 browser-direct adapter가 있는 provider만 노출) 매번
+// 다시 그린다. 현재 선택값을 보존하되, 새 목록에 없으면 첫 항목으로
+// fallback해서 state.provider.ttsProvider 와 동기화.
+function renderTtsProviderOptions(mode) {
+  const sel = $("prov-tts-provider");
+  if (!sel) return;
+  const providers = listTtsProviders(mode);
+  const currentVal = state.provider.ttsProvider;
+  sel.innerHTML = providers.map((p) => `<option value="${p.id}">${p.label}</option>`).join("");
+  if (providers.find((p) => p.id === currentVal)) {
+    sel.value = currentVal;
+  } else if (providers.length > 0) {
+    sel.value = providers[0].id;
+    state.provider.ttsProvider = providers[0].id;
+    saveProviderState();
+  }
+}
+
+function renderSttProviderOptions() {
+  const sel = $("prov-stt-provider");
+  if (!sel) return;
+  const providers = listSttProviders();
+  const currentVal = state.provider.sttProvider;
+  sel.innerHTML = providers.map((p) => `<option value="${p.id}">${p.label}</option>`).join("");
+  if (providers.find((p) => p.id === currentVal)) {
+    sel.value = currentVal;
+  } else if (providers.length > 0) {
+    sel.value = providers[0].id;
+    state.provider.sttProvider = providers[0].id;
+    saveProviderState();
+  }
+}
+
 function renderProviderUI() {
   const p = state.provider;
   document.querySelectorAll('input[name="provider-mode"]').forEach((r) => {
     r.checked = r.value === p.mode;
   });
-  $("prov-tts-provider").value = p.ttsProvider;
+  renderTtsProviderOptions(p.mode);
+  renderSttProviderOptions();
   $("prov-tts-key").value = p.ttsKey;
-  $("prov-tts-voice").value = p.ttsVoice;
-  $("prov-stt-provider").value = p.sttProvider;
   $("prov-stt-key").value = p.sttKey;
   updateTtsPlaceholders();
 }
 
+// updateTtsPlaceholders: voice 입력란이 1.4.6.14에서 제거됐으므로 API key
+// placeholder만 갱신. ttsVoice는 항상 빈 문자열로 두고 adapter.defaults.voice가
+// 자동 사용됨 (한국어 기본 음성 — ElevenLabs Rachel, Gemini Kore).
 function updateTtsPlaceholders() {
   const adapter = getBrowserTtsAdapter(state.provider.ttsProvider);
   if (adapter) {
     $("prov-tts-key").placeholder = adapter.keyPlaceholder;
-    $("prov-tts-voice").placeholder = `${adapter.voiceLabel} (기본: ${adapter.defaults.voice})`;
   }
 }
 
@@ -437,6 +510,11 @@ function wireProviderUI() {
     r.addEventListener("change", (e) => {
       state.provider.mode = e.target.value;
       saveProviderState();
+      // Mode B는 browser-direct adapter가 있는 provider만 노출하므로
+      // 옵션 목록을 다시 그린다. 현재 선택값이 Mode B에서 사라지면
+      // renderTtsProviderOptions가 첫 항목으로 fallback + state 갱신.
+      renderTtsProviderOptions(state.provider.mode);
+      updateTtsPlaceholders();
       log("ok", "provider:mode", { mode: state.provider.mode });
     });
   });
@@ -450,10 +528,9 @@ function wireProviderUI() {
     state.provider.ttsKey = e.target.value;
     saveProviderState();
   });
-  $("prov-tts-voice").addEventListener("input", (e) => {
-    state.provider.ttsVoice = e.target.value;
-    saveProviderState();
-  });
+  // Voice ID 입력란은 1.4.6.14에서 제거됐어요. state.provider.ttsVoice는
+  // 항상 빈 문자열로 유지되며, adapter.defaults.voice (한국어 기본 음성)가
+  // synthesizeToPcm 시점에 자동 채워집니다.
   $("prov-stt-provider").addEventListener("change", (e) => {
     state.provider.sttProvider = e.target.value;
     saveProviderState();
@@ -600,12 +677,14 @@ function loadOutboundForm() {
     if (!raw) return;
     const p = JSON.parse(raw);
     if (p.callee) $("ob-callee").value = p.callee;
+    if (p.caller) $("ob-caller").value = p.caller;
   } catch {}
 }
 
 function saveOutboundForm() {
   localStorage.setItem(OUTBOUND_STORAGE_KEY, JSON.stringify({
     callee: $("ob-callee").value.trim(),
+    caller: $("ob-caller").value.trim(),
   }));
 }
 
@@ -665,15 +744,22 @@ async function originate() {
   }
   saveOutboundForm();
   const callee = $("ob-callee").value.trim();
+  const caller = $("ob-caller").value.trim();
   if (!callee) {
     resultEl.classList.add("err");
     resultEl.textContent = "수신 번호를 입력해 주세요.";
     return;
   }
-  // caller(발신 내선)는 등록된 cidNumber를 그대로 사용. 미등록 상태는
-  // refreshOutboundDefaults()에서 이미 버튼을 disable했지만 방어적으로 한 번 더 검사.
-  const caller = (state.outboundDefaults && state.outboundDefaults.cidNumber) || "";
+  // caller는 click-to-call 의 A-leg — 상대방이 받은 뒤 연결될 번호 (보통
+  // 자동응답 ARS 진입 번호나 상담사 내선). 발신표시번호(cidNumber)와는
+  // 다른 개념이라 별도 입력. 게이트웨이는 outbound-defaults 등록 여부와
+  // 무관하게 caller가 비어 있으면 400을 돌려준다.
   if (!caller) {
+    resultEl.classList.add("err");
+    resultEl.textContent = "발신 통화 후 연결할 번호를 입력해 주세요.";
+    return;
+  }
+  if (state.outboundDefaults === null) {
     resultEl.classList.add("err");
     resultEl.textContent = "발신표시번호가 등록되지 않았습니다. 관리자에게 등록을 요청하세요.";
     return;
@@ -737,12 +823,18 @@ function wireOutboundPanel() {
   setOutboundEnabled(false, "먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.");
   $("btn-originate").addEventListener("click", () => originate());
   $("btn-ob-clear").addEventListener("click", () => {
-    $("ob-callee").value = "";
+    ["ob-callee", "ob-caller"].forEach((id) => {
+      const el = $(id);
+      if (el) el.value = "";
+    });
     saveOutboundForm();
     $("ob-result").classList.add("hidden");
   });
   // Persist as the user types so a reload doesn't lose the demo input.
-  $("ob-callee").addEventListener("change", saveOutboundForm);
+  ["ob-callee", "ob-caller"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("change", saveOutboundForm);
+  });
 }
 
 // ── event log ──────────────────────────────────────────────────────
@@ -982,6 +1074,49 @@ function wireModal(id, onClose) {
     }
   });
 }
+
+// 공용 확인 모달 — window.confirm() 대체. destructive 액션이나 사용자
+// 명시 동의가 필요한 흐름에서 환영 모달과 같은 스타일로 표시. 마크업은
+// index.html의 #confirm-modal. data-action="confirm-ok"가 onOk를,
+// "confirm-cancel"이 onCancel을 호출하고 모달 닫음. Promise 형태로도
+// 쓸 수 있게 호출자에게 Promise<boolean> 반환.
+let _confirmHandlers = null;
+function openConfirm(message, opts) {
+  const o = opts || {};
+  const titleEl = document.getElementById("confirm-title");
+  const msgEl = document.getElementById("confirm-message");
+  const okBtn = document.getElementById("confirm-ok-btn");
+  if (titleEl) titleEl.textContent = o.title || "확인";
+  if (msgEl) msgEl.textContent = message;
+  if (okBtn) okBtn.textContent = o.okLabel || "확인";
+  return new Promise((resolve) => {
+    _confirmHandlers = {
+      ok: () => { resolve(true); _confirmHandlers = null; },
+      cancel: () => { resolve(false); _confirmHandlers = null; },
+    };
+    openModal("confirm-modal");
+  });
+}
+function wireConfirmModal() {
+  const m = document.getElementById("confirm-modal");
+  if (!m) return;
+  m.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!t || !t.dataset) return;
+    if (t.dataset.action === "confirm-ok") {
+      if (_confirmHandlers) _confirmHandlers.ok();
+      closeModal("confirm-modal");
+    } else if (t.dataset.action === "confirm-cancel") {
+      if (_confirmHandlers) _confirmHandlers.cancel();
+      closeModal("confirm-modal");
+    }
+  });
+}
+// templates 모듈에서도 호출할 수 있도록 window에 노출. ctx에 추가하는
+// 게 더 깔끔하지만 confirm 같은 utility는 전역이 자연스럽다.
+if (typeof window !== "undefined") {
+  window.dvgwConfirm = openConfirm;
+}
 function wireWelcomeModal() {
   wireModal("welcome-modal", () => {
     const dont = $("welcome-dontshow");
@@ -1011,6 +1146,7 @@ function init() {
   wireProviderUI();
   wireOutboundPanel();
   wireWelcomeModal();
+  wireConfirmModal();
   renderTemplateMenu();
   wireTabs();
   $("btn-connect").addEventListener("click", connect);
@@ -1101,6 +1237,8 @@ async function connectWithToken({ host, token, tid }) {
     refreshOutboundDefaults();
     // 살아있는 client로 템플릿 listener 재등록 — connect() 와 동일.
     remountCurrentTemplate();
+    // 헤더 좌측에 게이트웨이 버전 표시.
+    fetchGatewayVersion();
   } catch (err) {
     // 자동 로그인 실패: silent 금지. 사용자가 좌측 폼으로 수동 로그인 가능하도록 안내.
     const msg = err && err.message ? err.message : String(err);
