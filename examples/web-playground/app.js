@@ -157,6 +157,10 @@ async function connect() {
   }
   client.connectCallinfo();
   refreshOutboundDefaults();
+  // 현재 템플릿을 다시 mount해서 callinfo 이벤트 listener가 살아있는
+  // client에 등록되도록 함. init() 시점에 client=null로 mount된 상태라면
+  // listener가 영구히 안 달려있던 회귀를 방지.
+  remountCurrentTemplate();
 }
 
 function disconnect() {
@@ -791,6 +795,16 @@ function renderTemplateMenu() {
   });
 }
 
+// remountCurrentTemplate: connect 직후 호출. 템플릿이 mount() 안에서
+// `if (ctx.client) ctx.client.addEventListener(...)` 패턴으로 listener를
+// 등록하기 때문에, init() 시점에 state.client=null로 mount된 템플릿은
+// listener를 못 달고 영구히 callinfo 이벤트를 못 받는다. 같은 템플릿을
+// 다시 mount해서 살아있는 client로 listener를 등록한다. 1.4.5.10(#600)
+// 에서 도입된 패턴.
+function remountCurrentTemplate() {
+  if (state.currentTemplate) selectTemplate(state.currentTemplate.id);
+}
+
 function selectTemplate(id) {
   const tpl = getTemplate(id);
   if (!tpl) return;
@@ -815,8 +829,12 @@ function selectTemplate(id) {
   // do. Persistently dismissable per browser.
   renderTriggerHint(body, tpl);
 
+  // ctx.client을 단순 값으로 캡쳐하면 mount 시점의 state.client(null)을
+  // 그대로 들고 있어 connect 이후에도 템플릿이 "먼저 Connect 하세요"라고
+  // 안내합니다. init()이 connect 완료 전에 selectTemplate("lite-ivr")을
+  // 부르기 때문. getter property로 항상 최신 state.client를 반환하도록
+  // 합니다 — 1.4.5.10(#600)에서 한 번 고쳤던 패턴.
   const ctx = {
-    client: state.client,
     body,
     log,
     activeCalls: state.activeCalls,
@@ -834,6 +852,10 @@ function selectTemplate(id) {
       }),
     providerMode: () => state.provider.mode,
   };
+  Object.defineProperty(ctx, "client", {
+    get() { return state.client; },
+    enumerable: true,
+  });
   try {
     state.templateDispose = tpl.module.mount(ctx) || null;
   } catch (err) {
@@ -1077,6 +1099,8 @@ async function connectWithToken({ host, token, tid }) {
     // 현재 활성 세션 즉시 동기화
     reconcileSessions();
     refreshOutboundDefaults();
+    // 살아있는 client로 템플릿 listener 재등록 — connect() 와 동일.
+    remountCurrentTemplate();
   } catch (err) {
     // 자동 로그인 실패: silent 금지. 사용자가 좌측 폼으로 수동 로그인 가능하도록 안내.
     const msg = err && err.message ? err.message : String(err);
