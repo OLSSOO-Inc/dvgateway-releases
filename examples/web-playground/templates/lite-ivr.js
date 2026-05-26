@@ -226,6 +226,10 @@ function mount(ctx) {
   let tlEntries = [];
 
   // ── 통화 목록 갱신 ──────────────────────────────────────────────────
+  // 사용자가 발신 직후 lite-ivr 데모로 들어왔을 때 callSel이 빈 상태로
+  // 머물러서 재생/TTS 버튼을 눌러도 "활성 통화를 선택하세요" 안내만 뜨고
+  // 끝나는 케이스를 방지. 활성 통화가 1건뿐이면 자동 선택, 2건 이상이면
+  // 사용자가 직접 골라야 하니 기존 선택 유지.
   function refreshCalls() {
     const calls = Array.from(ctx.getActiveCalls().values());
     const cur = callSel.value;
@@ -237,7 +241,12 @@ function mount(ctx) {
             isLite ? "⚡" : "○"
           } ${c.linkedId} · ${c.caller || "?"} → ${c.callee || c.did || "?"}${isLite ? " [lite]" : ""}</option>`;
         }).join("");
-    if (cur && calls.find((c) => c.linkedId === cur)) callSel.value = cur;
+    if (cur && calls.find((c) => c.linkedId === cur)) {
+      callSel.value = cur;
+    } else if (calls.length === 1) {
+      // 단일 통화 자동 선택 — 사용자 누락 방지
+      callSel.value = calls[0].linkedId;
+    }
     updateModeWarn();
   }
 

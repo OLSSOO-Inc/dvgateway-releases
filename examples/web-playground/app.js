@@ -332,6 +332,12 @@ function eventLevel(name) {
 // ── active call cards ──────────────────────────────────────────────
 function renderCalls() {
   const list = $("call-list");
+  // 활성 통화가 있으면 originate 버튼을 자동 disable — 같은 사용자가
+  // 연달아 눌러 중복 발신이 일어나는 사고를 차단. activeCalls가 0건으로
+  // 떨어지면(=통화 종료/카드 dismiss) 자동 재활성화. outbound-defaults
+  // 미등록 등의 다른 disable 조건은 refreshOutboundDefaults()가 별도로
+  // 관리하므로 여기서는 활성 통화 유무만 반영한다.
+  syncOriginateButton();
   if (state.activeCalls.size === 0) {
     list.innerHTML = '<p class="muted small">아직 활성 통화가 없습니다.</p>';
     return;
@@ -614,7 +620,6 @@ async function refreshOutboundDefaults() {
   const box = $("ob-fixed-box");
   const cidNumEl = $("ob-fixed-cidnumber");
   const acctEl = $("ob-fixed-accountcode");
-  const btn = $("btn-originate");
   if (!state.client) return;
   try {
     const def = await state.client.getOutboundDefaults();
@@ -622,27 +627,27 @@ async function refreshOutboundDefaults() {
       cidNumEl.textContent = "(미등록)";
       acctEl.textContent = "(미등록)";
       box.classList.add("unset");
-      btn.disabled = true;
       state.outboundDefaults = null;
       setOutboundEnabled(true, "발신표시번호·과금번호가 미등록입니다. 관리자에게 등록을 요청하세요.");
       log("err", "outbound:defaults:missing", { tid: state.client.tokenTid });
+      syncOriginateButton();
       return;
     }
     cidNumEl.textContent = def.cidNumber || "(미등록)";
     acctEl.textContent = def.accountCode || "—";
     box.classList.remove("unset");
-    btn.disabled = false;
     state.outboundDefaults = def;
     setOutboundEnabled(true, "");
     log("ok", "outbound:defaults:loaded", { cidNumber: def.cidNumber, updatedAt: def.updatedAt });
+    syncOriginateButton();
   } catch (err) {
     cidNumEl.textContent = "(조회 실패)";
     acctEl.textContent = "(조회 실패)";
     box.classList.add("unset");
-    btn.disabled = true;
     state.outboundDefaults = null;
     setOutboundEnabled(true, `발신 고정값 조회 실패: ${err.message}`);
     log("err", "outbound:defaults:fail", { error: err.message });
+    syncOriginateButton();
   }
 }
 
@@ -688,6 +693,32 @@ async function originate() {
     resultEl.textContent = `✗ Originate 실패: ${err.message}`;
     log("err", "outbound:originate:fail", { error: err.message });
   }
+}
+
+// syncOriginateButton: renderCalls() / refreshOutboundDefaults()가 각자의
+// 사유로 #btn-originate를 disable할 수 있어 한 곳에서 합치는 헬퍼.
+// 우선순위(높음 → 낮음):
+//   1. outbound-defaults 미등록(state.outboundDefaults가 null) → disable
+//   2. 활성 통화 ≥ 1건 → disable (중복 발신 방지)
+//   3. 그 외 → enable
+function syncOriginateButton() {
+  const btn = document.getElementById("btn-originate");
+  if (!btn) return;
+  if (!state.client) {
+    btn.disabled = true;
+    return;
+  }
+  if (state.outboundDefaults === null) {
+    btn.disabled = true;
+    return;
+  }
+  if (state.activeCalls && state.activeCalls.size > 0) {
+    btn.disabled = true;
+    btn.title = "이미 활성 통화가 있어요. 현재 통화가 끝나면 다시 활성화돼요.";
+    return;
+  }
+  btn.disabled = false;
+  btn.title = "";
 }
 
 function highlightOutboundCard(linkedId) {
