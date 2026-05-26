@@ -23,16 +23,29 @@ python3 -m http.server 8000
 npx serve .
 ```
 
-브라우저에서 `http://localhost:8000` 을 열고 다음 3개를 입력합니다 (운영자가 발급해 줍니다):
+브라우저에서 `http://localhost:8000` 을 열고 다음 순서대로 진행합니다:
 
-1. **Gateway Host** — `gw.example.com` 또는 IP (스킴/포트 없이)
-2. **Tenant ID** — 본인 테넌트 식별자
-3. **Tenant Password** — JWT 발급용 비밀번호
+1. **연결** — 좌측 "1. 테넌트 자격증명"에 운영자가 발급한 Gateway Host / Tenant ID / Password 를 입력하고 Connect.
+2. **전화 걸어보기 또는 전화 받기로 테스트** — 좌측 "3. 발신(클릭투콜)" 패널에서 수신 번호로 전화를 걸거나, 본인 휴대폰에서 게이트웨이 DID로 전화를 걸어 활성 통화를 만듭니다. 발신표시번호·과금번호는 운영자가 등록한 값이 자동으로 사용되며 변경할 수 없습니다.
+3. **데모 템플릿 선택** — TTS·DTMF·STT 등 원하는 시나리오를 클릭하면 우측 패널에서 실행됩니다.
 
 기본 포트는 `:8081/login` (JWT 발급) + `:8080/api/...` (API/WS) 입니다.
 TLS·non-standard 포트는 **고급** 토글에서 변경할 수 있습니다.
 
 연결되면 우측 상단에 `tenant: <tid>` 핑이 표시되고, 활성 통화가 좌측 패널에 나타납니다.
+
+### 발신(클릭투콜) 사전 조건
+
+발신 패널의 Originate 버튼이 비활성화돼 있다면, 해당 테넌트에 대한 발신표시번호(`cidNumber`)와 과금번호(`accountCode`)가 아직 등록되지 않았다는 뜻입니다. **운영자(admin)** 가 다음 한 줄로 등록할 수 있습니다:
+
+```bash
+curl -X PUT https://gw.example.com:8080/api/v1/tenants/<tenantId>/outbound-defaults \
+  -H "Authorization: Bearer <ADMIN_JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"cidNumber":"07045144801","cidName":"ACME 상담센터","accountCode":"ACCT-2026-01"}'
+```
+
+또는 게이트웨이 대시보드의 **테넌트 설정 → 발신 고정값** 카드에서 등록합니다. 이 값은 변조 방지를 위해 클라이언트(playground/SDK)에서는 절대 변경할 수 없으며, click-to-call 요청 시 게이트웨이가 자동으로 주입합니다.
 
 ---
 

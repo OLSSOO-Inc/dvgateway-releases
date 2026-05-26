@@ -191,6 +191,48 @@ export class GatewayClient extends EventTarget {
     return true;
   }
 
+  // ── click-to-call (outbound) ─────────────────────────────────────
+  //
+  // Initiate an outbound call via PBX. cidNumber and accountCode are
+  // intentionally NOT accepted here — the gateway looks them up from
+  // its per-tenant outbound-defaults store (see
+  // /api/v1/tenants/{id}/outbound-defaults) so they cannot be spoofed
+  // from the browser.
+  //
+  // 412 (Precondition Failed) means the gateway has no registered defaults
+  // for this tenant; the user needs an admin to provision them first.
+  async clickToCall({ caller, callee, cidName, customValue1, customValue2, customValue3 }) {
+    if (!caller || !callee) throw new Error("caller and callee are required");
+    const body = { caller, callee };
+    if (cidName) body.cidName = cidName;
+    if (customValue1) body.customValue1 = customValue1;
+    if (customValue2) body.customValue2 = customValue2;
+    if (customValue3) body.customValue3 = customValue3;
+    const res = await fetch(`${this.apiBase}/api/v1/pbx/click-to-call`, {
+      method: "POST",
+      headers: this._authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw await mkApiError(res, "clickToCall");
+    return res.json();
+  }
+
+  // Read the tenant's registered outbound defaults (cidNumber, cidName,
+  // accountCode). accountCode in the response is masked. Used by the
+  // playground to prefill the read-only "fixed values" chip.
+  // 404 = no entry registered yet for this tenant.
+  async getOutboundDefaults(tenantId) {
+    const tid = tenantId || this.tokenTid || this.tenantId;
+    if (!tid) throw new Error("tenantId required to fetch outbound defaults");
+    const res = await fetch(
+      `${this.apiBase}/api/v1/tenants/${encodeURIComponent(tid)}/outbound-defaults`,
+      { headers: this._authHeaders() },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) throw await mkApiError(res, "getOutboundDefaults");
+    return res.json();
+  }
+
   // ── lite-mode IVR (SDK 1.7.0) ────────────────────────────────────
   // POST /api/v1/playback/{linkedId} → { playbackId, state }
   async litePlayback(linkedId, media) {
@@ -202,23 +244,6 @@ export class GatewayClient extends EventTarget {
     });
     if (!res.ok) throw await mkApiError(res, "litePlayback");
     return res.json(); // { playbackId, state }
-  }
-
-  // POST /api/v1/playback/{linkedId}/tts → { playbackId, media, synthesizedBytes, cacheHit, provider, voice }
-  // Synthesize text via cloud TTS and play it via ARI on a lite-mode call.
-  // Provider/voice optional — fall through to the tenant's primary TTS.
-  async liteTtsPlayback(linkedId, text, provider, voice) {
-    if (!text || !text.trim()) throw new Error("text is required");
-    const body = { text };
-    if (provider) body.provider = provider;
-    if (voice) body.voice = voice;
-    const res = await fetch(`${this.apiBase}/api/v1/playback/${encodeURIComponent(linkedId)}/tts`, {
-      method: "POST",
-      headers: this._authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw await mkApiError(res, "liteTtsPlayback");
-    return res.json();
   }
 
   // DELETE /api/v1/playback/{linkedId}/{playbackId}

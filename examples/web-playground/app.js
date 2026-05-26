@@ -4,10 +4,14 @@ import { getBrowserTtsAdapter, listBrowserTtsProviders } from "./lib/providers/i
 
 const STORAGE_KEY = "dvgw-playground-creds-v2";
 const PROV_STORAGE_KEY = "dvgw-playground-provider-v1";
-const BANNER_DISMISS_KEY = "dvgw-playground-banner-dismissed-v1";
-const WELCOME_DISMISS_KEY = "dvgw-playground-welcome-dismissed-v1";
+const OUTBOUND_STORAGE_KEY = "dvgw-playground-outbound-v1";
 const TERMINAL_CHANNEL_STATES = new Set(["down", "busy", "no_answer", "rejected"]);
 const POLL_INTERVAL_MS = 30000; // sessions reconciliation tick
+
+// Track outstanding originate requests by callee number so we can spotlight
+// the matching activeCall card the moment channel:state up arrives. Cleared
+// when matched or after a 60s ttl.
+const pendingOutbound = new Map(); // callee → { ts, actionId }
 const state = {
   client: null,
   activeCalls: new Map(),
@@ -80,107 +84,7 @@ function clearCreds() {
   // browser, including any cached provider keys (Mode B safety).
   clearProviderState();
   renderProviderUI();
-  // Clear credentials 는 공용 PC 시나리오 — 안내 배너도 다음 사용자를 위해
-  // 다시 노출 (다시 보지 않기 dismiss 플래그도 함께 제거).
-  localStorage.removeItem(BANNER_DISMISS_KEY);
-  applyBannerDismissState();
   log("ok", "creds:cleared");
-}
-
-// 안내 배너 dismiss 상태를 localStorage에서 읽어 DOM에 반영.
-// 페이지 로드 시 + Clear credentials 직후에 호출.
-function applyBannerDismissState() {
-  const banner = $("key-warning");
-  if (!banner) return;
-  const dismissed = localStorage.getItem(BANNER_DISMISS_KEY) === "1";
-  banner.classList.toggle("hidden", dismissed);
-}
-
-function wireBannerDismiss() {
-  const btn = $("key-warning-dismiss");
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    localStorage.setItem(BANNER_DISMISS_KEY, "1");
-    applyBannerDismissState();
-    log("ok", "banner:dismissed");
-  });
-}
-
-// ── 환영 모달 · 용어 사전 모달 ────────────────────────────────────
-// 두 모달 모두 backdrop / ✕ / "시작하기" 클릭으로 닫힘. 환영 모달은
-// "다음부터 자동으로 열지 않기" 체크박스 상태를 localStorage 에 기록.
-function openModal(id) {
-  const m = document.getElementById(id);
-  if (!m) return;
-  m.classList.remove("hidden");
-}
-function closeModal(id) {
-  const m = document.getElementById(id);
-  if (!m) return;
-  m.classList.add("hidden");
-}
-function wireModal(id, onClose) {
-  const m = document.getElementById(id);
-  if (!m) return;
-  m.addEventListener("click", (e) => {
-    const t = e.target;
-    if (t && t.dataset && t.dataset.action === "close") {
-      if (onClose) onClose();
-      closeModal(id);
-    }
-  });
-}
-function wireWelcomeModal() {
-  wireModal("welcome-modal", () => {
-    const dont = $("welcome-dontshow");
-    if (dont && dont.checked) {
-      localStorage.setItem(WELCOME_DISMISS_KEY, "1");
-      log("ok", "welcome:dismissed-permanent");
-    }
-  });
-  // 헤더 "처음 가이드" 버튼은 dismiss 상태 무시하고 항상 열기
-  const open = $("btn-welcome");
-  if (open) open.addEventListener("click", () => {
-    const dont = $("welcome-dontshow");
-    if (dont) dont.checked = false;
-    openModal("welcome-modal");
-  });
-  // 첫 방문 자동 노출
-  if (localStorage.getItem(WELCOME_DISMISS_KEY) !== "1") {
-    openModal("welcome-modal");
-  }
-}
-function wireGlossaryModal() {
-  wireModal("glossary-modal");
-  const open = $("btn-glossary");
-  if (open) open.addEventListener("click", () => openModal("glossary-modal"));
-}
-
-// ── 단계 가이드 진행상태 ──────────────────────────────────────────
-// 1) 서버 연결 → 2) 통화 발신 → 3) 데모 선택 → 4) 결과 확인
-//   step-done: 완료된 단계 (회색 + ✓)
-//   step-active: 현재 다음에 해야 할 단계 (강조)
-function updateGuideSteps() {
-  const ul = $("guide-steps");
-  if (!ul) return;
-  const connected = !!state.client;
-  const hasCall = state.activeCalls.size > 0;
-  const demoSelected = !!state.currentTemplate;
-  // "결과 확인" 은 callinfo 이벤트 1회 이상 수신을 기준으로 함
-  const sawEvents = state.logCount > 2;  // login:ok + snapshot 정도는 항상 옴 — 그 이상이면 데모 결과 보고 있을 가능성
-
-  const stateBy = {
-    connect: connected ? "done" : "active",
-    call: !connected ? "pending" : (hasCall ? "done" : "active"),
-    demo: (!connected || !hasCall) ? "pending" : (demoSelected ? "done" : "active"),
-    result: (!connected || !hasCall || !demoSelected) ? "pending" : (sawEvents ? "done" : "active"),
-  };
-  ul.querySelectorAll("li[data-step]").forEach((li) => {
-    const k = li.dataset.step;
-    li.classList.remove("step-done", "step-active");
-    if (stateBy[k] === "done") li.classList.add("step-done");
-    else if (stateBy[k] === "active") li.classList.add("step-active");
-  });
 }
 
 // ── connection ─────────────────────────────────────────────────────
@@ -188,8 +92,6 @@ function setStatus(state, text) {
   const dot = $("conn-dot");
   dot.className = `dot ${state}`;
   $("conn-text").textContent = text;
-  // 상태가 바뀔 때마다 단계 가이드도 갱신 (가벼운 작업이라 매번 OK)
-  if (typeof updateGuideSteps === "function") updateGuideSteps();
 }
 
 function setTenantPill(tid) {
@@ -202,45 +104,10 @@ function setTenantPill(tid) {
   }
 }
 
-// Show 'gw vX.Y.Z' next to the brand title. Fetched after connect()
-// /connectWithToken() succeeds. Hidden again on disconnect so the pill
-// never lies about which gateway it was talking to.
-function setGatewayVersionPill(version) {
-  const el = $("gw-version");
-  if (!el) return;
-  if (version) {
-    el.textContent = `gw v${version}`;
-    el.classList.remove("hidden");
-  } else {
-    el.textContent = "";
-    el.classList.add("hidden");
-  }
-}
-
-async function fetchGatewayVersion() {
-  if (!state.client) return;
-  try {
-    // GatewayClient doesn't have a getVersion() helper yet; hit the
-    // public version endpoint directly through the same apiBase.
-    const r = await fetch(`${state.client.apiBase}/api/v1/version`, {
-      headers: state.client.token ? { Authorization: `Bearer ${state.client.token}` } : {},
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await r.json();
-    if (data && data.version) {
-      setGatewayVersionPill(data.version);
-      log("ok", "gw:version", { version: data.version, product: data.product });
-    }
-  } catch (err) {
-    // 버전 표시는 nice-to-have — 실패는 조용히 무시하고 콘솔에만 남김.
-    log("err", "gw:version:fail", { error: String(err.message || err) });
-  }
-}
-
 async function connect() {
   const creds = readCreds();
   if (!creds.host || !creds.tenantId || !creds.password) {
-    alert("서버 주소, 테넌트 ID, 비밀번호를 모두 입력해 주세요.");
+    alert("Gateway Host, Tenant ID, Password 모두 입력하세요.");
     return;
   }
   saveCreds();
@@ -252,10 +119,10 @@ async function connect() {
 
   client.addEventListener("status", (e) => {
     const s = e.detail.state;
-    if (s === "open") setStatus("on", `연결됨 · ${creds.host}:${creds.apiPort}`);
-    else if (s === "connecting") setStatus("connecting", "연결하는 중…");
-    else if (s === "closed") setStatus("off", "연결이 끊겼어요");
-    else if (s === "error") setStatus("off", "오류가 났어요");
+    if (s === "open") setStatus("on", `connected · ${creds.host}:${creds.apiPort}`);
+    else if (s === "connecting") setStatus("connecting", "connecting…");
+    else if (s === "closed") setStatus("off", "disconnected");
+    else if (s === "error") setStatus("off", "error");
   });
 
   client.addEventListener("event", (e) => onCallinfoEvent(e.detail));
@@ -267,7 +134,7 @@ async function connect() {
   stopPolling();
   state.pollTimer = setInterval(reconcileSessions, POLL_INTERVAL_MS);
 
-  setStatus("connecting", "로그인하는 중…");
+  setStatus("connecting", "logging in…");
   try {
     const { tid, exp } = await client.login();
     if (tid && tid !== creds.tenantId) {
@@ -280,29 +147,25 @@ async function connect() {
     });
   } catch (err) {
     log("err", "login:fail", { error: String(err.message || err) });
-    setStatus("off", "로그인 실패");
+    setStatus("off", "login failed");
     setTenantPill(null);
     return;
   }
   client.connectCallinfo();
-  // Re-mount the current template now that state.client is real.
-  // Templates register their callinfo listeners inside mount(); if they
-  // mounted earlier with a null client, those listeners were skipped.
-  remountCurrentTemplate();
-  // Gateway version next to the brand title.
-  fetchGatewayVersion();
+  refreshOutboundDefaults();
 }
 
 function disconnect() {
+  setOutboundEnabled(false, "Disconnect 됨. 다시 Connect 하면 발신 고정값을 불러옵니다.");
+  $("btn-originate").disabled = true;
   if (state.client) {
     state.client.disconnect();
     state.client = null;
   }
   state.activeCalls.clear();
   renderCalls();
-  setStatus("off", "연결이 끊겼어요");
+  setStatus("off", "disconnected");
   setTenantPill(null);
-  setGatewayVersionPill(null);
   stopPolling();
 }
 
@@ -382,6 +245,16 @@ function onCallinfoEvent(evt) {
       break;
     case "channel:state": {
       const c = state.activeCalls.get(evt.linkedId);
+      // Spotlight an outbound card the moment the callee picks up. We
+      // match on the dialed number (evt.callee) rather than linkedId
+      // because the gateway assigns the linkedId server-side and the
+      // browser only knows what it dialed.
+      if (evt.state === "up" && evt.callee && pendingOutbound.has(evt.callee)) {
+        pendingOutbound.delete(evt.callee);
+        // Render may not have created the card yet (snapshot ordering);
+        // schedule for the next tick.
+        setTimeout(() => highlightOutboundCard(evt.linkedId), 50);
+      }
       if (TERMINAL_CHANNEL_STATES.has(evt.state)) {
         // busy / no_answer / rejected often arrive without a matching
         // call:ended (the call never reached "up"). Drop the card to
@@ -454,10 +327,6 @@ function eventLevel(name) {
 
 // ── active call cards ──────────────────────────────────────────────
 function renderCalls() {
-  // 통화 목록이 바뀌면 메뉴 호환성 배지도 갱신 (active 항목은 renderTemplateMenu 내부에서 반영)
-  renderTemplateMenu();
-  updateGuideSteps();
-
   const list = $("call-list");
   if (state.activeCalls.size === 0) {
     list.innerHTML = '<p class="muted small">아직 활성 통화가 없습니다.</p>';
@@ -699,6 +568,149 @@ async function safeInject(linkedId, doInject) {
   }
 }
 
+// ── outbound (click-to-call) panel ─────────────────────────────────
+//
+// State held in localStorage is intentionally limited to the
+// user-editable fields (caller / callee / cidName / custom1-3). cidNumber
+// and accountCode are NEVER cached locally — every Connect re-fetches
+// them from the gateway via getOutboundDefaults(), so a tenant whose
+// admin rotates the registered values sees the change immediately and
+// cannot operate stale values from this browser.
+function loadOutboundForm() {
+  try {
+    const raw = localStorage.getItem(OUTBOUND_STORAGE_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (p.caller) $("ob-caller").value = p.caller;
+    if (p.callee) $("ob-callee").value = p.callee;
+    if (p.cidName) $("ob-cidname").value = p.cidName;
+    if (p.cv1) $("ob-cv1").value = p.cv1;
+    if (p.cv2) $("ob-cv2").value = p.cv2;
+    if (p.cv3) $("ob-cv3").value = p.cv3;
+  } catch {}
+}
+
+function saveOutboundForm() {
+  localStorage.setItem(OUTBOUND_STORAGE_KEY, JSON.stringify({
+    caller:  $("ob-caller").value.trim(),
+    callee:  $("ob-callee").value.trim(),
+    cidName: $("ob-cidname").value.trim(),
+    cv1:     $("ob-cv1").value.trim(),
+    cv2:     $("ob-cv2").value.trim(),
+    cv3:     $("ob-cv3").value.trim(),
+  }));
+}
+
+function setOutboundEnabled(enabled, reason) {
+  $("ob-fieldset").disabled = !enabled;
+  $("ob-conn-hint").textContent = reason || "";
+}
+
+// Fetch the per-tenant registered cidNumber / accountCode and paint the
+// "fixed values" box. Called once after every successful Connect. A 404 ⇒
+// the admin hasn't provisioned this tenant for outbound yet, so we
+// disable the Originate button rather than allow a click that would 412.
+async function refreshOutboundDefaults() {
+  const box = $("ob-fixed-box");
+  const cidNumEl = $("ob-fixed-cidnumber");
+  const acctEl = $("ob-fixed-accountcode");
+  const btn = $("btn-originate");
+  if (!state.client) return;
+  try {
+    const def = await state.client.getOutboundDefaults();
+    if (!def) {
+      cidNumEl.textContent = "(미등록)";
+      acctEl.textContent = "(미등록)";
+      box.classList.add("unset");
+      btn.disabled = true;
+      setOutboundEnabled(true, "발신표시번호·과금번호가 미등록입니다. 관리자에게 등록을 요청하세요.");
+      log("err", "outbound:defaults:missing", { tid: state.client.tokenTid });
+      return;
+    }
+    cidNumEl.textContent = def.cidNumber || "(미등록)";
+    acctEl.textContent = def.accountCode || "—";
+    box.classList.remove("unset");
+    btn.disabled = false;
+    setOutboundEnabled(true, "");
+    log("ok", "outbound:defaults:loaded", { cidNumber: def.cidNumber, updatedAt: def.updatedAt });
+  } catch (err) {
+    cidNumEl.textContent = "(조회 실패)";
+    acctEl.textContent = "(조회 실패)";
+    box.classList.add("unset");
+    btn.disabled = true;
+    setOutboundEnabled(true, `발신 고정값 조회 실패: ${err.message}`);
+    log("err", "outbound:defaults:fail", { error: err.message });
+  }
+}
+
+async function originate() {
+  const resultEl = $("ob-result");
+  resultEl.classList.remove("hidden", "ok", "err");
+  if (!state.client) {
+    resultEl.classList.add("err");
+    resultEl.textContent = "먼저 Connect 하세요.";
+    return;
+  }
+  saveOutboundForm();
+  const caller = $("ob-caller").value.trim();
+  const callee = $("ob-callee").value.trim();
+  const cidName = $("ob-cidname").value.trim();
+  const cv1 = $("ob-cv1").value.trim();
+  const cv2 = $("ob-cv2").value.trim();
+  const cv3 = $("ob-cv3").value.trim();
+  if (!caller || !callee) {
+    resultEl.classList.add("err");
+    resultEl.textContent = "발신 내선과 수신 번호는 필수입니다.";
+    return;
+  }
+  resultEl.textContent = `Originate 요청 중 … ${caller} → ${callee}`;
+  try {
+    const res = await state.client.clickToCall({
+      caller, callee, cidName,
+      customValue1: cv1, customValue2: cv2, customValue3: cv3,
+    });
+    pendingOutbound.set(callee, { ts: Date.now(), actionId: res?.actionId || "" });
+    setTimeout(() => {
+      const e = pendingOutbound.get(callee);
+      if (e && Date.now() - e.ts > 60000) pendingOutbound.delete(callee);
+    }, 65000);
+    resultEl.classList.add("ok");
+    resultEl.innerHTML = `✓ 발신 요청 성공.<br>
+      <code>actionId: ${escapeHtml(res?.actionId || "(없음)")}</code><br>
+      상대방이 받으면 좌측 "활성 통화" 카드가 강조되며,
+      <code>channel:state(up)</code> 이벤트가 도착합니다.`;
+    log("ok", "outbound:originate", { caller, callee, actionId: res?.actionId });
+  } catch (err) {
+    resultEl.classList.add("err");
+    resultEl.textContent = `✗ Originate 실패: ${err.message}`;
+    log("err", "outbound:originate:fail", { error: err.message });
+  }
+}
+
+function highlightOutboundCard(linkedId) {
+  const el = document.querySelector(`.call-card[data-linkedid="${linkedId}"]`);
+  if (!el) return;
+  el.classList.add("highlight");
+  setTimeout(() => el.classList.remove("highlight"), 2400);
+}
+
+function wireOutboundPanel() {
+  loadOutboundForm();
+  setOutboundEnabled(false, "먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.");
+  $("btn-originate").addEventListener("click", () => originate());
+  $("btn-ob-clear").addEventListener("click", () => {
+    ["ob-caller", "ob-callee", "ob-cidname", "ob-cv1", "ob-cv2", "ob-cv3"].forEach((id) => {
+      $(id).value = "";
+    });
+    saveOutboundForm();
+    $("ob-result").classList.add("hidden");
+  });
+  // Persist as the user types so a reload doesn't lose the demo input.
+  ["ob-caller", "ob-callee", "ob-cidname", "ob-cv1", "ob-cv2", "ob-cv3"].forEach((id) => {
+    $(id).addEventListener("change", saveOutboundForm);
+  });
+}
+
 // ── event log ──────────────────────────────────────────────────────
 function log(level, event, payload) {
   const time = new Date().toLocaleTimeString();
@@ -733,99 +745,20 @@ function escapeHtml(s) {
   return String(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
 }
 
-// ── active call mode helpers ────────────────────────────────────────
-// 현재 활성 통화 중 lite / 풀스트림 존재 여부를 반환.
-// mode 필드가 없는 구버전 GW 응답은 풀스트림으로 간주.
-function activeCallModes() {
-  let hasLite = false;
-  let hasFull = false;
-  for (const c of state.activeCalls.values()) {
-    if (c.mode === "lite") hasLite = true;
-    else hasFull = true;
-  }
-  return { hasLite, hasFull };
-}
-
-// 템플릿이 현재 활성 통화에서 동작하는지 여부.
-//   modes="any"  → 항상 OK
-//   modes="lite" → lite 통화가 한 건이라도 있어야 OK (풀스트림만 있으면 경고)
-//   modes="full" → 풀스트림 통화가 있어야 OK (lite만 있으면 경고)
-//   activeCalls 가 0이면 경고 없음 (통화 없을 때는 모든 메뉴 정상 표시)
-function templateCompatibility(tpl) {
-  const { hasLite, hasFull } = activeCallModes();
-  if (state.activeCalls.size === 0) return "ok";
-  if (tpl.modes === "any") return "ok";
-  if (tpl.modes === "lite") return hasLite ? "ok" : "full-only";
-  if (tpl.modes === "full") return hasFull ? "ok" : "lite-only";
-  return "ok";
-}
-
 // ── templates ──────────────────────────────────────────────────────
-// 메뉴 클릭 이벤트는 init()에서 한 번만 등록 (renderTemplateMenu는 DOM만 갱신)
-function wireTemplateMenu() {
+function renderTemplateMenu() {
   const ul = $("template-menu");
+  ul.innerHTML = templates.map((t) => `
+    <li data-id="${t.id}">
+      <span>${escapeHtml(t.title)}</span>
+      <span class="desc">${escapeHtml(t.desc)}</span>
+    </li>
+  `).join("");
   ul.addEventListener("click", (e) => {
     const li = e.target.closest("li");
     if (!li) return;
     selectTemplate(li.dataset.id);
   });
-}
-
-// 활성 통화 모드에 따라 호환성 배지·회색 처리를 포함해 메뉴를 다시 그린다.
-// 이벤트 리스너는 wireTemplateMenu()에서 상위 ul에 위임(event delegation)으로
-// 이미 달려있으므로 여기서는 innerHTML 교체만 수행한다.
-function renderTemplateMenu() {
-  const ul = $("template-menu");
-  const activeId = state.currentTemplate ? state.currentTemplate.id : null;
-  ul.innerHTML = templates.map((t) => {
-    const compat = templateCompatibility(t);
-    const dimmed = compat !== "ok" ? " dimmed" : "";
-    let badge = "";
-    if (compat === "lite-only") {
-      badge = `<span class="mode-badge mode-badge-warn" title="현재 활성 통화가 mode=lite 입니다. 이 데모는 ExternalMedia(풀스트림) 통화에서만 동작합니다.">⚠ lite 통화 전용 아님</span>`;
-    } else if (compat === "full-only") {
-      badge = `<span class="mode-badge mode-badge-info" title="이 데모는 mode=lite 통화 전용입니다. 현재 활성 통화가 풀스트림입니다.">⚡ lite 전용</span>`;
-    }
-    return `
-    <li data-id="${t.id}"${activeId === t.id ? ' class="active"' : ""}>
-      <span class="tpl-title${dimmed}">${escapeHtml(t.title)}</span>
-      ${badge}
-      <span class="desc${dimmed}">${escapeHtml(t.desc)}</span>
-    </li>`;
-  }).join("");
-}
-
-// 각 데모 상단의 인트로 박스 — '이 데모로 할 수 있는 것' + '미리 준비할 것'
-// intro 객체 형태: { can: ["…", "…"], prep: ["…", "…"] }
-// templates/index.js 에서 템플릿마다 정의. demo-body 최상단에 prepend.
-function renderDemoIntro(bodyEl, intro) {
-  if (!intro || (!intro.can && !intro.prep)) return;
-  const div = document.createElement("div");
-  div.className = "demo-intro";
-  const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
-  const canHtml = (intro.can || []).map((s) => `<li>${esc(s)}</li>`).join("");
-  const prepHtml = (intro.prep || []).map((s) => `<li>${esc(s)}</li>`).join("");
-  div.innerHTML = `
-    <div class="demo-intro-box can">
-      <h4>✨ 이 데모로 할 수 있는 것</h4>
-      <ul>${canHtml || "<li>실시간 통화 이벤트를 보여드려요</li>"}</ul>
-    </div>
-    <div class="demo-intro-box prep">
-      <h4>📋 미리 준비할 것</h4>
-      <ul>${prepHtml || "<li>왼쪽에서 서버 연결을 먼저 해주세요</li>"}</ul>
-    </div>
-  `;
-  // mount() 가 innerHTML 을 통째로 다시 쓴 직후 호출되므로 firstChild 앞에 삽입.
-  bodyEl.insertBefore(div, bodyEl.firstChild);
-}
-
-// Re-mount the currently active template (or no-op if none). Called after
-// connect/connectWithToken so templates that mounted with a null
-// ctx.client get a chance to re-register their callinfo listeners
-// against the now-live client. Safe to call on an unconnected page —
-// state.currentTemplate is set by the init-time selectTemplate("lite-ivr").
-function remountCurrentTemplate() {
-  if (state.currentTemplate) selectTemplate(state.currentTemplate.id);
 }
 
 function selectTemplate(id) {
@@ -842,21 +775,18 @@ function selectTemplate(id) {
   });
 
   state.currentTemplate = tpl;
-  updateGuideSteps();
   $("demo-title").textContent = tpl.title;
   $("demo-desc").textContent = tpl.desc;
   const body = $("demo-body");
   body.innerHTML = "";
 
-  // ctx.client must be a getter — selectTemplate() can run before
-  // connect() completes (init() calls selectTemplate("lite-ivr") then
-  // kicks off connectWithToken/connect asynchronously). Captured plain
-  // values would freeze at the mount-time null and templates would
-  // miss every callinfo event. The getter always returns the current
-  // state.client so addEventListener() inside templates, once the
-  // template is re-mounted after connect, sees the live client.
+  // "통화 시작 방법" chip — surfaces the recommended way to create a call
+  // for this template so newcomers don't sit on the page wondering what to
+  // do. Persistently dismissable per browser.
+  renderTriggerHint(body, tpl);
+
   const ctx = {
-    get client() { return state.client; },
+    client: state.client,
     body,
     log,
     activeCalls: state.activeCalls,
@@ -876,15 +806,89 @@ function selectTemplate(id) {
   };
   try {
     state.templateDispose = tpl.module.mount(ctx) || null;
-    // mount() 가 ctx.body.innerHTML 을 통째로 다시 쓰기 때문에 인트로 박스는
-    // 반드시 mount 이후에 prepend 해야 살아남음. 템플릿 코드를 일일이 고칠 필요 없음.
-    if (tpl.intro) renderDemoIntro(body, tpl.intro);
   } catch (err) {
     body.innerHTML = `<p style="color:var(--err)">template error: ${escapeHtml(String(err))}</p>`;
     console.error(err);
   }
 
   $("code-view").textContent = tpl.module.code || "// no code sample for this template";
+}
+
+// ── per-template "how to start a call" hint ────────────────────────
+const TRIGGER_HINT_DISMISS_KEY = "dvgw-playground-trigger-hint-dismissed-v1";
+
+function isTriggerHintDismissed() {
+  return localStorage.getItem(TRIGGER_HINT_DISMISS_KEY) === "1";
+}
+
+function dismissTriggerHint() {
+  localStorage.setItem(TRIGGER_HINT_DISMISS_KEY, "1");
+  document.querySelectorAll(".trigger-hint").forEach((el) => el.remove());
+}
+
+// Render the call-start hint at the top of demo-body. recommendedTrigger
+// drives which option is preselected and which copy is emphasized; the
+// other option is always available for the user to flip to.
+function renderTriggerHint(container, tpl) {
+  if (isTriggerHintDismissed()) return;
+  const rec = tpl.recommendedTrigger || "either";
+  const outboundActive = rec === "outbound";
+  const inboundActive = rec === "inbound";
+  const wrapper = document.createElement("section");
+  wrapper.className = "trigger-hint";
+  wrapper.innerHTML = `
+    <div class="trigger-hint-head">
+      <span class="trigger-hint-title">이 데모를 시작하려면</span>
+      <button class="ghost small" id="btn-trigger-hint-dismiss" title="이 안내를 다시 보지 않기">다음부터 숨기기</button>
+    </div>
+    <div class="trigger-hint-options">
+      <button class="trigger-hint-card${outboundActive ? " active" : ""}" data-trigger="outbound">
+        <div class="trigger-hint-emoji">📞</div>
+        <div>
+          <div class="trigger-hint-card-title">발신 하기 (Originate)</div>
+          <div class="trigger-hint-card-desc">좌측 "발신(클릭투콜)" 패널에서 수신 번호를 입력하고 전화 걸기를 누릅니다.</div>
+        </div>
+      </button>
+      <button class="trigger-hint-card${inboundActive ? " active" : ""}" data-trigger="inbound">
+        <div class="trigger-hint-emoji">📲</div>
+        <div>
+          <div class="trigger-hint-card-title">수신 대기 (Inbound)</div>
+          <div class="trigger-hint-card-desc">본인 휴대폰에서 게이트웨이 DID로 전화를 걸면 활성 통화 카드가 자동 생성됩니다.</div>
+        </div>
+      </button>
+    </div>
+  `;
+  container.appendChild(wrapper);
+
+  wrapper.querySelector("#btn-trigger-hint-dismiss").addEventListener("click", () => {
+    dismissTriggerHint();
+  });
+  wrapper.querySelectorAll(".trigger-hint-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      wrapper.querySelectorAll(".trigger-hint-card").forEach((c) => c.classList.remove("active"));
+      card.classList.add("active");
+      if (card.dataset.trigger === "outbound") spotlightOutboundPanel();
+      else spotlightCallList();
+    });
+  });
+}
+
+function spotlightOutboundPanel() {
+  const panel = $("outbound-panel");
+  if (!panel) return;
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  panel.classList.add("spotlight");
+  setTimeout(() => panel.classList.remove("spotlight"), 1800);
+  const callee = $("ob-callee");
+  if (callee && !$("ob-fieldset").disabled) callee.focus();
+}
+
+function spotlightCallList() {
+  const list = $("call-list");
+  if (!list) return;
+  list.scrollIntoView({ behavior: "smooth", block: "start" });
+  list.classList.add("spotlight");
+  setTimeout(() => list.classList.remove("spotlight"), 1800);
 }
 
 // ── tabs ───────────────────────────────────────────────────────────
@@ -903,15 +907,10 @@ function wireTabs() {
 // ── bootstrap ──────────────────────────────────────────────────────
 function init() {
   loadCreds();
-  applyBannerDismissState();
-  wireBannerDismiss();
-  wireWelcomeModal();
-  wireGlossaryModal();
   wireProviderUI();
+  wireOutboundPanel();
   renderTemplateMenu();
-  wireTemplateMenu();
   wireTabs();
-  updateGuideSteps();
   $("btn-connect").addEventListener("click", connect);
   $("btn-disconnect").addEventListener("click", disconnect);
   $("btn-clear").addEventListener("click", clearCreds);
@@ -958,17 +957,6 @@ function init() {
       hasToken: !!paramToken,
     });
     setStatus("off", "URL 파라미터 부족 — 직접 로그인");
-  } else {
-    // URL 파라미터가 없으면 — localStorage 에 저장된 자격증명 (이전 연결에서
-    // saveCreds() 가 기록한 host/tid/pw 셋) 이 모두 있으면 그걸로 자동 connect.
-    // 사용자가 명시적으로 disconnect 한 직후라도 페이지 새로고침 시 다시 붙는
-    // 동작이 활성 테스트 흐름에 맞고, opt-out 은 좌측 "Clear credentials" 로
-    // 단순함. 자격증명이 한 개라도 비어있으면 폼이 채워진 채 대기만 한다.
-    const saved = readCreds();
-    if (saved.host && saved.tenantId && saved.password) {
-      log("info", "auto-connect:start", { tid: saved.tenantId, via: "localStorage" });
-      connect();
-    }
   }
 }
 
@@ -1008,11 +996,7 @@ async function connectWithToken({ host, token, tid }) {
     client.connectCallinfo();
     // 현재 활성 세션 즉시 동기화
     reconcileSessions();
-    // Templates mounted before connectWithToken finished saw ctx.client=null;
-    // re-mount so their callinfo addEventListener actually attaches.
-    remountCurrentTemplate();
-    // 게이트웨이 버전 노출
-    fetchGatewayVersion();
+    refreshOutboundDefaults();
   } catch (err) {
     // 자동 로그인 실패: silent 금지. 사용자가 좌측 폼으로 수동 로그인 가능하도록 안내.
     const msg = err && err.message ? err.message : String(err);
