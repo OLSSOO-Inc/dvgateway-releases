@@ -521,6 +521,11 @@ function wireProviderUI() {
 
   $("prov-tts-provider").addEventListener("change", (e) => {
     state.provider.ttsProvider = e.target.value;
+    // 1.4.6.15: provider 바꾸면 이전 키는 새 provider에서 사용 불가 →
+    // 입력/state/localStorage 모두 리셋. 사용자가 의도치 않게 잘못된
+    // 키를 전송하지 않도록.
+    state.provider.ttsKey = "";
+    $("prov-tts-key").value = "";
     updateTtsPlaceholders();
     saveProviderState();
   });
@@ -533,6 +538,9 @@ function wireProviderUI() {
   // synthesizeToPcm 시점에 자동 채워집니다.
   $("prov-stt-provider").addEventListener("change", (e) => {
     state.provider.sttProvider = e.target.value;
+    // 1.4.6.15: provider 바꾸면 이전 키는 새 provider에서 사용 불가 → 리셋.
+    state.provider.sttKey = "";
+    $("prov-stt-key").value = "";
     saveProviderState();
   });
   $("prov-stt-key").addEventListener("input", (e) => {
@@ -943,6 +951,10 @@ function selectTemplate(id) {
         return state.client.injectAudio(lid, pcm, "application/octet-stream");
       }),
     providerMode: () => state.provider.mode,
+    // 1.4.6.15: 데모 템플릿(lite-ivr 등)이 사이드바 선택을 SSOT로 사용할 수
+    // 있게 getter로 노출. 빈 문자열을 보내면 게이트웨이가 자기 기본 provider를
+    // 쓰므로, 사용자가 선택한 provider를 명확히 전달.
+    ttsProvider: () => state.provider.ttsProvider,
   };
   Object.defineProperty(ctx, "client", {
     get() { return state.client; },

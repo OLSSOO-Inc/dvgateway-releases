@@ -102,19 +102,11 @@ function mount(ctx) {
             <input id="li-tts-text" type="text" placeholder="안녕하세요, 무엇을 도와드릴까요?" />
           </label>
           <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;">
-            <select id="li-tts-provider" style="width:auto;">
-              <option value="">기본 음성</option>
-              <option value="google">Google</option>
-              <option value="elevenlabs">ElevenLabs</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Gemini</option>
-              <option value="cosyvoice">CosyVoice</option>
-            </select>
             <button id="li-tts-play" class="primary">🔊 문장을 음성으로 들려주기</button>
           </div>
           <p class="help muted small">
-            문장이 클라우드에서 음성으로 합성된 뒤 통화에 재생돼요. 같은 문장은 캐시 덕분에 바로 재생돼요.
-            (게이트웨이 1.4.5.8 이상에서 동작해요)
+            왼쪽 <b>프로바이더 API 키</b>에서 고른 음성으로 합성된 뒤 통화에 재생돼요.
+            같은 문장은 캐시 덕분에 바로 재생돼요. (게이트웨이 1.4.5.8 이상에서 동작)
           </p>
         </div>
 
@@ -216,7 +208,6 @@ function mount(ctx) {
   const dtmfClear  = ctx.body.querySelector("#li-dtmf-clear");
   const timeline   = ctx.body.querySelector("#li-timeline");
   const ttsText    = ctx.body.querySelector("#li-tts-text");
-  const ttsProv    = ctx.body.querySelector("#li-tts-provider");
   const ttsPlayBtn = ctx.body.querySelector("#li-tts-play");
   const dtmfCells  = new Map();
   ctx.body.querySelectorAll(".dtmf-cell").forEach((c) => dtmfCells.set(c.dataset.key, c));
@@ -352,7 +343,9 @@ function mount(ctx) {
     ttsPlayBtn.disabled = true;
     statusEl.textContent = `🔊 TTS 합성 중… (${text.length}자)`;
     try {
-      const provider = ttsProv.value || "";
+      // 1.4.6.15: 자체 dropdown 제거. SSOT은 사이드바 '프로바이더 API 키' 선택.
+      // ctx.ttsProvider()가 state.provider.ttsProvider를 반환 (예: "elevenlabs", "gemini").
+      const provider = (ctx.ttsProvider && ctx.ttsProvider()) || "";
       const data = await ctx.client.liteTtsPlayback(linkedId, text, provider);
       currentPlaybackId = data.playbackId || null;
       const preview = text.length > 28 ? text.substring(0, 28) + "…" : text;
