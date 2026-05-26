@@ -246,6 +246,26 @@ export class GatewayClient extends EventTarget {
     return res.json(); // { playbackId, state }
   }
 
+  // POST /api/v1/playback/{linkedId}/tts → { playbackId, media, synthesizedBytes, cacheHit }
+  //
+  // mode=lite 통화 전용 TTS 재생. 게이트웨이가 cloud TTS(또는 local fallback)
+  // 로 합성한 뒤 ARI Playback으로 채널에 직접 재생. lite는 ExternalMedia/
+  // bridge가 없어서 PCM 주입 경로(POST /api/v1/tts/{linkedId})는 4xx로 거절됨.
+  // 게이트웨이는 sha256(tenant|provider|voice|text) 기반 cache로 같은 입력은
+  // 합성을 생략한다.
+  async liteTtsPlayback(linkedId, text, provider) {
+    if (!text) throw new Error("text is required");
+    const body = { text };
+    if (provider) body.provider = provider;
+    const res = await fetch(`${this.apiBase}/api/v1/playback/${encodeURIComponent(linkedId)}/tts`, {
+      method: "POST",
+      headers: this._authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw await mkApiError(res, "liteTtsPlayback");
+    return res.json();
+  }
+
   // DELETE /api/v1/playback/{linkedId}/{playbackId}
   async liteStopPlayback(linkedId, playbackId) {
     if (!playbackId) throw new Error("playbackId is required");
