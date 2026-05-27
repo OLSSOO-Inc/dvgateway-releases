@@ -67,8 +67,43 @@
         </div>
       </section>
 
+      <section class="panel" id="outbound-panel">
+        <h2>2. 발신</h2>
+        <p class="hint muted small" id="ob-conn-hint">먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.</p>
+
+        <fieldset id="ob-fieldset" disabled>
+          <label>수신 번호 *
+            <input id="ob-callee" type="text" placeholder="01012345678" />
+          </label>
+
+          <label>발신 통화 후 연결할 번호 *
+            <input id="ob-caller" type="text" placeholder="예: 45144801 (자동응답 ARS 번호나 내선)" />
+          </label>
+          <p class="hint muted small">상대방이 전화를 받은 뒤 어디로 연결할지 지정하는 번호예요. 보통 자동응답(IVR) 진입 번호나 상담사 내선을 넣어요.</p>
+
+          <div id="ob-fixed-box" class="ob-fixed">
+            <div class="ob-fixed-title">고정값 (테넌트 등록값 · 변경 불가) 🔒</div>
+            <div class="ob-fixed-row"><span>발신표시번호</span><code id="ob-fixed-cidnumber">—</code></div>
+            <div class="ob-fixed-row"><span>과금번호</span><code id="ob-fixed-accountcode">—</code></div>
+            <p class="hint muted small">변경하려면 관리자에게 문의하세요.</p>
+          </div>
+
+          <div class="row">
+            <button id="btn-originate" class="primary">📞 전화 걸기</button>
+            <button id="btn-ob-clear" class="ghost">Clear</button>
+          </div>
+
+          <div id="ob-result" class="ob-result hidden"></div>
+        </fieldset>
+      </section>
+
       <section class="panel">
-        <h2>2. 프로바이더 API 키</h2>
+        <h2>3. 데모 템플릿</h2>
+        <ul id="template-menu" class="menu"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>4. 프로바이더 API 키</h2>
         <p class="hint muted small">데모용 STT/TTS provider 키. 비워두면 게이트웨이의 기본 설정을 사용합니다.</p>
         <div class="provider-mode">
           <label class="radio">
@@ -115,41 +150,6 @@
           </div>
           <p id="prov-stt-status" class="hint muted small"></p>
         </details>
-      </section>
-
-      <section class="panel" id="outbound-panel">
-        <h2>3. 발신</h2>
-        <p class="hint muted small" id="ob-conn-hint">먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.</p>
-
-        <fieldset id="ob-fieldset" disabled>
-          <label>수신 번호 *
-            <input id="ob-callee" type="text" placeholder="01012345678" />
-          </label>
-
-          <label>발신 통화 후 연결할 번호 *
-            <input id="ob-caller" type="text" placeholder="예: 45144801 (자동응답 ARS 번호나 내선)" />
-          </label>
-          <p class="hint muted small">상대방이 전화를 받은 뒤 어디로 연결할지 지정하는 번호예요. 보통 자동응답(IVR) 진입 번호나 상담사 내선을 넣어요.</p>
-
-          <div id="ob-fixed-box" class="ob-fixed">
-            <div class="ob-fixed-title">고정값 (테넌트 등록값 · 변경 불가) 🔒</div>
-            <div class="ob-fixed-row"><span>발신표시번호</span><code id="ob-fixed-cidnumber">—</code></div>
-            <div class="ob-fixed-row"><span>과금번호</span><code id="ob-fixed-accountcode">—</code></div>
-            <p class="hint muted small">변경하려면 관리자에게 문의하세요.</p>
-          </div>
-
-          <div class="row">
-            <button id="btn-originate" class="primary">📞 전화 걸기</button>
-            <button id="btn-ob-clear" class="ghost">Clear</button>
-          </div>
-
-          <div id="ob-result" class="ob-result hidden"></div>
-        </fieldset>
-      </section>
-
-      <section class="panel">
-        <h2>4. 데모 템플릿</h2>
-        <ul id="template-menu" class="menu"></ul>
       </section>
 
       <section class="panel">
