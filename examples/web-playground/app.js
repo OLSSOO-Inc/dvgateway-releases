@@ -392,6 +392,7 @@ function renderCalls() {
         <div class="caller">${escapeHtml(call.caller || "?")}${call.callerName ? ` (${escapeHtml(call.callerName)})` : ""} → ${escapeHtml(call.callee || call.did || "?")}</div>
         <span class="state ${call.state || ""}">${escapeHtml(call.state || "?")}</span>
         ${extActor ? '<span class="state ext">other-client</span>' : ""}
+        <button class="card-hangup" data-action="hangup" data-linkedid="${escapeHtml(call.linkedId || "")}" title="통화 종료 — 채널을 끊고 CDR 기록을 남긴다">📞 통화 종료</button>
       </div>
     `);
   }
@@ -407,6 +408,32 @@ function renderCalls() {
       log("ok", "card:dismissed", { linkedId: lid });
       renderCalls();
       renderExternalActorBanner();
+    });
+  });
+  // 통화 종료 — SDK client.hangup() 을 호출해 실제 통화를 끊는다. 종료가
+  // 성공하면 call:ended 이벤트로 카드가 자동 제거되므로 별도 정리 불필요.
+  // 모든 템플릿이 동일한 사이드바 활성 통화 목록을 공유하므로 이 버튼은
+  // 어느 템플릿을 열어도 노출된다.
+  list.querySelectorAll("button.card-hangup").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const lid = btn.dataset.linkedid;
+      if (!lid) return;
+      if (!state.client) {
+        log("err", "hangup:no-client", { linkedId: lid });
+        return;
+      }
+      if (!confirm(`통화 ${lid} 를 종료할까요?`)) return;
+      btn.disabled = true;
+      btn.textContent = "📞 종료 중…";
+      try {
+        await state.client.hangup(lid);
+        log("ok", "hangup:requested", { linkedId: lid });
+      } catch (err) {
+        log("err", "hangup:fail", { linkedId: lid, error: err.message || String(err) });
+        btn.disabled = false;
+        btn.textContent = "📞 통화 종료";
+      }
     });
   });
 }

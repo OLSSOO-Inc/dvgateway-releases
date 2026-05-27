@@ -434,6 +434,23 @@ button.danger { background: var(--err); border-color: var(--err); color: white; 
 }
 .call-card .card-x:hover { background: var(--border); color: var(--text); }
 
+/* 통화 종료 버튼 — 카드 하단. dismiss(×)는 UI 카드만 제거하므로
+   실제 통화 hangup 은 SDK client.hangup() 으로 별도 트리거해야 한다. */
+.call-card .card-hangup {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--err);
+  color: var(--err);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.call-card .card-hangup:hover { background: var(--err); color: #0a0e14; }
+.call-card .card-hangup[disabled] { opacity: 0.5; cursor: wait; }
+
 .main {
   overflow-y: auto;
   display: flex;

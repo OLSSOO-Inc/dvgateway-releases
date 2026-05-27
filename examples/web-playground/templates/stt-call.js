@@ -41,19 +41,21 @@ function mount(ctx) {
       <p class="help">왼쪽 <b>프로바이더 API 키</b>에서 STT(예: deepgram) 키가 저장돼 있어야 해요. STT 라이선스도 필요해요.</p>
     </div>
     <div class="row">
-      <button id="sc-start" class="primary">📝 자막 시작</button>
-      <button id="sc-stop">자막 정지</button>
+      <button id="sc-start" class="primary">📝 STT 시작</button>
+      <button id="sc-stop">STT 정지</button>
+      <button id="sc-clear" title="화면의 STT 결과를 비웁니다 (게이트웨이/STT 서비스에는 영향 없음)">🧹 STT Clear</button>
     </div>
     <div class="transcript" id="sc-transcript">
-      <p class="muted small">자막이 여기에 표시될 거예요. 통화를 고르고 자막을 시작해 보세요.</p>
+      <p class="muted small">STT 결과가 여기에 표시될 거예요. 통화를 고르고 STT를 시작해 보세요.</p>
     </div>
-    <p class="help" id="sc-status">아직 자막이 시작되지 않았어요.</p>
+    <p class="help" id="sc-status">아직 STT가 시작되지 않았어요.</p>
   `;
 
   const callSel = ctx.body.querySelector("#sc-call");
   const modeWarn = ctx.body.querySelector("#sc-mode-warn");
   const startBtn = ctx.body.querySelector("#sc-start");
   const stopBtn = ctx.body.querySelector("#sc-stop");
+  const clearBtn = ctx.body.querySelector("#sc-clear");
   const transcript = ctx.body.querySelector("#sc-transcript");
   const statusEl = ctx.body.querySelector("#sc-status");
 
@@ -98,24 +100,38 @@ function mount(ctx) {
       });
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
       const label = action === "start" ? "시작" : "정지";
-      statusEl.textContent = `✓ ${linkedId} 통화 자막을 ${label}했어요`;
+      statusEl.textContent = `✓ ${linkedId} 통화 STT를 ${label}했어요`;
       ctx.log("ok", `stt:call:${action}`, { linkedId, provider });
     } catch (err) {
       const label = action === "start" ? "시작" : "정지";
-      statusEl.textContent = `✗ 자막을 ${label}하지 못했어요: ${err.message}`;
+      statusEl.textContent = `✗ STT를 ${label}하지 못했어요: ${err.message}`;
       ctx.log("err", `stt:call:${action}:fail`, { error: err.message });
     }
   }
   startBtn.addEventListener("click", () => call("start"));
   stopBtn.addEventListener("click", () => call("stop"));
 
-  // ── stt:result 이벤트 → 자막 렌더 ───────────────────────────────────
+  // ── STT Clear — 화면의 STT 결과만 비운다. 게이트웨이/STT 서비스에는 영향 없음.
+  // 운영자가 통화 도중 화면이 길어졌을 때 부분 정리 용도로 사용. STT 가
+  // 여전히 실행 중이면 새 결과가 다시 쌓이기 시작한다.
+  clearBtn.addEventListener("click", () => {
+    lines.length = 0;
+    transcript.innerHTML = '<p class="muted small">STT 결과가 비워졌어요. 새 발화가 도착하면 다시 표시돼요.</p>';
+    statusEl.textContent = "🧹 STT 결과를 비웠어요.";
+    ctx.log("ok", "stt:call:clear", { linkedId: callSel.value || null });
+  });
+
+  // ── stt:result 이벤트 → STT 결과 렌더 ───────────────────────────────────
   const handler = (e) => {
     const evt = e.detail;
     if (!evt || evt.event !== "stt:result") return;
     const speaker = evt.speaker || evt.linkedId || "?";
     const text = evt.text || "";
-    const isFinal = evt.isFinal ?? true;
+    // isFinal 누락 시 interim 으로 간주 — 누락된 isFinal 을 final 로 오인하면
+    // interim 줄을 새 line 으로 push 해 자막이 누적되어 보인다. 게이트웨이는
+    // 1.4.6.27 부터 isFinal 을 항상 명시(omitempty 제거)하므로 이 fallback 은
+    // 구버전 게이트웨이 호환용 안전망이다.
+    const isFinal = evt.isFinal === true;
     // 같은 화자의 직전 interim 줄은 새 이벤트(interim 또는 final 모두)로 덮어쓴다.
     // final 이 도착하면 interim 누적분을 마지막 정리본으로 치환 → "정리된 줄"만 남는다.
     const last = lines.length > 0 ? lines[lines.length - 1] : null;

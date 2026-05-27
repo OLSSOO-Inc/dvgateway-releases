@@ -77,8 +77,8 @@ export const templates = [
   },
   {
     id: "stt-call",
-    title: "8. STT 실시간 자막 (1:1 통화)",
-    desc: "활성 1:1 통화(mode=both)에 클라우드 STT를 시작하고 발화를 시각·화자별 자막으로 표시.",
+    title: "8. STT 실시간 (1:1 통화)",
+    desc: "활성 1:1 통화(mode=both)에 클라우드 STT를 시작하고 발화를 시각·화자별 STT 결과로 표시.",
     module: sttCall,
     recommendedTrigger: "either",
   },
