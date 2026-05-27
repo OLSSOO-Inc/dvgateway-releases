@@ -116,8 +116,10 @@ function mount(ctx) {
     const speaker = evt.speaker || evt.linkedId || "?";
     const text = evt.text || "";
     const isFinal = evt.isFinal ?? true;
-    // interim 결과는 마지막 줄을 덮어쓰기 (같은 화자)
-    if (!isFinal && lines.length > 0 && !lines[lines.length - 1].isFinal && lines[lines.length - 1].speaker === speaker) {
+    // 같은 화자의 직전 interim 줄은 새 이벤트(interim 또는 final 모두)로 덮어쓴다.
+    // final 이 도착하면 interim 누적분을 마지막 정리본으로 치환 → "정리된 줄"만 남는다.
+    const last = lines.length > 0 ? lines[lines.length - 1] : null;
+    if (last && !last.isFinal && last.speaker === speaker) {
       lines[lines.length - 1] = { speaker, text, isFinal, t: Date.now() };
     } else {
       lines.push({ speaker, text, isFinal, t: Date.now() });
