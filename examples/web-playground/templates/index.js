@@ -17,6 +17,7 @@ import clickTts from "./click-tts.js";
 import samplePlayback from "./sample-playback.js";
 import dtmfReceive from "./dtmf-receive.js";
 import sttLive from "./stt-live.js";
+import sttCall from "./stt-call.js";
 import callEnded from "./call-ended.js";
 import liteIvr from "./lite-ivr.js";
 
@@ -75,8 +76,15 @@ export const templates = [
     recommendedTrigger: "inbound",
   },
   {
+    id: "stt-call",
+    title: "8. STT 실시간 자막 (1:1 통화)",
+    desc: "활성 1:1 통화(mode=both)에 클라우드 STT를 시작하고 발화를 시각·화자별 자막으로 표시.",
+    module: sttCall,
+    recommendedTrigger: "either",
+  },
+  {
     id: "call-ended",
-    title: "8. 통화 종료 후 후처리",
+    title: "9. 통화 종료 후 후처리",
     desc: "call:ended를 받아 통화 시간과 함께 종료 이벤트 로그를 누적.",
     module: callEnded,
     recommendedTrigger: "either",

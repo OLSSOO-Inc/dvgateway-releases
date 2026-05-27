@@ -955,6 +955,7 @@ function selectTemplate(id) {
     // 있게 getter로 노출. 빈 문자열을 보내면 게이트웨이가 자기 기본 provider를
     // 쓰므로, 사용자가 선택한 provider를 명확히 전달.
     ttsProvider: () => state.provider.ttsProvider,
+    sttProvider: () => state.provider.sttProvider,
   };
   Object.defineProperty(ctx, "client", {
     get() { return state.client; },
