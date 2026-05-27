@@ -91,10 +91,11 @@ function mount(ctx) {
           </p>
         </div>
 
+        <!-- 통화 끊기 버튼은 본문 상단 toolbar + 사이드바 카드의 공용
+             ☎ 통화 끊기로 통합되어 여기서는 제거(중복 진입점 정리). -->
         <div class="row" style="gap:8px;flex-wrap:wrap;">
           <button id="li-play" class="primary">▶ 재생하기</button>
-          <button id="li-stop" class="warn-btn">■ 중단</button>
-          <button id="li-hangup" class="danger-btn">☎ 통화 끊기</button>
+          <button id="li-stop" class="warn-btn">■ 재생 중단</button>
         </div>
 
         <div class="field" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
@@ -201,7 +202,6 @@ function mount(ctx) {
   const presetSel  = ctx.body.querySelector("#li-media-preset");
   const playBtn    = ctx.body.querySelector("#li-play");
   const stopBtn    = ctx.body.querySelector("#li-stop");
-  const hangupBtn  = ctx.body.querySelector("#li-hangup");
   const statusEl   = ctx.body.querySelector("#li-status");
   const modeWarn   = ctx.body.querySelector("#li-mode-warn");
   const dtmfBuf    = ctx.body.querySelector("#li-dtmf-buf");
@@ -389,31 +389,9 @@ function mount(ctx) {
     }
   });
 
-  // ── 통화 종료 ───────────────────────────────────────────────────────────
-  hangupBtn.addEventListener("click", async () => {
-    const linkedId = callSel.value;
-    if (!linkedId) { statusEl.textContent = "통화를 선택하세요."; return; }
-    if (!ctx.client) { statusEl.textContent = "먼저 연결하세요."; return; }
-    // 시스템 confirm() 대신 playground 공용 모달 사용. window.dvgwConfirm은
-    // app.js의 openConfirm — Promise<boolean> 반환.
-    const ok = window.dvgwConfirm
-      ? await window.dvgwConfirm("통화를 종료하시겠습니까?", { title: "통화 종료", okLabel: "종료" })
-      : confirm("통화를 종료하시겠습니까?");
-    if (!ok) return;
-
-    hangupBtn.disabled = true;
-    statusEl.textContent = `☎ 통화 종료 중…`;
-    try {
-      await ctx.client.hangup(linkedId);
-      statusEl.textContent = `✓ 통화가 종료됐습니다`;
-      ctx.log("ok", "lite:hangup", { linkedId });
-    } catch (err) {
-      statusEl.textContent = `✗ 실패: ${err.message}`;
-      ctx.log("err", "lite:hangup:fail", { error: err.message });
-    } finally {
-      hangupBtn.disabled = false;
-    }
-  });
+  // 통화 끊기는 본문 상단 toolbar + 사이드바 카드의 공용 ☎ 통화 끊기에서
+  // 처리한다(중복 진입점 정리). 1.4.6.31 부터 lite-ivr 자체 hangup 버튼은
+  // 더 이상 노출되지 않음.
 
   // ── DTMF 버퍼 초기화 ─────────────────────────────────────────────────
   dtmfClear.addEventListener("click", () => {
