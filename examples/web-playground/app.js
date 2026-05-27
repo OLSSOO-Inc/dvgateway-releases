@@ -387,6 +387,9 @@ function renderCalls() {
   const cards = [];
   for (const call of state.activeCalls.values()) {
     const extActor = state.externalActors.has(call.linkedId);
+    // 사이드바 카드의 ☎ 통화 끊기 버튼은 1.4.7.0 부터 제거 — 통화 끊기는
+    // 본문 상단 #active-call-toolbar 의 ☎ 통화 끊기 한 곳에서만 노출되어
+    // 진입점 중복을 정리한다. 카드 dismiss(×) 는 그대로 유지.
     cards.push(`
       <div class="call-card" data-linkedid="${escapeHtml(call.linkedId || "")}">
         <button class="card-x" data-action="dismiss" data-linkedid="${escapeHtml(call.linkedId || "")}" title="카드 제거 (게이트웨이에는 영향 없음)">×</button>
@@ -394,7 +397,6 @@ function renderCalls() {
         <div class="caller">${escapeHtml(call.caller || "?")}${call.callerName ? ` (${escapeHtml(call.callerName)})` : ""} → ${escapeHtml(call.callee || call.did || "?")}</div>
         <span class="state ${call.state || ""}">${escapeHtml(call.state || "?")}</span>
         ${extActor ? '<span class="state ext">other-client</span>' : ""}
-        <button class="card-hangup" data-action="hangup" data-linkedid="${escapeHtml(call.linkedId || "")}" title="통화 끊기 — 채널을 끊고 CDR 기록을 남긴다">☎ 통화 끊기</button>
       </div>
     `);
   }
@@ -410,15 +412,6 @@ function renderCalls() {
       log("ok", "card:dismissed", { linkedId: lid });
       renderCalls();
       renderExternalActorBanner();
-    });
-  });
-  // 통화 끊기 — 사이드바 카드 + 본문 toolbar 모두 동일한 requestHangup()
-  // 진입점으로 통일. 브라우저 native confirm 대신 dvgwConfirm 공용
-  // 모달을 써서 Lite IVR / 본문 toolbar 와 일관된 UX 제공.
-  list.querySelectorAll("button.card-hangup").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      requestHangup(btn.dataset.linkedid, btn, "☎ 통화 끊기");
     });
   });
 }
