@@ -378,6 +378,8 @@ function renderCalls() {
   // 미등록 등의 다른 disable 조건은 refreshOutboundDefaults()가 별도로
   // 관리하므로 여기서는 활성 통화 유무만 반영한다.
   syncOriginateButton();
+  // 본문 상단 toolbar 도 같이 갱신 — 사이드바 카드와 동일 데이터 소스.
+  renderActiveCallToolbar();
   if (state.activeCalls.size === 0) {
     list.innerHTML = '<p class="muted small">아직 활성 통화가 없습니다.</p>';
     return;
@@ -392,7 +394,7 @@ function renderCalls() {
         <div class="caller">${escapeHtml(call.caller || "?")}${call.callerName ? ` (${escapeHtml(call.callerName)})` : ""} → ${escapeHtml(call.callee || call.did || "?")}</div>
         <span class="state ${call.state || ""}">${escapeHtml(call.state || "?")}</span>
         ${extActor ? '<span class="state ext">other-client</span>' : ""}
-        <button class="card-hangup" data-action="hangup" data-linkedid="${escapeHtml(call.linkedId || "")}" title="통화 종료 — 채널을 끊고 CDR 기록을 남긴다">📞 통화 종료</button>
+        <button class="card-hangup" data-action="hangup" data-linkedid="${escapeHtml(call.linkedId || "")}" title="통화 끊기 — 채널을 끊고 CDR 기록을 남긴다">☎ 통화 끊기</button>
       </div>
     `);
   }
@@ -410,32 +412,80 @@ function renderCalls() {
       renderExternalActorBanner();
     });
   });
-  // 통화 종료 — SDK client.hangup() 을 호출해 실제 통화를 끊는다. 종료가
-  // 성공하면 call:ended 이벤트로 카드가 자동 제거되므로 별도 정리 불필요.
-  // 모든 템플릿이 동일한 사이드바 활성 통화 목록을 공유하므로 이 버튼은
-  // 어느 템플릿을 열어도 노출된다.
+  // 통화 끊기 — 사이드바 카드 + 본문 toolbar 모두 동일한 requestHangup()
+  // 진입점으로 통일. 브라우저 native confirm 대신 dvgwConfirm 공용
+  // 모달을 써서 Lite IVR / 본문 toolbar 와 일관된 UX 제공.
   list.querySelectorAll("button.card-hangup").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const lid = btn.dataset.linkedid;
-      if (!lid) return;
-      if (!state.client) {
-        log("err", "hangup:no-client", { linkedId: lid });
-        return;
-      }
-      if (!confirm(`통화 ${lid} 를 종료할까요?`)) return;
-      btn.disabled = true;
-      btn.textContent = "📞 종료 중…";
-      try {
-        await state.client.hangup(lid);
-        log("ok", "hangup:requested", { linkedId: lid });
-      } catch (err) {
-        log("err", "hangup:fail", { linkedId: lid, error: err.message || String(err) });
-        btn.disabled = false;
-        btn.textContent = "📞 통화 종료";
-      }
+      requestHangup(btn.dataset.linkedid, btn, "☎ 통화 끊기");
     });
   });
+}
+
+// renderActiveCallToolbar: 본문 #demo-body 위에 활성 통화별 ☎ 통화 끊기
+// 버튼을 노출. 어느 템플릿(STT/TTS/IVR/Playback...)을 열어도 동일한
+// 위치에서 통화를 끊을 수 있어, 사이드바 카드 위치를 가리는 좁은 창에서도
+// 운영자가 바로 종료 액션에 도달 가능하다. 사이드바 카드 hangup 과
+// 같은 requestHangup() 진입점을 공유하므로 모달/로직이 항상 일치한다.
+function renderActiveCallToolbar() {
+  const el = $("active-call-toolbar");
+  if (!el) return;
+  if (!state.activeCalls.size) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  const rows = [];
+  for (const call of state.activeCalls.values()) {
+    const who = `${escapeHtml(call.caller || "?")}${call.callerName ? ` (${escapeHtml(call.callerName)})` : ""} → ${escapeHtml(call.callee || call.did || "?")}`;
+    rows.push(`
+      <div class="toolbar-row" data-linkedid="${escapeHtml(call.linkedId || "")}">
+        <span class="id">${escapeHtml(call.linkedId || "")}</span>
+        <span class="who">${who}</span>
+        <span class="state ${call.state || ""}">${escapeHtml(call.state || "?")}</span>
+        <button class="toolbar-hangup" data-action="hangup" data-linkedid="${escapeHtml(call.linkedId || "")}" title="통화 끊기 — 채널을 끊고 CDR 기록을 남긴다">☎ 통화 끊기</button>
+      </div>
+    `);
+  }
+  el.classList.remove("hidden");
+  el.innerHTML = `<div class="toolbar-head">활성 통화 ${state.activeCalls.size}건</div>${rows.join("")}`;
+  el.querySelectorAll("button.toolbar-hangup").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      requestHangup(btn.dataset.linkedid, btn, "☎ 통화 끊기");
+    });
+  });
+}
+
+// requestHangup: 카드·toolbar 어디서든 동일한 흐름으로 통화를 끊는다.
+// dvgwConfirm(Lite IVR 과 같은 공용 모달) → SDK client.hangup() → 성공 시
+// call:ended 이벤트로 UI 자동 정리. 실패하면 버튼 상태만 복구하고 카드는
+// 그대로 둬서 운영자가 재시도할 수 있게 한다.
+async function requestHangup(lid, btn, originalLabel) {
+  if (!lid) return;
+  if (!state.client) {
+    log("err", "hangup:no-client", { linkedId: lid });
+    return;
+  }
+  const ok = window.dvgwConfirm
+    ? await window.dvgwConfirm(`통화 ${lid} 를 끊을까요?`, { title: "통화 끊기", okLabel: "끊기" })
+    : confirm(`통화 ${lid} 를 끊을까요?`);
+  if (!ok) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "☎ 끊는 중…";
+  }
+  try {
+    await state.client.hangup(lid);
+    log("ok", "hangup:requested", { linkedId: lid });
+  } catch (err) {
+    log("err", "hangup:fail", { linkedId: lid, error: err.message || String(err) });
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalLabel || "☎ 통화 끊기";
+    }
+  }
 }
 
 function renderExternalActorBanner() {

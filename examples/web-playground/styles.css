@@ -486,6 +486,65 @@ button.danger { background: var(--err); border-color: var(--err); color: white; 
 #demo-header h2 { margin: 0 0 4px 0; }
 #demo-header p { margin: 0 0 20px 0; }
 
+/* ── Active Call Toolbar ──────────────────────────────────────────────
+   템플릿 본문(demo-body) 위에 활성 통화별 끊기 버튼을 노출. 어느
+   템플릿을 열어도 동일한 위치에서 통화를 종료할 수 있도록 모든
+   탭에서 공통 노출. 활성 통화가 없을 때는 .hidden 으로 접힘. */
+.active-call-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 16px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--err);
+  border-radius: 4px;
+  background: var(--card);
+}
+.active-call-toolbar.hidden { display: none; }
+.active-call-toolbar .toolbar-head {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.active-call-toolbar .toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.active-call-toolbar .toolbar-row .id {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.active-call-toolbar .toolbar-row .who {
+  font-weight: 600;
+  flex: 1;
+}
+.active-call-toolbar .toolbar-row .state {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  background: var(--border);
+}
+.active-call-toolbar .toolbar-row .state.up { background: var(--ok); color: #0a0e14; }
+.active-call-toolbar .toolbar-row .state.ring { background: var(--warn); color: #0a0e14; }
+.active-call-toolbar .toolbar-hangup {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--err);
+  color: var(--err);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.active-call-toolbar .toolbar-hangup:hover { background: var(--err); color: #0a0e14; }
+.active-call-toolbar .toolbar-hangup[disabled] { opacity: 0.5; cursor: wait; }
+
 #demo-body .field {
   margin-bottom: 14px;
 }

@@ -172,6 +172,11 @@
           <h2 id="demo-title">템플릿을 선택하세요</h2>
           <p id="demo-desc" class="muted"></p>
         </div>
+        <!-- 활성 통화별 ☎ 통화 끊기 toolbar — 본문 상단에 항상 노출되어
+             모든 템플릿(STT/TTS/IVR/Playback…)에서 동일한 진입점으로
+             통화를 끊을 수 있다. renderActiveCallToolbar() 가 사이드바
+             카드와 같은 데이터로 갱신하므로 둘이 항상 일치. -->
+        <div id="active-call-toolbar" class="active-call-toolbar hidden"></div>
         <div id="demo-body"></div>
         <section id="inline-log" class="inline-log">
           <header class="inline-log-head">
