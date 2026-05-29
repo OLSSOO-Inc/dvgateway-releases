@@ -706,3 +706,32 @@ code { font-family: "SF Mono", Menlo, Consolas, monospace; }
   line-height: 1.7;
 }
 .welcome-steps li { margin-bottom: 8px; }
+.welcome-steps li .muted { font-weight: 400; }
+
+/* 환영 모달 강조 콜아웃 — API 키 필수(amber) / 시작 팁(blue) */
+.welcome-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  line-height: 1.6;
+  font-size: 13.5px;
+}
+.welcome-note__icon { flex: none; font-size: 18px; line-height: 1.5; }
+.welcome-note__body { color: var(--text); }
+.welcome-note__body b { color: #fff; }
+.welcome-note--key {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.35);
+  border-left-color: var(--warn);
+}
+.welcome-note--key .welcome-note__body b { color: var(--warn); }
+.welcome-note--tip {
+  background: rgba(91, 158, 255, 0.07);
+  border-color: rgba(91, 158, 255, 0.3);
+  border-left-color: var(--accent);
+}

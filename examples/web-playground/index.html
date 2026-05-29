@@ -212,13 +212,31 @@
       <button class="modal-close" type="button" data-action="close" aria-label="닫기">✕</button>
       <h2 id="welcome-title">👋 DVGateway 체험 페이지에 오신 것을 환영해요</h2>
       <p>여기는 <b>전화 통화에 음성을 보내거나, 통화에서 들리는 음성을 처리하는</b> 여러 기능을 직접 눌러보며 체험해 볼 수 있는 페이지예요.</p>
+
+      <!-- API 키 필수 안내 — STT/TTS/AI 데모는 provider 키 없이는 동작하지 않으므로 가장 먼저, 눈에 띄게 노출 -->
+      <div class="welcome-note welcome-note--key">
+        <span class="welcome-note__icon">🔑</span>
+        <div class="welcome-note__body">
+          <b>STT·TTS·AI 데모는 프로바이더 API 키가 있어야 동작해요.</b>
+          왼쪽 <b>「4. 프로바이더 API 키」</b>에서 사용할 STT(예: Deepgram) · TTS(예: ElevenLabs) 키를 먼저 저장하세요.
+          키를 넣지 않으면 음성 합성·전사 데모는 오류가 납니다.
+        </div>
+      </div>
+
       <ol class="welcome-steps">
         <li><b>왼쪽에서 서버 정보를 넣고 연결</b>해요. (관리자에게 받은 주소·테넌트·비밀번호)</li>
+        <li><b>「4. 프로바이더 API 키」에 STT·TTS 키를 저장</b>해요. <span class="muted">(Callinfo 모니터만 볼 거면 건너뛰어도 돼요)</span></li>
         <li><b>테스트용 전화를 한 통 걸어요.</b> 게이트웨이가 통화를 인식하면 진행 중인 통화 목록에 나타나요.</li>
         <li><b>왼쪽 데모 목록에서 마음에 드는 항목</b>을 골라 클릭해요.</li>
         <li><b>오른쪽 화면에 안내된 대로 버튼을 눌러 보세요.</b> 결과가 통화에 즉시 반영돼요.</li>
       </ol>
-      <p class="muted small">처음에는 <b>Callinfo 모니터</b> 데모로 시작하시는 것을 추천해요. 전화 이벤트가 실시간으로 나타나는 모습만 봐도 게이트웨이가 어떻게 동작하는지 감이 잡혀요.</p>
+
+      <div class="welcome-note welcome-note--tip">
+        <span class="welcome-note__icon">💡</span>
+        <div class="welcome-note__body">
+          처음이라면 <b>Callinfo 모니터</b> 데모부터 시작해 보세요. <b>API 키 없이도</b> 동작하고, 전화 이벤트가 실시간으로 나타나는 모습만 봐도 게이트웨이가 어떻게 동작하는지 감이 잡혀요.
+        </div>
+      </div>
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:14px;">
         <label class="muted small"><input id="welcome-dontshow" type="checkbox" /> 다음부터 자동으로 열지 않기</label>
         <button class="primary" type="button" data-action="close">시작하기</button>
