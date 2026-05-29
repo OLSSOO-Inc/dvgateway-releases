@@ -623,10 +623,10 @@ function renderProviderUI() {
 // placeholder만 갱신. ttsVoice는 항상 빈 문자열로 두고 adapter.defaults.voice가
 // 자동 사용됨 (한국어 기본 음성 — ElevenLabs Rachel, Gemini Kore).
 function updateTtsPlaceholders() {
-  const adapter = getBrowserTtsAdapter(state.provider.ttsProvider);
-  if (adapter) {
-    $("prov-tts-key").placeholder = adapter.keyPlaceholder;
-  }
+  // Delegate to updateKeyInputPlaceholders so the masked-key hint (when the
+  // selected provider already has a saved key) and the adapter's default
+  // placeholder are decided in one place — avoids one overwriting the other.
+  updateKeyInputPlaceholders();
 }
 
 // updateProviderKeyHint: show whether the CURRENTLY SELECTED TTS/STT provider
@@ -653,6 +653,30 @@ function updateProviderKeyHint() {
   };
   paint("prov-tts-status", state.keyStatus.ttsByProvider, state.provider.ttsProvider);
   paint("prov-stt-status", state.keyStatus.sttByProvider, state.provider.sttProvider);
+}
+
+// updateKeyInputPlaceholders: when the SELECTED provider already has a saved
+// key on the gateway, show its MASKED value (e.g. "••••AIza") in the API Key
+// input's placeholder so the operator visually sees "값이 있다". We use the
+// placeholder (not the value) on purpose: the field stays empty so we never
+// re-submit mask characters, and leaving it blank means "keep the saved key".
+// When the user is actively typing a key (input non-empty) we don't touch it.
+function updateKeyInputPlaceholders() {
+  const ttsEl = $("prov-tts-key");
+  if (ttsEl && !ttsEl.value) {
+    const masked = state.keyStatus.ttsByProvider?.[state.provider.ttsProvider];
+    if (masked) {
+      ttsEl.placeholder = `${masked} · 저장된 키 (비워두면 사용)`;
+    } else {
+      const adapter = getBrowserTtsAdapter(state.provider.ttsProvider);
+      ttsEl.placeholder = adapter ? adapter.keyPlaceholder : "provider API key";
+    }
+  }
+  const sttEl = $("prov-stt-key");
+  if (sttEl && !sttEl.value) {
+    const masked = state.keyStatus.sttByProvider?.[state.provider.sttProvider];
+    sttEl.placeholder = masked ? `${masked} · 저장된 키 (비워두면 사용)` : "provider API key";
+  }
 }
 
 function wireProviderUI() {
@@ -699,6 +723,7 @@ function wireProviderUI() {
     $("prov-stt-key").value = "";
     $("prov-stt-status").dataset.transient = ""; // 새 provider — 액션 메시지 해제
     updateProviderKeyHint(); // 새 provider 의 키 저장 여부 안내
+    updateKeyInputPlaceholders(); // 새 provider 의 저장된 키 마스킹을 placeholder 로
     renderTemplateMenu();    // 카드 태그도 선택 provider 기준으로 갱신
     saveProviderState();
   });
@@ -729,7 +754,12 @@ async function saveTtsKeyToGateway() {
     statusEl.textContent = `✓ ${p.ttsProvider} 키 저장됨 (게이트웨이의 /tts/synthesize 가 즉시 사용)`;
     statusEl.dataset.transient = "1"; // refreshKeyStatus 의 hint 가 덮어쓰지 않게
     log("ok", "provider:tts:saved", { provider: p.ttsProvider });
-    refreshKeyStatus(); // 템플릿 카드 TTS 태그 + per-provider 상태 갱신
+    // 저장됐으니 브라우저 입력란의 평문 키는 비운다 — 게이트웨이가 보관하며,
+    // refreshKeyStatus 가 곧 마스킹된 값을 placeholder 로 채워 "값 있음"을 보여줌.
+    p.ttsKey = "";
+    $("prov-tts-key").value = "";
+    saveProviderState();
+    refreshKeyStatus(); // 템플릿 카드 TTS 태그 + per-provider 상태 + placeholder 갱신
     setTimeout(() => { statusEl.dataset.transient = ""; }, 4000);
   } catch (err) {
     statusEl.textContent = `✗ 실패: ${err.message}`;
@@ -753,7 +783,11 @@ async function saveSttKeyToGateway() {
     statusEl.textContent = `✓ ${p.sttProvider} 키 저장됨 (회의 STT 시작 시 이 provider 사용)`;
     statusEl.dataset.transient = "1"; // refreshKeyStatus 의 hint 가 덮어쓰지 않게
     log("ok", "provider:stt:saved", { provider: p.sttProvider });
-    refreshKeyStatus(); // 템플릿 카드 STT 태그 + per-provider 상태 갱신
+    // 저장됐으니 브라우저 입력란의 평문 키는 비운다 (TTS 와 동일).
+    p.sttKey = "";
+    $("prov-stt-key").value = "";
+    saveProviderState();
+    refreshKeyStatus(); // 템플릿 카드 STT 태그 + per-provider 상태 + placeholder 갱신
     setTimeout(() => { statusEl.dataset.transient = ""; }, 4000);
   } catch (err) {
     statusEl.textContent = `✗ 실패: ${err.message}`;
@@ -1136,14 +1170,19 @@ async function refreshKeyStatus() {
     const hasKey = (bucket) => !!bucket && Object.values(bucket).some(providerHasKey);
     state.keyStatus.tts = hasKey(cfg.tts);
     state.keyStatus.stt = hasKey(cfg.stt);
-    // Per-provider presence — so the panel can tell the user whether the
-    // CURRENTLY SELECTED provider already has a saved key (changing the
-    // dropdown clears the input, which previously hid this fact).
+    // Per-provider key — stores the gateway's MASKED key string (e.g.
+    // "••••AIza") when a provider has one, or "" otherwise. The masked string
+    // is safe to display (the gateway never returns the plaintext key) and lets
+    // the panel both (a) flag presence — "" is falsy so existing truthiness
+    // checks keep working — and (b) show the masked value in the input's
+    // placeholder so the operator visually sees "값이 들어있다".
+    const maskedOf = (p) => (providerHasKey(p) ? String(p.apiKey) : "");
     state.keyStatus.ttsByProvider = {};
     state.keyStatus.sttByProvider = {};
-    for (const [name, p] of Object.entries(cfg.tts || {})) state.keyStatus.ttsByProvider[name] = providerHasKey(p);
-    for (const [name, p] of Object.entries(cfg.stt || {})) state.keyStatus.sttByProvider[name] = providerHasKey(p);
+    for (const [name, p] of Object.entries(cfg.tts || {})) state.keyStatus.ttsByProvider[name] = maskedOf(p);
+    for (const [name, p] of Object.entries(cfg.stt || {})) state.keyStatus.sttByProvider[name] = maskedOf(p);
     updateProviderKeyHint();
+    updateKeyInputPlaceholders();
   } catch (err) {
     // leave keyStatus as-is; tags stay in their last known state
     console.warn("refreshKeyStatus failed:", err);
