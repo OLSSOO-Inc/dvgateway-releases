@@ -33,6 +33,10 @@ ws.onmessage = async (msg) => {
   });
 };`;
 
+// 연결(up) 직후 미디어 경로가 안정화되기 전 주입하면 첫 음절이 끊겨 들린다.
+// 짧게 기다렸다가 재생해 시작 부분이 온전히 들리도록.
+const GREETING_DELAY_MS = 1000;
+
 function mount(ctx) {
   ctx.body.innerHTML = `
     <div class="field">
@@ -55,6 +59,10 @@ function mount(ctx) {
     const text = textEl.value.trim();
     if (!text) return;
     greeted.add(linkedId);
+    // 연결 직후 미디어 경로가 완전히 자리잡기 전에 주입하면 첫 음절이 잘려
+    // 들린다. 1초 기다렸다가 재생해 시작 부분이 깔끔하게 들리도록.
+    statusEl.textContent = `⏳ 연결됨 — 잠시 후 인사말을 들려드려요 (통화 ${linkedId})`;
+    await new Promise((r) => setTimeout(r, GREETING_DELAY_MS));
     statusEl.textContent = `🔊 인사말 보내는 중… "${text.slice(0, 28)}${text.length > 28 ? "…" : ""}" → 통화 ${linkedId}`;
     try {
       await ctx.safeInjectText(linkedId, text);

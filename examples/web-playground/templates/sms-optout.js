@@ -52,6 +52,9 @@ ws.onmessage = async (msg) => {
   }
 };`;
 
+// 연결(up) 직후 미디어 경로가 안정화되기 전 주입하면 첫 음절이 끊겨 들린다.
+const GREETING_DELAY_MS = 1000;
+
 // spell: 번호를 한 자리씩 공백으로 분리해 TTS가 또박또박 읽도록.
 const spell = (s) => String(s || "").replace(/[^0-9*#]/g, "").split("").join(" ");
 
@@ -111,10 +114,14 @@ function mount(ctx) {
     `).join("");
   }
 
-  // 발신번호 조회 — activeCalls 의 caller 필드.
+  // 등록 대상 번호 조회 — "상대(고객) 번호".
+  // click-to-call 아웃바운드는 우리 발신번호(caller=16682471)가 아니라 우리가
+  // 건 고객 번호여야 하므로 peer(PeerNumber) 를 우선한다. peer 가 없으면(인바운드)
+  // caller 로 폴백.
   function callerOf(linkedId) {
     const c = ctx.getActiveCalls().get(linkedId);
-    return (c && (c.caller || c.callerName)) || "";
+    if (!c) return "";
+    return c.peer || c.caller || c.callerName || "";
   }
 
   async function speak(linkedId, text, label) {
@@ -134,8 +141,14 @@ function mount(ctx) {
     if (!ctx.client || !linkedId || sessions.has(linkedId)) return;
     sessions.set(linkedId, { phase: "collecting", entered: "", caller: callerOf(linkedId) });
     const greet = greetEl.value.trim();
-    if (greet) await speak(linkedId, greet, "📢 안내 멘트 재생");
-    pushLog(linkedId, `⌨ 키 입력 대기 중 (발신번호 ${callerOf(linkedId) || "미상"})`);
+    if (greet) {
+      // 연결 직후 미디어 경로가 자리잡기 전에 주입하면 첫 음절이 잘려 들린다.
+      // 잠시 기다렸다가 안내 멘트를 재생.
+      pushLog(linkedId, "⏳ 연결됨 — 잠시 후 안내 멘트를 재생해요");
+      await new Promise((r) => setTimeout(r, GREETING_DELAY_MS));
+      await speak(linkedId, greet, "📢 안내 멘트 재생");
+    }
+    pushLog(linkedId, `⌨ 키 입력 대기 중 (등록 대상 ${callerOf(linkedId) || "미상"})`);
   }
 
   // 이미 연결(up)된 활성 통화가 있으면 템플릿을 켠 즉시 시작 — 통화 도중에
