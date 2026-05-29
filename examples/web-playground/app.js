@@ -347,15 +347,16 @@ function onCallinfoEvent(evt) {
         state.myInjectIds.delete(evtInjectId);
       }
       if (evt.phase === "start") {
-        // Precise self-check by injectId: every injection we make (PCM or ARI
-        // Playback fallback) records its id in myInjectIds, so a start whose id
-        // we recognise is ours — even when we inject multiple times on the same
-        // call (greeting → confirmation). External only when the id is foreign.
-        if (evtInjectId) {
-          if (state.myInjectIds.has(evtInjectId)) break; // our own — quiet
-        } else if (state.selfInjections.has(evt.linkedId)) {
-          break; // id-less start on a call we're injecting on — assume ours
-        }
+        // If WE are injecting on this call, the start is ours — full stop.
+        // The gateway can emit tts:playback `start` over the WS BEFORE the
+        // injectAudio HTTP response (which carries our injectId) returns, so
+        // matching purely on injectId races and false-flags our own audio.
+        // In this single-operator playground a start on a call we're injecting
+        // into is effectively never a foreign bot, so trust selfInjections.
+        if (state.selfInjections.has(evt.linkedId)) break;
+        // Otherwise, a recognised injectId is still ours (defensive); only an
+        // unknown id on a call we're NOT injecting into is a real other actor.
+        if (evtInjectId && state.myInjectIds.has(evtInjectId)) break;
         state.externalActors.add(evt.linkedId);
         renderExternalActorBanner();
         break;
@@ -363,27 +364,20 @@ function onCallinfoEvent(evt) {
 
       // Preempt detection — gateway publishes phase=canceled with
       // errorReason=preempted when a newer inject_tts for the same linkedId
-      // arrives. Only a genuine OTHER subscriber overriding our audio is worth
-      // warning about. If the preempted playback was one of OURS, this is a
-      // self-preempt (we injected again on the same call — normal flow), so
-      // stay quiet. A real other-bot preempt surfaces via the `start` branch
-      // above (its injectId is not in myInjectIds).
+      // arrives. This is a normal self-preempt whenever WE are the one
+      // injecting on the call (e.g. greeting → confirmation prompt), so stay
+      // quiet. Only warn when the preempt happens on a call we are NOT
+      // injecting into AND the preempted id is not one of ours — i.e. a
+      // genuine other subscriber. (Same single-operator rationale as `start`.)
       if (evt.phase === "canceled" && evt.errorReason === "preempted") {
-        const preemptedIsOurs = evtInjectId && state.myInjectIds.has(evtInjectId);
-        if (preemptedIsOurs) {
-          state.myInjectIds.delete(evtInjectId); // done with this one
-          break;
-        }
-        if (state.selfInjections.has(evt.linkedId)) {
-          state.externalActors.add(evt.linkedId);
-          flashPreemptToast(evt.linkedId);
-          renderExternalActorBanner();
-          log("err", "preempted-by-other", {
-            linkedId: evt.linkedId,
-            injectId: evtInjectId,
-            durationMs: evt.durationMs,
-          });
-        }
+        if (evtInjectId) state.myInjectIds.delete(evtInjectId); // done with this one
+        if (state.selfInjections.has(evt.linkedId)) break; // our own re-inject — quiet
+        // not injecting on this call but our id was preempted? still ours.
+        if (evtInjectId && state.myInjectIds.has(evtInjectId)) break;
+        // genuine foreign preempt — but only meaningful if we ever played here.
+        // With no self-injection on this call there is nothing of ours to lose,
+        // so we simply note it without alarming the user.
+        log("info", "preempt:observed", { linkedId: evt.linkedId, injectId: evtInjectId });
       }
       break;
     }

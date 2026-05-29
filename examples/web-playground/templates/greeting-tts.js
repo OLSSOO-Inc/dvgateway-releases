@@ -63,10 +63,12 @@ function mount(ctx) {
     // 들린다. 1초 기다렸다가 재생해 시작 부분이 깔끔하게 들리도록.
     statusEl.textContent = `⏳ 연결됨 — 잠시 후 인사말을 들려드려요 (통화 ${linkedId})`;
     await new Promise((r) => setTimeout(r, GREETING_DELAY_MS));
-    statusEl.textContent = `🔊 인사말 보내는 중… "${text.slice(0, 28)}${text.length > 28 ? "…" : ""}" → 통화 ${linkedId}`;
+    statusEl.textContent = `🎙 음성 생성 중… 같은 문장은 캐시돼 다음부터 즉시 재생돼요. (통화 ${linkedId})`;
     try {
+      const t0 = Date.now();
       await ctx.safeInjectText(linkedId, text);
-      statusEl.textContent = `✓ 인사말을 들려드렸어요 (통화 ${linkedId})`;
+      const secs = ((Date.now() - t0) / 1000).toFixed(1);
+      statusEl.textContent = `✓ 인사말을 들려드렸어요 (통화 ${linkedId} · ${secs}s)`;
       ctx.log("ok", "greeting:injected", { linkedId, text, mode: ctx.providerMode?.() });
     } catch (err) {
       greeted.delete(linkedId); // 실패 시 재시도 가능하도록 해제

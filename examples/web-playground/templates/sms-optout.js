@@ -126,9 +126,12 @@ function mount(ctx) {
   }
 
   async function speak(linkedId, text, label) {
+    pushLog(linkedId, "🎙 음성 생성 중… (같은 문장은 캐시돼 다음부터 즉시)");
     try {
+      const t0 = Date.now();
       await ctx.safeInjectText(linkedId, text);
-      pushLog(linkedId, label || `🔊 "${text.slice(0, 30)}${text.length > 30 ? "…" : ""}"`);
+      const secs = ((Date.now() - t0) / 1000).toFixed(1);
+      pushLog(linkedId, `${label || `🔊 "${text.slice(0, 30)}${text.length > 30 ? "…" : ""}"`} · ${secs}s`);
       ctx.log("ok", "smsoptout:tts", { linkedId, text, mode: ctx.providerMode?.() });
     } catch (err) {
       pushLog(linkedId, `✗ TTS 실패: ${err.message}`);
