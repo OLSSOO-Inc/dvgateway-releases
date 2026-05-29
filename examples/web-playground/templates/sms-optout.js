@@ -9,8 +9,9 @@
 //   3) 확정된 번호를 한 자리씩 또박또박 TTS로 안내해 "이 번호로 등록됩니다".
 //
 // 실제 운영에서는 3) 시점에 사내 수신거부 DB에 INSERT 하면 됩니다. 이 데모는
-// TTS 확인까지만 보여줍니다. (mode=both 통화 필요 — TTS 주입에 미디어 스트림이
-// 있어야 합니다.)
+// TTS 확인까지만 보여줍니다. mode=both·lite·flow 어디서나 동작합니다 — DTMF는
+// AMI 이벤트(모드 무관)로 수집하고, TTS는 PCM 주입(mode=both)이 안 되면 ARI
+// Playback(lite/flow)으로 자동 폴백하므로 미디어 스트림이 없어도 들립니다.
 
 const CODE = `// 문자수신거부 등록 — 연결 시 안내 → DTMF 수집 → 번호 확인 TTS
 const callers  = new Map();      // linkedId → 발신번호(CallerID), call:new 에서 기록
@@ -53,7 +54,7 @@ ws.onmessage = async (msg) => {
 };`;
 
 // 연결(up) 직후 미디어 경로가 안정화되기 전 주입하면 첫 음절이 끊겨 들린다.
-const GREETING_DELAY_MS = 1000;
+const GREETING_DELAY_MS = 2000;
 
 // spell: 번호를 한 자리씩 공백으로 분리해 TTS가 또박또박 읽도록.
 const spell = (s) => String(s || "").replace(/[^0-9*#]/g, "").split("").join(" ");
@@ -82,7 +83,7 @@ const formatPhone = (s) => {
 
 function mount(ctx) {
   ctx.body.innerHTML = `
-    <p class="help">전화가 <b>연결되면</b> 수신거부 안내 멘트를 들려주고, 발신자가 키패드로 번호를 누르거나(#로 종료) 바로 #만 누르면 <b>발신번호(CallerID)</b>로 등록합니다. 등록 번호를 TTS로 또박또박 확인시켜 줘요. <b>(mode=both 통화 필요)</b></p>
+    <p class="help">전화가 <b>연결되면</b> 수신거부 안내 멘트를 들려주고, 발신자가 키패드로 번호를 누르거나(#로 종료) 바로 #만 누르면 <b>발신번호(CallerID)</b>로 등록합니다. 등록 번호를 TTS로 또박또박 확인시켜 줘요. <b>mode=both·lite·flow 모두 동작</b>해요 (TTS는 PCM 주입이 안 되면 ARI 재생으로, DTMF는 AMI로 수집).</p>
 
     <div class="field">
       <label>안내 멘트 (연결되면 자동 재생)

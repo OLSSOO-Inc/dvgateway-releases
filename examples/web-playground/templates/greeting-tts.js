@@ -35,7 +35,7 @@ ws.onmessage = async (msg) => {
 
 // 연결(up) 직후 미디어 경로가 안정화되기 전 주입하면 첫 음절이 끊겨 들린다.
 // 짧게 기다렸다가 재생해 시작 부분이 온전히 들리도록.
-const GREETING_DELAY_MS = 1000;
+const GREETING_DELAY_MS = 2000;
 
 function mount(ctx) {
   ctx.body.innerHTML = `

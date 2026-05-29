@@ -22,6 +22,13 @@ const state = {
   // the same call — surface that as a banner so the user understands why
   // their actions race or 404.
   selfInjections: new Set(),
+  // injectIds (X-Inject-Id) of TTS we (this browser) sent. Used to tell our
+  // OWN sequential injections apart from a genuine other-subscriber injection.
+  // When sms-optout/greeting injects a 2nd time on the same call (e.g. the
+  // confirmation prompt after the greeting), the gateway preempts our 1st
+  // playback — that is normal, NOT another bot, so we must not warn on a
+  // preempt/start whose injectId is one of ours.
+  myInjectIds: new Set(),
   externalActors: new Set(),
   currentTemplate: null,
   templateDispose: null,
@@ -279,6 +286,7 @@ function onCallinfoEvent(evt) {
       // missed call:ended during WS gap, etc).
       state.activeCalls.clear();
       state.externalActors.clear();
+      state.myInjectIds.clear(); // no live calls → our injectIds are all stale
       (evt.activeCalls || []).forEach((c) => state.activeCalls.set(c.linkedId, c));
       renderCalls();
       renderExternalActorBanner();
@@ -332,25 +340,47 @@ function onCallinfoEvent(evt) {
       // External-actor detection: a playback we did NOT start, on a call
       // that's still active. The first `phase=start` for an unknown
       // injectId/playbackId arrives from another callinfo subscriber.
+      const evtInjectId = evt.injectId || evt.playbackId;
+      // terminal phases of our own injection — drop the tracked id so the set
+      // doesn't grow unbounded across a long call with many injections.
+      if (evtInjectId && (evt.phase === "complete" || evt.phase === "failed")) {
+        state.myInjectIds.delete(evtInjectId);
+      }
       if (evt.phase === "start") {
-        if (state.selfInjections.has(evt.linkedId)) break;
+        // Precise self-check by injectId: every injection we make (PCM or ARI
+        // Playback fallback) records its id in myInjectIds, so a start whose id
+        // we recognise is ours — even when we inject multiple times on the same
+        // call (greeting → confirmation). External only when the id is foreign.
+        if (evtInjectId) {
+          if (state.myInjectIds.has(evtInjectId)) break; // our own — quiet
+        } else if (state.selfInjections.has(evt.linkedId)) {
+          break; // id-less start on a call we're injecting on — assume ours
+        }
         state.externalActors.add(evt.linkedId);
         renderExternalActorBanner();
         break;
       }
 
       // Preempt detection — gateway publishes phase=canceled with
-      // errorReason=preempted when a newer inject_tts for the same
-      // linkedId arrives. If WE were the one playing, that means
-      // another callinfo subscriber overrode our audio.
+      // errorReason=preempted when a newer inject_tts for the same linkedId
+      // arrives. Only a genuine OTHER subscriber overriding our audio is worth
+      // warning about. If the preempted playback was one of OURS, this is a
+      // self-preempt (we injected again on the same call — normal flow), so
+      // stay quiet. A real other-bot preempt surfaces via the `start` branch
+      // above (its injectId is not in myInjectIds).
       if (evt.phase === "canceled" && evt.errorReason === "preempted") {
+        const preemptedIsOurs = evtInjectId && state.myInjectIds.has(evtInjectId);
+        if (preemptedIsOurs) {
+          state.myInjectIds.delete(evtInjectId); // done with this one
+          break;
+        }
         if (state.selfInjections.has(evt.linkedId)) {
           state.externalActors.add(evt.linkedId);
           flashPreemptToast(evt.linkedId);
           renderExternalActorBanner();
           log("err", "preempted-by-other", {
             linkedId: evt.linkedId,
-            injectId: evt.injectId || evt.playbackId,
+            injectId: evtInjectId,
             durationMs: evt.durationMs,
           });
         }
@@ -1086,14 +1116,21 @@ function selectTemplate(id) {
       safeInject(lid, async () => {
         try {
           const pcm = await synthesizePcm(text);
-          return await state.client.injectAudio(lid, pcm, "application/octet-stream");
+          const injectId = await state.client.injectAudio(lid, pcm, "application/octet-stream");
+          // remember our own injectId so a later self-preempt (we inject again
+          // on the same call) is not mistaken for another subscriber.
+          if (injectId) state.myInjectIds.add(injectId);
+          return injectId;
         } catch (err) {
           // no active player (flow/lite, attach 전) → ARI Playback 폴백
           if (String(err && err.message || "").includes("(404)")) {
             log("info", "tts:fallback:playback", { linkedId: lid });
             const provider = (state.provider && state.provider.ttsProvider) || "";
-            await state.client.liteTtsPlayback(lid, text, provider);
-            return null; // ARI Playback 에는 injectId 가 없음
+            const res = await state.client.liteTtsPlayback(lid, text, provider);
+            // ARI Playback surfaces a playbackId on audio:playback events — track
+            // it the same way so self-preempts on the fallback path stay quiet too.
+            if (res && res.playbackId) state.myInjectIds.add(res.playbackId);
+            return res && res.playbackId ? res.playbackId : null;
           }
           throw err;
         }
