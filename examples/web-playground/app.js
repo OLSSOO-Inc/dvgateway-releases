@@ -50,7 +50,10 @@ const state = {
   // key registered. Refreshed from GET /api/v1/config/apikeys on connect and
   // after each key save. Drives the per-template "키 등록됨 / 키 필요" tags so
   // the user sees at a glance whether a demo will work. null = 아직 미확인.
-  keyStatus: { tts: null, stt: null },
+  // {ttsByProvider,sttByProvider}: per-provider presence (name → bool) so the
+  // provider panel can show whether the SELECTED provider already has a saved
+  // key — changing the dropdown clears the input and would otherwise hide it.
+  keyStatus: { tts: null, stt: null, ttsByProvider: {}, sttByProvider: {} },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -626,6 +629,32 @@ function updateTtsPlaceholders() {
   }
 }
 
+// updateProviderKeyHint: show whether the CURRENTLY SELECTED TTS/STT provider
+// already has a key saved on the gateway. Changing the provider dropdown clears
+// the (write-only) key input, so without this the operator can't tell if the
+// new provider is already configured — they'd re-enter a key they already have,
+// or assume it's missing. Reads state.keyStatus.{tts,stt}ByProvider (gateway
+// truth, refreshed on connect/save). Stays quiet before Connect (unknown).
+function updateProviderKeyHint() {
+  const paint = (statusElId, byProvider, providerName) => {
+    const el = $(statusElId);
+    if (!el) return;
+    // Don't clobber a transient action message (저장 중…/✓ 저장됨/에러).
+    if (el.dataset.transient === "1") return;
+    if (!state.client || !byProvider || Object.keys(byProvider).length === 0) {
+      el.textContent = ""; // 연결 전이거나 아직 조회 안 됨 — 표시 안 함
+      return;
+    }
+    if (byProvider[providerName]) {
+      el.textContent = `✓ 이 provider는 게이트웨이에 키가 저장돼 있어요 — 비워 두면 그대로 사용해요.`;
+    } else {
+      el.textContent = `⚠ 이 provider는 저장된 키가 없어요 — 키를 입력하고 "키 저장"을 눌러주세요.`;
+    }
+  };
+  paint("prov-tts-status", state.keyStatus.ttsByProvider, state.provider.ttsProvider);
+  paint("prov-stt-status", state.keyStatus.sttByProvider, state.provider.sttProvider);
+}
+
 function wireProviderUI() {
   loadProviderState();
   renderProviderUI();
@@ -651,6 +680,8 @@ function wireProviderUI() {
     state.provider.ttsKey = "";
     $("prov-tts-key").value = "";
     updateTtsPlaceholders();
+    $("prov-tts-status").dataset.transient = ""; // 새 provider — 액션 메시지 해제
+    updateProviderKeyHint(); // 새 provider 의 키 저장 여부 안내
     saveProviderState();
   });
   $("prov-tts-key").addEventListener("input", (e) => {
@@ -665,6 +696,8 @@ function wireProviderUI() {
     // 1.4.6.15: provider 바꾸면 이전 키는 새 provider에서 사용 불가 → 리셋.
     state.provider.sttKey = "";
     $("prov-stt-key").value = "";
+    $("prov-stt-status").dataset.transient = ""; // 새 provider — 액션 메시지 해제
+    updateProviderKeyHint(); // 새 provider 의 키 저장 여부 안내
     saveProviderState();
   });
   $("prov-stt-key").addEventListener("input", (e) => {
@@ -692,8 +725,10 @@ async function saveTtsKeyToGateway() {
       role: "primary",
     });
     statusEl.textContent = `✓ ${p.ttsProvider} 키 저장됨 (게이트웨이의 /tts/synthesize 가 즉시 사용)`;
+    statusEl.dataset.transient = "1"; // refreshKeyStatus 의 hint 가 덮어쓰지 않게
     log("ok", "provider:tts:saved", { provider: p.ttsProvider });
-    refreshKeyStatus(); // 템플릿 카드 TTS 태그를 "키 등록됨"으로 갱신
+    refreshKeyStatus(); // 템플릿 카드 TTS 태그 + per-provider 상태 갱신
+    setTimeout(() => { statusEl.dataset.transient = ""; }, 4000);
   } catch (err) {
     statusEl.textContent = `✗ 실패: ${err.message}`;
     log("err", "provider:tts:save:fail", { error: err.message });
@@ -714,8 +749,10 @@ async function saveSttKeyToGateway() {
       role: "primary",
     });
     statusEl.textContent = `✓ ${p.sttProvider} 키 저장됨 (회의 STT 시작 시 이 provider 사용)`;
+    statusEl.dataset.transient = "1"; // refreshKeyStatus 의 hint 가 덮어쓰지 않게
     log("ok", "provider:stt:saved", { provider: p.sttProvider });
-    refreshKeyStatus(); // 템플릿 카드 STT 태그를 "키 등록됨"으로 갱신
+    refreshKeyStatus(); // 템플릿 카드 STT 태그 + per-provider 상태 갱신
+    setTimeout(() => { statusEl.dataset.transient = ""; }, 4000);
   } catch (err) {
     statusEl.textContent = `✗ 실패: ${err.message}`;
     log("err", "provider:stt:save:fail", { error: err.message });
@@ -727,6 +764,7 @@ async function saveSttKeyToGateway() {
 // inject into any call.
 async function testTtsSynthesis() {
   const statusEl = $("prov-tts-status");
+  statusEl.dataset.transient = "1";
   statusEl.textContent = "합성 중…";
   try {
     const bytes = await synthesizePcm("테스트입니다");
@@ -737,6 +775,7 @@ async function testTtsSynthesis() {
     statusEl.textContent = `✗ 실패: ${err.message}`;
     log("err", "provider:tts:test:fail", { error: err.message });
   }
+  setTimeout(() => { statusEl.dataset.transient = ""; }, 4000);
 }
 
 // Mode-aware text → slin16 PCM. In Mode A delegates to the gateway,
@@ -1064,12 +1103,18 @@ async function refreshKeyStatus() {
     // enabled with an empty/cleared key (the gateway masks an empty key to ""),
     // which would otherwise show a false "✓ 등록됨" while synthesis still fails.
     // The gateway returns masked keys (e.g. "••••AIza"); only "" means no key.
-    const hasKey = (bucket) =>
-      !!bucket && Object.values(bucket).some(
-        (p) => p && p.enabled && p.apiKey && String(p.apiKey).length > 0,
-      );
+    const providerHasKey = (p) => !!(p && p.enabled && p.apiKey && String(p.apiKey).length > 0);
+    const hasKey = (bucket) => !!bucket && Object.values(bucket).some(providerHasKey);
     state.keyStatus.tts = hasKey(cfg.tts);
     state.keyStatus.stt = hasKey(cfg.stt);
+    // Per-provider presence — so the panel can tell the user whether the
+    // CURRENTLY SELECTED provider already has a saved key (changing the
+    // dropdown clears the input, which previously hid this fact).
+    state.keyStatus.ttsByProvider = {};
+    state.keyStatus.sttByProvider = {};
+    for (const [name, p] of Object.entries(cfg.tts || {})) state.keyStatus.ttsByProvider[name] = providerHasKey(p);
+    for (const [name, p] of Object.entries(cfg.stt || {})) state.keyStatus.sttByProvider[name] = providerHasKey(p);
+    updateProviderKeyHint();
   } catch (err) {
     // leave keyStatus as-is; tags stay in their last known state
     console.warn("refreshKeyStatus failed:", err);
