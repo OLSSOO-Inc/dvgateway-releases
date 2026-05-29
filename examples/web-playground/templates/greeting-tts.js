@@ -93,6 +93,13 @@ function mount(ctx) {
     // 통화가 "연결(up)"된 순간에 주입 — ring(벨) 단계는 미디어가 없어 스킵.
     if (evt.event === "channel:state" && evt.state === "up" && evt.linkedId) {
       greet(evt.linkedId);
+      return;
+    }
+    // 통화 종료 → 상태 초기화 (화면을 깨끗이). 같은 통화가 다시 들어오면
+    // (linkedId 재사용은 없지만) greeted 가드도 풀어 재생 가능하게 함.
+    if (evt.event === "call:ended" && evt.linkedId) {
+      greeted.delete(evt.linkedId);
+      statusEl.textContent = "대기 중 — 통화가 연결되면 자동으로 인사말을 들려드려요.";
     }
   };
 

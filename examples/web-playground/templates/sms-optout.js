@@ -56,6 +56,11 @@ ws.onmessage = async (msg) => {
 // 연결(up) 직후 미디어 경로가 안정화되기 전 주입하면 첫 음절이 끊겨 들린다.
 const GREETING_DELAY_MS = 2000;
 
+// DTMF 떨림 제거 창. 같은 digit 의 received 가 이 시간 안에 다시 오면 한 번의
+// 누름으로 본다. 관측상 떨림 중복은 ~200ms 간격, 실제 같은 키 재누름은 보통
+// 350ms+ 라 300ms 가 안전한 경계.
+const DTMF_DEBOUNCE_MS = 300;
+
 // spell: 번호를 한 자리씩 공백으로 분리해 TTS가 또박또박 읽도록.
 const spell = (s) => String(s || "").replace(/[^0-9*#]/g, "").split("").join(" ");
 
@@ -104,15 +109,19 @@ function mount(ctx) {
   const sessions = new Map();
   const log = [];
 
-  function pushLog(linkedId, msg) {
-    log.push({ linkedId, msg, _t: Date.now() });
-    if (log.length > 40) log.shift();
+  function renderLog() {
     stateEl.innerHTML = log.slice(-20).reverse().map((e) => `
       <div class="line">
         <span class="speaker">${e.linkedId}</span> ${e.msg}
         <span class="muted small">${new Date(e._t).toLocaleTimeString()}</span>
       </div>
     `).join("");
+  }
+
+  function pushLog(linkedId, msg) {
+    log.push({ linkedId, msg, _t: Date.now() });
+    if (log.length > 40) log.shift();
+    renderLog();
   }
 
   // 등록 대상 번호 조회 — "상대(고객) 번호".
@@ -169,6 +178,21 @@ function mount(ctx) {
     if (!ctx.client) return;
     const evt = e.detail;
 
+    // 0) 통화 종료 → 해당 통화의 진행 상황/세션 정리 (화면을 깨끗이)
+    if (evt.event === "call:ended" && evt.linkedId) {
+      sessions.delete(evt.linkedId);
+      // 이 통화에 대한 로그 줄 제거. 남은 통화가 없으면 안내 문구로 초기화.
+      for (let i = log.length - 1; i >= 0; i--) {
+        if (log[i].linkedId === evt.linkedId) log.splice(i, 1);
+      }
+      if (log.length === 0) {
+        stateEl.innerHTML = `<p class="muted small">대기 중 — 통화가 연결되면 여기에 단계별 진행 상황이 표시돼요.</p>`;
+      } else {
+        renderLog();
+      }
+      return;
+    }
+
     // 1) 통화 연결 → 안내 멘트
     if (evt.event === "channel:state" && evt.state === "up" && evt.linkedId) {
       await beginSession(evt.linkedId);
@@ -185,6 +209,17 @@ function mount(ctx) {
       // 입력이 두 배로 쌓이므로, 발신자가 실제로 누른 received 만 센다.
       // (direction 이 비어 있는 구버전 게이트웨이는 그대로 한 번만 처리.)
       if (evt.direction && evt.direction !== "received") return;
+
+      // DTMF 떨림(debounce): 한 번 누른 키가 떼는 과정에서 같은 digit 의
+      // received 가 짧은 간격으로 두 번 잡히는 경우가 있다(예: 6 이 25ms +
+      // 180ms 로 두 번). 같은 digit 이 DTMF_DEBOUNCE_MS 안에 다시 오면 한 번의
+      // 누름으로 보고 무시한다. 서로 다른 digit 은 항상 통과.
+      const ts = evt.ts || Date.now();
+      if (s.lastDigit === evt.digit && ts - (s.lastTs || 0) < DTMF_DEBOUNCE_MS) {
+        return;
+      }
+      s.lastDigit = evt.digit;
+      s.lastTs = ts;
 
       if (evt.digit === "#") {
         s.phase = "done";

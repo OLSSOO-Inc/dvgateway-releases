@@ -164,6 +164,7 @@ async function connect() {
   if (state.client) state.client.disconnect();
 
   const client = new GatewayClient(creds);
+  client.onQuota = flashQuotaNotice; // provider 429 → 친절 안내(장애 아님)
   state.client = client;
 
   client.addEventListener("status", (e) => {
@@ -391,6 +392,28 @@ function flashPreemptToast(linkedId) {
   el.classList.remove("hidden");
   clearTimeout(flashPreemptToast._t);
   flashPreemptToast._t = setTimeout(() => el.classList.add("hidden"), 8000);
+}
+
+// flashQuotaNotice: show a friendly, non-error advisory when the cloud TTS
+// provider hit its rate-limit / quota (HTTP 429). This is NOT a service outage
+// — the gateway fell back to a basic built-in voice so the call still works,
+// and the cloud voice returns automatically once the quota window resets. The
+// wording is for non-engineers so they don't report a false outage.
+function flashQuotaNotice({ provider, retryAfterSec }) {
+  const el = $("quota-notice");
+  if (!el) return;
+  const prov = provider || "클라우드 TTS";
+  const retry = retryAfterSec > 0
+    ? `약 ${retryAfterSec}초 후 자동으로 정상화돼요.`
+    : "잠시 후 자동으로 정상화돼요.";
+  el.textContent =
+    `⏳ ${prov} 음성 생성 사용량(무료 한도)을 잠시 초과했어요 — 서비스 장애가 아닙니다. ` +
+    `지금은 기본 안내 음성으로 대체 재생되며, ${retry} ` +
+    `자주 쓰는 문장은 캐시되어 한도에 영향을 덜 줍니다.`;
+  el.classList.remove("hidden");
+  clearTimeout(flashQuotaNotice._t);
+  flashQuotaNotice._t = setTimeout(() => el.classList.add("hidden"), 12000);
+  log("err", "tts:quota", { provider: prov, retryAfterSec });
 }
 
 function eventLevel(name) {
@@ -1036,9 +1059,14 @@ async function refreshKeyStatus() {
   if (!state.client) return;
   try {
     const cfg = await state.client.getApiKeys();
+    // A category is "ready" only when some provider is BOTH enabled AND carries
+    // a non-empty key. `enabled` alone is not enough — a provider can be left
+    // enabled with an empty/cleared key (the gateway masks an empty key to ""),
+    // which would otherwise show a false "✓ 등록됨" while synthesis still fails.
+    // The gateway returns masked keys (e.g. "••••AIza"); only "" means no key.
     const hasKey = (bucket) =>
       !!bucket && Object.values(bucket).some(
-        (p) => p && (p.enabled || (p.apiKey && String(p.apiKey).length > 0)),
+        (p) => p && p.enabled && p.apiKey && String(p.apiKey).length > 0,
       );
     state.keyStatus.tts = hasKey(cfg.tts);
     state.keyStatus.stt = hasKey(cfg.stt);
@@ -1406,6 +1434,7 @@ async function connectWithToken({ host, token, tid }) {
 
     const client = new GatewayClient({ host, tenantId: tid || "", password: "" });
     client.token = token;
+    client.onQuota = flashQuotaNotice; // provider 429 → 친절 안내(장애 아님)
     state.client = client;
 
     client.addEventListener("status", (e) => {

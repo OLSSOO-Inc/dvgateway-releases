@@ -142,6 +142,18 @@ export class GatewayClient extends EventTarget {
       body: JSON.stringify({ text, provider: provider || "" }),
     });
     if (!res.ok) throw await mkApiError(res, "synthesize");
+    // Provider quota / rate-limit (HTTP 429) is surfaced by the gateway as
+    // X-TTS-Quota headers — the audio body is the espeak-ng fallback so it
+    // still plays, but the caller should tell the user it's a temporary
+    // 사용량 한도, not a service outage. Notify via onQuota if registered.
+    if (res.headers.get("X-TTS-Quota") === "exceeded" && typeof this.onQuota === "function") {
+      try {
+        this.onQuota({
+          provider: res.headers.get("X-TTS-Quota-Provider") || provider || "",
+          retryAfterSec: parseInt(res.headers.get("X-TTS-Quota-Retry-After") || "0", 10) || 0,
+        });
+      } catch {}
+    }
     return new Uint8Array(await res.arrayBuffer());
   }
 
