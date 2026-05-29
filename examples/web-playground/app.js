@@ -39,6 +39,11 @@ const state = {
     sttProvider: "deepgram",
     sttKey: "",
   },
+  // keyStatus: whether the gateway currently has a usable TTS / STT provider
+  // key registered. Refreshed from GET /api/v1/config/apikeys on connect and
+  // after each key save. Drives the per-template "키 등록됨 / 키 필요" tags so
+  // the user sees at a glance whether a demo will work. null = 아직 미확인.
+  keyStatus: { tts: null, stt: null },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -194,6 +199,8 @@ async function connect() {
   // client에 등록되도록 함. init() 시점에 client=null로 mount된 상태라면
   // listener가 영구히 안 달려있던 회귀를 방지.
   remountCurrentTemplate();
+  // 템플릿 카드의 TTS/STT 키 태그를 게이트웨이 등록 상태로 갱신.
+  refreshKeyStatus();
   // 헤더 좌측에 게이트웨이 버전 표시.
   fetchGatewayVersion();
 }
@@ -639,6 +646,7 @@ async function saveTtsKeyToGateway() {
     });
     statusEl.textContent = `✓ ${p.ttsProvider} 키 저장됨 (게이트웨이의 /tts/synthesize 가 즉시 사용)`;
     log("ok", "provider:tts:saved", { provider: p.ttsProvider });
+    refreshKeyStatus(); // 템플릿 카드 TTS 태그를 "키 등록됨"으로 갱신
   } catch (err) {
     statusEl.textContent = `✗ 실패: ${err.message}`;
     log("err", "provider:tts:save:fail", { error: err.message });
@@ -660,6 +668,7 @@ async function saveSttKeyToGateway() {
     });
     statusEl.textContent = `✓ ${p.sttProvider} 키 저장됨 (회의 STT 시작 시 이 provider 사용)`;
     log("ok", "provider:stt:saved", { provider: p.sttProvider });
+    refreshKeyStatus(); // 템플릿 카드 STT 태그를 "키 등록됨"으로 갱신
   } catch (err) {
     statusEl.textContent = `✗ 실패: ${err.message}`;
     log("err", "provider:stt:save:fail", { error: err.message });
@@ -950,19 +959,70 @@ function escapeHtml(s) {
 }
 
 // ── templates ──────────────────────────────────────────────────────
+
+// reqTag: render a single TTS/STT requirement chip for a template card. The
+// chip reflects whether the gateway has a usable key for that category:
+//   ready  — 키 등록됨 (초록 ✓)
+//   needed — 키 필요  (앰버 ⚠) → 「4. 프로바이더 API 키」에서 등록 안내
+//   unknown — 아직 미확인 (연결 전, 회색)
+function reqTag(kind) {
+  const label = kind.toUpperCase();
+  const has = state.keyStatus[kind]; // true / false / null
+  let cls = "req-tag req-" + kind;
+  let mark = "";
+  let title = "";
+  if (has === true) { cls += " ready"; mark = "✓"; title = `${label} 키 등록됨 — 바로 사용 가능`; }
+  else if (has === false) { cls += " needed"; mark = "⚠"; title = `${label} 키 필요 — 「4. 프로바이더 API 키」에서 등록하세요`; }
+  else { cls += " unknown"; title = `${label} 키 필요 — Connect 후 등록 여부가 표시돼요`; }
+  return `<span class="${cls}" title="${escapeHtml(title)}">${mark ? mark + " " : ""}${label}</span>`;
+}
+
+let templateMenuWired = false;
+
 function renderTemplateMenu() {
   const ul = $("template-menu");
-  ul.innerHTML = templates.map((t) => `
-    <li data-id="${t.id}">
-      <span>${escapeHtml(t.title)}</span>
+  ul.innerHTML = templates.map((t) => {
+    const reqs = (t.requires || []);
+    const tags = reqs.length
+      ? `<span class="req-tags">${reqs.map(reqTag).join("")}</span>`
+      : `<span class="req-tags"><span class="req-tag none" title="API 키 없이도 동작해요">키 불필요</span></span>`;
+    return `
+    <li data-id="${t.id}" class="${state.currentTemplate && state.currentTemplate.id === t.id ? "active" : ""}">
+      <span class="tpl-head">${escapeHtml(t.title)}${tags}</span>
       <span class="desc">${escapeHtml(t.desc)}</span>
     </li>
-  `).join("");
-  ul.addEventListener("click", (e) => {
-    const li = e.target.closest("li");
-    if (!li) return;
-    selectTemplate(li.dataset.id);
-  });
+  `;
+  }).join("");
+  // delegated click — attach once so repeated re-renders don't stack listeners.
+  if (!templateMenuWired) {
+    ul.addEventListener("click", (e) => {
+      const li = e.target.closest("li");
+      if (!li) return;
+      selectTemplate(li.dataset.id);
+    });
+    templateMenuWired = true;
+  }
+}
+
+// refreshKeyStatus: query the gateway for registered provider keys and update
+// the per-template tags. A category counts as "ready" if any provider in that
+// bucket is enabled (or carries a non-empty masked key). Best-effort — on
+// error we leave the prior state untouched.
+async function refreshKeyStatus() {
+  if (!state.client) return;
+  try {
+    const cfg = await state.client.getApiKeys();
+    const hasKey = (bucket) =>
+      !!bucket && Object.values(bucket).some(
+        (p) => p && (p.enabled || (p.apiKey && String(p.apiKey).length > 0)),
+      );
+    state.keyStatus.tts = hasKey(cfg.tts);
+    state.keyStatus.stt = hasKey(cfg.stt);
+  } catch (err) {
+    // leave keyStatus as-is; tags stay in their last known state
+    console.warn("refreshKeyStatus failed:", err);
+  }
+  renderTemplateMenu();
 }
 
 // remountCurrentTemplate: connect 직후 호출. 템플릿이 mount() 안에서

@@ -262,6 +262,63 @@ button.danger { background: var(--err); border-color: var(--err); color: white; 
   font-weight: normal;
 }
 
+/* 템플릿 카드 제목 + 요구 키 태그 */
+.menu li .tpl-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.req-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.req-tag {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+/* 키 등록됨 — 초록 (채워진 배경으로 확실히) */
+.req-tag.ready {
+  color: #bbf7d0;
+  border-color: rgba(74, 222, 128, 0.55);
+  background: rgba(74, 222, 128, 0.18);
+}
+/* 키 필요 — 앰버 (주의 환기, 가장 눈에 띄게) */
+.req-tag.needed {
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.6);
+  background: rgba(251, 191, 36, 0.2);
+}
+/* 연결 전 미확인 — TTS/STT 종류별 색으로 구분 (회색 위 회색 방지) */
+.req-tag.unknown.req-tts {
+  color: #c7b3ff;
+  border-color: rgba(168, 139, 250, 0.5);
+  background: rgba(168, 139, 250, 0.15);
+}
+.req-tag.unknown.req-stt {
+  color: #9fd2ff;
+  border-color: rgba(91, 158, 255, 0.5);
+  background: rgba(91, 158, 255, 0.15);
+}
+/* 키 불필요 — 또렷한 회색 칩 (배경 채움) */
+.req-tag.none {
+  font-weight: 700;
+  color: #c2cbd9;
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+/* active 카드에서도 태그 색은 유지 (제목 accent 색에 묻히지 않게) */
+.menu li.active .req-tag.ready { color: #bbf7d0; }
+.menu li.active .req-tag.needed { color: #fde68a; }
+
 /* Outbound (click-to-call) panel */
 #outbound-panel fieldset {
   border: none;
