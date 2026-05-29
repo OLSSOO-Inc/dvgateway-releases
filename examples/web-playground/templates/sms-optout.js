@@ -62,19 +62,15 @@ function mount(ctx) {
       <label>안내 멘트 (연결되면 자동 재생)
         <textarea id="so-greet">문자 수신거부 등록입니다. 발신하신 번호로 등록하시려면 우물정자(#)를, 다른 번호로 등록하시려면 번호를 누르고 우물정자(#)를 눌러주세요.</textarea>
       </label>
-    </div>
-
-    <div class="field">
-      <label><input type="checkbox" id="so-enable" /> ✅ 자동 안내 켜기 (체크하면 다음 통화 연결 시 안내를 들려드려요)</label>
+      <p class="help">이 템플릿을 켜 둔 동안 <b>통화가 연결되면 안내 멘트를 자동 재생</b>합니다. 별도 버튼은 필요 없어요. 벨이 울리는 중에는 대기했다가 상대가 받는 순간 시작해요.</p>
     </div>
 
     <div class="transcript" id="so-state" style="margin-top:16px;">
-      <p class="muted small">진행 중인 통화가 연결되면 여기에 단계별 진행 상황이 표시돼요.</p>
+      <p class="muted small">대기 중 — 통화가 연결되면 여기에 단계별 진행 상황이 표시돼요.</p>
     </div>
   `;
 
   const greetEl = ctx.body.querySelector("#so-greet");
-  const enableEl = ctx.body.querySelector("#so-enable");
   const stateEl = ctx.body.querySelector("#so-state");
 
   // 통화별 상태: { phase, entered, caller }
@@ -109,17 +105,33 @@ function mount(ctx) {
     }
   }
 
+  // beginSession: 통화 연결 시 안내 멘트 재생 + 키 입력 수집 시작. 중복 호출
+  // (즉시재생 + up 이벤트, 또는 중복 up)은 sessions 가드로 1회만 실행.
+  async function beginSession(linkedId) {
+    if (!ctx.client || !linkedId || sessions.has(linkedId)) return;
+    sessions.set(linkedId, { phase: "collecting", entered: "", caller: callerOf(linkedId) });
+    const greet = greetEl.value.trim();
+    if (greet) await speak(linkedId, greet, "📢 안내 멘트 재생");
+    pushLog(linkedId, `⌨ 키 입력 대기 중 (발신번호 ${callerOf(linkedId) || "미상"})`);
+  }
+
+  // 이미 연결(up)된 활성 통화가 있으면 템플릿을 켠 즉시 시작 — 통화 도중에
+  // 골라도 바로 테스트되도록. 벨(ring) 단계면 안내만 띄우고 up 을 기다린다.
+  const live = Array.from(ctx.getActiveCalls().values());
+  const upCall = live.find((c) => c.state === "up" || c.channelState === "up");
+  if (upCall) {
+    beginSession(upCall.linkedId);
+  } else if (live.length) {
+    pushLog(live[0].linkedId, "📞 통화가 연결되면 자동으로 안내를 시작해요 (벨 울리는 중 대기)");
+  }
+
   const handler = async (e) => {
-    if (!enableEl.checked || !ctx.client) return;
+    if (!ctx.client) return;
     const evt = e.detail;
 
     // 1) 통화 연결 → 안내 멘트
     if (evt.event === "channel:state" && evt.state === "up" && evt.linkedId) {
-      if (sessions.has(evt.linkedId)) return; // 중복 up 가드
-      sessions.set(evt.linkedId, { phase: "collecting", entered: "", caller: callerOf(evt.linkedId) });
-      const greet = greetEl.value.trim();
-      if (greet) await speak(evt.linkedId, greet, "📢 안내 멘트 재생");
-      pushLog(evt.linkedId, `⌨ 키 입력 대기 중 (발신번호 ${callerOf(evt.linkedId) || "미상"})`);
+      await beginSession(evt.linkedId);
       return;
     }
 

@@ -39,44 +39,50 @@ function mount(ctx) {
       <label>전화에 들려드릴 인사말
         <textarea id="gt-text">안녕하세요. Dynamic VoIP 게이트웨이 데모입니다. 무엇을 도와드릴까요?</textarea>
       </label>
+      <p class="help">이 템플릿을 켜 둔 동안 <b>통화가 연결되면 위 인사말을 자동으로 재생</b>합니다. 별도 버튼을 누를 필요는 없어요. 벨이 울리는 동안에는 아직 음성을 주고받을 수 없어, 상대가 전화를 받는 순간 들려드려요.</p>
     </div>
-    <div class="field">
-      <label><input type="checkbox" id="gt-enable" /> ✅ 자동 인사말 켜기 (체크하면 다음 통화부터 자동으로 들려드려요)</label>
-      <p class="help">통화가 <b>연결되는 순간</b>(상대방이 전화를 받았을 때) 인사말이 자동으로 재생돼요. 벨이 울리는 동안에는 아직 음성을 주고받을 수 없어 재생되지 않습니다 — 연결될 때까지 기다렸다가 들려드려요.</p>
-    </div>
-    <p class="help" id="gt-status">아직 보낸 인사말이 없어요. 위 체크박스를 켜고 새 통화가 연결되기를 기다려 보세요.</p>
+    <p class="help" id="gt-status">대기 중 — 통화가 연결되면 자동으로 인사말을 들려드려요.</p>
   `;
 
   const textEl = ctx.body.querySelector("#gt-text");
-  const enableEl = ctx.body.querySelector("#gt-enable");
   const statusEl = ctx.body.querySelector("#gt-status");
 
-  // 같은 통화에서 channel:state up 이 여러 번 와도 인사말은 한 번만 재생.
+  // 같은 통화에 인사말은 한 번만 재생 (중복 up / 즉시재생 + 이벤트 중복 방지).
   const greeted = new Set();
 
-  const handler = async (e) => {
-    if (!enableEl.checked) return;
-    if (!ctx.client) return;
-
-    const evt = e.detail;
-    // 통화가 "연결(up)"된 순간에만 주입 — ring(벨) 단계에는 미디어가 없어
-    // 주입해도 발신자가 들을 수 없으므로 up 을 기다린다.
-    if (!(evt.event === "channel:state" && evt.state === "up")) return;
-    if (!evt.linkedId || greeted.has(evt.linkedId)) return;
-    greeted.add(evt.linkedId);
-
+  async function greet(linkedId) {
+    if (!ctx.client || !linkedId || greeted.has(linkedId)) return;
     const text = textEl.value.trim();
     if (!text) return;
-
-    statusEl.textContent = `🔊 인사말 보내는 중… "${text.slice(0, 28)}${text.length > 28 ? "…" : ""}" → 통화 ${evt.linkedId}`;
+    greeted.add(linkedId);
+    statusEl.textContent = `🔊 인사말 보내는 중… "${text.slice(0, 28)}${text.length > 28 ? "…" : ""}" → 통화 ${linkedId}`;
     try {
-      await ctx.safeInjectText(evt.linkedId, text);
-      statusEl.textContent = `✓ 인사말을 들려드렸어요 (통화 ${evt.linkedId})`;
-      ctx.log("ok", "greeting:injected", { linkedId: evt.linkedId, text, mode: ctx.providerMode?.() });
+      await ctx.safeInjectText(linkedId, text);
+      statusEl.textContent = `✓ 인사말을 들려드렸어요 (통화 ${linkedId})`;
+      ctx.log("ok", "greeting:injected", { linkedId, text, mode: ctx.providerMode?.() });
     } catch (err) {
-      greeted.delete(evt.linkedId); // 실패 시 재시도 가능하도록 표시 해제
+      greeted.delete(linkedId); // 실패 시 재시도 가능하도록 해제
       statusEl.textContent = `✗ 인사말을 보내지 못했어요: ${err.message}`;
       ctx.log("err", "greeting:fail", { error: err.message });
+    }
+  }
+
+  // 이미 "연결(up)"된 활성 통화가 있으면 템플릿을 켠 즉시 인사말 재생 —
+  // 사용자가 통화 도중에 이 템플릿을 골라도 바로 테스트되도록. 아직 벨(ring)
+  // 단계면 안내만 띄우고 up 이벤트를 기다린다.
+  const live = Array.from(ctx.getActiveCalls().values());
+  const upCall = live.find((c) => c.state === "up" || c.channelState === "up");
+  if (upCall) {
+    greet(upCall.linkedId);
+  } else if (live.length) {
+    statusEl.textContent = "📞 통화가 연결되면(상대가 받으면) 자동으로 인사말을 들려드려요. 벨이 울리는 중에는 대기합니다.";
+  }
+
+  const handler = (e) => {
+    const evt = e.detail;
+    // 통화가 "연결(up)"된 순간에 주입 — ring(벨) 단계는 미디어가 없어 스킵.
+    if (evt.event === "channel:state" && evt.state === "up" && evt.linkedId) {
+      greet(evt.linkedId);
     }
   };
 
