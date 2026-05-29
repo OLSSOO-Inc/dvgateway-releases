@@ -682,6 +682,7 @@ function wireProviderUI() {
     updateTtsPlaceholders();
     $("prov-tts-status").dataset.transient = ""; // 새 provider — 액션 메시지 해제
     updateProviderKeyHint(); // 새 provider 의 키 저장 여부 안내
+    renderTemplateMenu();    // 카드 태그도 선택 provider 기준으로 갱신
     saveProviderState();
   });
   $("prov-tts-key").addEventListener("input", (e) => {
@@ -698,6 +699,7 @@ function wireProviderUI() {
     $("prov-stt-key").value = "";
     $("prov-stt-status").dataset.transient = ""; // 새 provider — 액션 메시지 해제
     updateProviderKeyHint(); // 새 provider 의 키 저장 여부 안내
+    renderTemplateMenu();    // 카드 태그도 선택 provider 기준으로 갱신
     saveProviderState();
   });
   $("prov-stt-key").addEventListener("input", (e) => {
@@ -1047,19 +1049,46 @@ function escapeHtml(s) {
 // ── templates ──────────────────────────────────────────────────────
 
 // reqTag: render a single TTS/STT requirement chip for a template card. The
-// chip reflects whether the gateway has a usable key for that category:
-//   ready  — 키 등록됨 (초록 ✓)
-//   needed — 키 필요  (앰버 ⚠) → 「4. 프로바이더 API 키」에서 등록 안내
+// chip reflects whether the CURRENTLY SELECTED provider has a usable key —
+// not just "any provider in the category". The demos synthesize with the
+// provider chosen in the 「4. 프로바이더 API 키」 panel, so a category-level
+// check would show "✓ 등록됨" when e.g. ElevenLabs has a key but the user
+// selected Gemini (no key) — and the demo would then fail. We therefore key
+// the chip off state.keyStatus.{tts,stt}ByProvider[selectedProvider].
+//   ready  — 선택한 provider 에 키 등록됨 (초록 ✓)
+//   needed — 선택한 provider 에 키 없음 (앰버 ⚠)
 //   unknown — 아직 미확인 (연결 전, 회색)
 function reqTag(kind) {
   const label = kind.toUpperCase();
-  const has = state.keyStatus[kind]; // true / false / null
+  const selected = kind === "tts" ? state.provider.ttsProvider : state.provider.sttProvider;
+  const byProvider = kind === "tts" ? state.keyStatus.ttsByProvider : state.keyStatus.sttByProvider;
+
+  // Determine has = true / false / null(unknown).
+  //  - Not connected yet (category status still null) → unknown.
+  //  - Per-provider map populated → use the SELECTED provider's presence.
+  //  - Connected but map somehow empty → fall back to category-level.
+  let has;
+  if (state.keyStatus[kind] === null) {
+    has = null; // 연결 전 — 미확인
+  } else if (byProvider && Object.keys(byProvider).length > 0) {
+    has = !!byProvider[selected];
+  } else {
+    has = state.keyStatus[kind];
+  }
+
   let cls = "req-tag req-" + kind;
   let mark = "";
   let title = "";
-  if (has === true) { cls += " ready"; mark = "✓"; title = `${label} 키 등록됨 — 바로 사용 가능`; }
-  else if (has === false) { cls += " needed"; mark = "⚠"; title = `${label} 키 필요 — 「4. 프로바이더 API 키」에서 등록하세요`; }
-  else { cls += " unknown"; title = `${label} 키 필요 — Connect 후 등록 여부가 표시돼요`; }
+  if (has === true) {
+    cls += " ready"; mark = "✓";
+    title = `${label} 키 등록됨 (${selected}) — 바로 사용 가능`;
+  } else if (has === false) {
+    cls += " needed"; mark = "⚠";
+    title = `${label} 키 필요 — 선택한 provider(${selected})에 키가 없어요. 「4. 프로바이더 API 키」에서 등록하세요`;
+  } else {
+    cls += " unknown";
+    title = `${label} 키 필요 — Connect 후 등록 여부가 표시돼요`;
+  }
   return `<span class="${cls}" title="${escapeHtml(title)}">${mark ? mark + " " : ""}${label}</span>`;
 }
 
