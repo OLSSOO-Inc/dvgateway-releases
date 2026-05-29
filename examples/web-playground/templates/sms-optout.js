@@ -34,8 +34,9 @@ ws.onmessage = async (msg) => {
       "다른 번호로 등록하시려면 번호를 누르고 우물정자를 눌러주세요.");
   }
 
-  // 2) DTMF 수집 (phase=end 기준)
+  // 2) DTMF 수집 (phase=end · received 방향만 — sent 는 게이트웨이 에코라 중복)
   if (evt.event === "call:dtmf" && evt.phase === "end") {
+    if (evt.direction && evt.direction !== "received") return;
     const lid = evt.linkedId;
     if (optedOut.has(lid)) return;
     if (evt.digit === "#") {
@@ -54,13 +55,35 @@ ws.onmessage = async (msg) => {
 // spell: 번호를 한 자리씩 공백으로 분리해 TTS가 또박또박 읽도록.
 const spell = (s) => String(s || "").replace(/[^0-9*#]/g, "").split("").join(" ");
 
+// formatPhone: 한국 전화번호를 보기 좋은 하이픈 형식으로 (화면 표시용).
+//   01012345678 → 010-1234-5678 / 0212345678 → 02-1234-5678 / 그 외는 원본.
+const formatPhone = (s) => {
+  const d = String(s || "").replace(/\D/g, "");
+  if (/^01[016789]\d{7,8}$/.test(d)) {
+    return d.length === 11
+      ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`   // 010-1234-5678
+      : `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;  // 010-123-4567
+  }
+  if (/^02\d{7,8}$/.test(d)) {
+    return d.length === 10
+      ? `${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}`   // 02-1234-5678
+      : `${d.slice(0, 2)}-${d.slice(2, 5)}-${d.slice(5)}`;  // 02-123-4567
+  }
+  if (/^0\d{9,10}$/.test(d)) { // 그 외 지역번호 (031, 064 …)
+    return d.length === 11
+      ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`
+      : `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return d || String(s || "");
+};
+
 function mount(ctx) {
   ctx.body.innerHTML = `
     <p class="help">전화가 <b>연결되면</b> 수신거부 안내 멘트를 들려주고, 발신자가 키패드로 번호를 누르거나(#로 종료) 바로 #만 누르면 <b>발신번호(CallerID)</b>로 등록합니다. 등록 번호를 TTS로 또박또박 확인시켜 줘요. <b>(mode=both 통화 필요)</b></p>
 
     <div class="field">
       <label>안내 멘트 (연결되면 자동 재생)
-        <textarea id="so-greet">문자 수신거부 등록입니다. 발신하신 번호로 등록하시려면 우물정자(#)를, 다른 번호로 등록하시려면 번호를 누르고 우물정자(#)를 눌러주세요.</textarea>
+        <textarea id="so-greet">문자 수신거부 등록입니다. 발신하신 번호로 등록하시려면 우물정자를, 다른 번호로 등록하시려면 번호를 누르고 우물정자를 눌러주세요.</textarea>
       </label>
       <p class="help">이 템플릿을 켜 둔 동안 <b>통화가 연결되면 안내 멘트를 자동 재생</b>합니다. 별도 버튼은 필요 없어요. 벨이 울리는 중에는 대기했다가 상대가 받는 순간 시작해요.</p>
     </div>
@@ -140,6 +163,12 @@ function mount(ctx) {
       const s = sessions.get(evt.linkedId);
       if (!s || s.phase !== "collecting") return;
 
+      // 게이트웨이는 같은 키를 direction="received"(발신자가 누름)와
+      // direction="sent"(되돌려보낸 에코) 두 이벤트로 보낸다. 둘 다 수집하면
+      // 입력이 두 배로 쌓이므로, 발신자가 실제로 누른 received 만 센다.
+      // (direction 이 비어 있는 구버전 게이트웨이는 그대로 한 번만 처리.)
+      if (evt.direction && evt.direction !== "received") return;
+
       if (evt.digit === "#") {
         s.phase = "done";
         const target = s.entered || s.caller || "";
@@ -151,12 +180,12 @@ function mount(ctx) {
         await speak(
           evt.linkedId,
           `${spell(target)} 번호를 수신거부로 등록했습니다. 감사합니다.`,
-          `✓ 등록 완료: ${target} (${s.entered ? "직접 입력" : "발신번호"})`,
+          `✓ 등록 완료: ${formatPhone(target)} (${s.entered ? "직접 입력" : "발신번호"})`,
         );
         // 운영 환경에서는 이 시점에 사내 수신거부 DB에 등록.
       } else if (/^[0-9*]$/.test(evt.digit)) {
         s.entered += evt.digit;
-        pushLog(evt.linkedId, `⌨ 입력 중: ${s.entered}`);
+        pushLog(evt.linkedId, `⌨ 입력 중: ${formatPhone(s.entered)}`);
       }
     }
   };

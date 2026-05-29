@@ -1071,14 +1071,32 @@ function selectTemplate(id) {
     getActiveCalls: () => state.activeCalls,
     safeInject,
     markSelfInjection: (lid) => state.selfInjections.add(lid),
-    // Mode-aware text→inject: synthesize via Mode A (gateway) or Mode B
-    // (browser direct) depending on the provider panel, then POST raw
-    // PCM into the call. Templates should use this instead of
-    // `client.injectText` so the Mode B path is honoured.
+    // Mode-aware text→inject with automatic delivery fallback.
+    //
+    // Two TTS delivery paths exist on the gateway:
+    //   1. PCM 주입 (POST /api/v1/tts/{id}) — fade-in/out, but needs an active
+    //      TTS player (= ExternalMedia attached). flow/lite 통화는 attach 전
+    //      이라 player 가 없어 404 "no active player" 로 거절됨.
+    //   2. ARI Playback TTS (POST /api/v1/playback/{id}/tts) — .sln16 파일을
+    //      ARI 로 채널에 직접 재생. player/ExternalMedia 불필요 → flow/lite
+    //      통화에서도 동작.
+    // 먼저 PCM 주입을 시도하고(일반 mode=both 의 부드러운 fade 유지), player
+    // 부재(404)면 ARI Playback 으로 폴백해 flow/lite 통화에서도 들리게 한다.
     safeInjectText: (lid, text) =>
       safeInject(lid, async () => {
-        const pcm = await synthesizePcm(text);
-        return state.client.injectAudio(lid, pcm, "application/octet-stream");
+        try {
+          const pcm = await synthesizePcm(text);
+          return await state.client.injectAudio(lid, pcm, "application/octet-stream");
+        } catch (err) {
+          // no active player (flow/lite, attach 전) → ARI Playback 폴백
+          if (String(err && err.message || "").includes("(404)")) {
+            log("info", "tts:fallback:playback", { linkedId: lid });
+            const provider = (state.provider && state.provider.ttsProvider) || "";
+            await state.client.liteTtsPlayback(lid, text, provider);
+            return null; // ARI Playback 에는 injectId 가 없음
+          }
+          throw err;
+        }
       }),
     providerMode: () => state.provider.mode,
     // 1.4.6.15: 데모 템플릿(lite-ivr 등)이 사이드바 선택을 SSOT로 사용할 수
