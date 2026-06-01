@@ -90,12 +90,21 @@ function mount(ctx) {
       <div class="field"><label>callerName <input id="ap-caller-name" type="text" placeholder="홍길동" /></label></div>
     </div>
 
-    <div style="margin-top:12px;">
+    <div class="field" style="margin-top:12px;">
+      <label>빠른 예시 <span class="muted small">— 클릭하면 값이 채워져요 (전문가는 위에서 직접 입력)</span></label>
+      <div id="ap-presets" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
+    </div>
+
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
       <button id="ap-send" class="primary">푸시 전송</button>
+      <button id="ap-clear" type="button">입력 지우기</button>
+      <label class="muted small" style="display:flex;align-items:center;gap:4px;">
+        <input id="ap-autosend" type="checkbox" checked /> 예시 클릭 시 바로 발송
+      </label>
     </div>
 
     <div class="transcript" id="ap-result" style="margin-top:16px;">
-      <p class="muted small">대기 중 — 대상 내선과 푸시 종류를 정하고 「푸시 전송」을 눌러보세요.</p>
+      <p class="muted small">대기 중 — <b>대상 내선</b>만 입력하고 위의 <b>빠른 예시</b>를 클릭하면 바로 발송돼요. 세부 값은 직접 입력해도 됩니다.</p>
     </div>
   `;
 
@@ -121,6 +130,7 @@ function mount(ctx) {
       p.style.display = p.dataset.kind === kind ? "" : "none";
     });
     if (kind === "call_summary") renderCalls();
+    renderPresets();
   }
   kindEl.addEventListener("change", showPane);
 
@@ -138,8 +148,76 @@ function mount(ctx) {
     }));
   }
 
+  // ── 빠른 예시 프리셋 ───────────────────────────────────────────
+  // 종류별로 필드를 한 번에 채우는 예시. 테스트하는 사람이 "뭘 입력하지?"
+  // 고민 없이 클릭만으로 바로 발송해볼 수 있게. 전문가는 위 입력란에 직접.
+  // linkedId 처럼 환경에 따라 달라지는 값은 활성 통화에서 자동 보충한다.
+  const PRESETS = {
+    custom: [
+      { label: "📢 공지", fields: { subtype: "announcement", title: "공지사항", body: "잠시 후 전체 회의가 시작됩니다", data: '{"room":"A-301"}' } },
+      { label: "🟢 상태(통화중)", fields: { subtype: "agent_status", title: "상태 변경", body: "통화 중으로 전환됨", data: '{"status":"busy"}' } },
+      { label: "🔔 대기열 경고", fields: { subtype: "queue_alert", title: "대기열 알림", body: "대기 통화 5건 초과", data: '{"queue":"support","waiting":"5"}' } },
+    ],
+    call_summary: [
+      { label: "📝 요약+녹취", fields: { summary: "https://example.com/s/demo", transcript: "https://example.com/t/demo", audio: "https://example.com/a/demo" } },
+      { label: "📄 요약만", fields: { summary: "https://example.com/s/demo" } },
+      { label: "🎧 녹취만", fields: { audio: "https://example.com/a/demo" } },
+    ],
+    missed_call: [
+      { label: "📵 휴대폰", fields: { callerNum: "01012345678", callerName: "홍길동" } },
+      { label: "📵 번호만", fields: { callerNum: "0212345678", callerName: "" } },
+    ],
+  };
+
+  // 종류별 필드 id 매핑 (지우기·채우기 공용)
+  const FIELD_IDS = {
+    custom: { subtype: "#ap-subtype", title: "#ap-title", body: "#ap-body", data: "#ap-data" },
+    call_summary: { linked: "#ap-linked", summary: "#ap-summary", transcript: "#ap-transcript", audio: "#ap-audio" },
+    missed_call: { callerNum: "#ap-caller-num", callerName: "#ap-caller-name" },
+  };
+
+  function fillFields(kind, fields) {
+    const ids = FIELD_IDS[kind];
+    for (const [key, sel] of Object.entries(ids)) {
+      if (key in fields) { const el = $(sel); if (el) el.value = fields[key]; }
+    }
+    // call_summary 는 linkedId 가 있어야 발송 가능 — 비어 있으면 활성 통화에서 보충.
+    if (kind === "call_summary") {
+      const linkedEl = $("#ap-linked");
+      if (linkedEl && !linkedEl.value.trim()) {
+        const calls = Array.from(ctx.getActiveCalls().values());
+        if (calls.length) linkedEl.value = calls[0].linkedId;
+      }
+    }
+  }
+
+  function clearFields(kind) {
+    const ids = FIELD_IDS[kind || kindEl.value];
+    for (const sel of Object.values(ids)) { const el = $(sel); if (el) el.value = ""; }
+    if ((kind || kindEl.value) === "custom") { const s = $("#ap-subtype"); if (s) s.value = "custom"; }
+  }
+
+  function renderPresets() {
+    const box = $("#ap-presets");
+    if (!box) return;
+    const kind = kindEl.value;
+    box.innerHTML = (PRESETS[kind] || []).map((p, i) =>
+      `<button type="button" class="ap-preset small" data-idx="${i}">${p.label}</button>`).join("");
+    box.querySelectorAll(".ap-preset").forEach((b) => b.addEventListener("click", async () => {
+      const p = PRESETS[kind][Number(b.dataset.idx)];
+      fillFields(kind, p.fields);
+      // "바로 발송" 체크 시 채우고 즉시 전송 (대상 내선이 있을 때만).
+      if ($("#ap-autosend").checked) {
+        if (!$("#ap-ext").value.trim()) { pushResult(false, "예시를 채웠어요 — 대상 내선(extension)을 입력하고 「푸시 전송」을 눌러주세요."); return; }
+        await send();
+      } else {
+        pushResult(true, `예시 채움: ${p.label} — 확인 후 「푸시 전송」`);
+      }
+    }));
+  }
+
   async function send() {
-    if (!ctx.client) { pushResult(false, "게이트웨이에 연결되어 있지 않아요"); return; }
+    if (!ctx.client) { pushResult(false, "먼저 왼쪽 「1. 게이트웨이 연결」에서 로그인해 주세요."); return; }
     const extension = $("#ap-ext").value.trim();
     if (!extension) { pushResult(false, "대상 내선(extension)을 입력하세요"); return; }
     const kind = kindEl.value;
@@ -200,6 +278,10 @@ function mount(ctx) {
   }
 
   $("#ap-send").addEventListener("click", send);
+  $("#ap-clear").addEventListener("click", () => {
+    clearFields();
+    pushResult(true, "입력을 지웠어요");
+  });
 
   // call:ended 시 call_summary 패널의 통화 목록 갱신
   const handler = (e) => {

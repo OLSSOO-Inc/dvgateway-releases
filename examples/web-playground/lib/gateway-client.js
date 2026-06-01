@@ -449,9 +449,20 @@ function decodeJwtPayload(token) {
 
 async function mkApiError(res, op) {
   const body = await res.text().catch(() => "");
+  // push 계열은 503/404 의 의미가 통화 API 와 달라서 별도 힌트.
+  //   503 = 푸시 릴레이(GW_WARM_TRANSFER_PUSH_*) 미설정
+  //   404 = 해당 내선으로 등록된 기기 없음 (앱 미등록/미승인)
+  const isPush = /push|notify/i.test(op);
   let hint = "";
   if (res.status === 403) hint = " — 다른 테넌트의 linkedId일 수 있습니다";
-  else if (res.status === 404) hint = " — 활성 통화 없음 (이미 종료됐을 가능성)";
-  else if (res.status === 503) hint = " — 기능 비활성 (라이선스 또는 설정)";
+  else if (res.status === 404) {
+    hint = isPush
+      ? " — 해당 내선으로 등록된 기기 없음 (앱 로그인·내선 등록·기기 승인 확인)"
+      : " — 활성 통화 없음 (이미 종료됐을 가능성)";
+  } else if (res.status === 503) {
+    hint = isPush
+      ? " — 푸시 릴레이 미설정 (GW_WARM_TRANSFER_PUSH_ENABLED + URL + SECRET)"
+      : " — 기능 비활성 (라이선스 또는 설정)";
+  }
   return new Error(`${op} failed (${res.status})${hint}: ${body}`);
 }
