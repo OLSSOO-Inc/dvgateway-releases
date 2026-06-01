@@ -21,6 +21,7 @@ import sttCall from "./stt-call.js";
 import callEnded from "./call-ended.js";
 import liteIvr from "./lite-ivr.js";
 import smsOptout from "./sms-optout.js";
+import appPush from "./app-push.js";
 
 // recommendedTrigger: which call-start path makes the demo easiest to try.
 //   "outbound" — user should originate via the click-to-call panel
@@ -112,6 +113,14 @@ export const templates = [
     module: smsOptout,
     recommendedTrigger: "either",
     requires: ["tts"],
+  },
+  {
+    id: "app-push",
+    title: "11. 📲 앱 푸시·알림",
+    desc: "연동된 모바일 앱(내선 기준)으로 푸시 전송 — 범용/통화요약/부재중. 통화 없이도 테스트 가능.",
+    module: appPush,
+    recommendedTrigger: "either",
+    requires: [], // 푸시 릴레이 설정이 필요(provider 키 아님). 미설정 시 503 안내.
   },
 ];
 

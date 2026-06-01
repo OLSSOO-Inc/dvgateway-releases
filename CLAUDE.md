@@ -277,6 +277,17 @@ const s = await gw.getAudioStatus(linkedId);
 | **`getAudioStatus(linkedId)`** | **`get_audio_status(linked_id)`** | **현재 오디오 attach 상태 조회 (flowMode/attached/extMediaId/bridgeId)** |
 | **`flow()`** | **`flow()`** | **VoiceFlow 빌더 — stage 그래프 기반 IVR 자동화 (아래 섹션 참조)** |
 
+### 앱 푸시/알림 (모바일 FCM, gateway 1.4.8.0+)
+연동된 모바일 앱(예: makecall) 사용자에게 푸시 전송. gateway가 `extension → userId → fcm_token`(앱 온보딩으로 생성된 매핑)으로 라우팅해 FCM 릴레이(Cloud Function)에 HMAC 서명 전달. 모든 이벤트는 `dvg_event{subtype}` 단일 스키마. 테넌트는 서버가 JWT에서 강제. gateway에 릴레이 미설정 시 503.
+
+| TypeScript | Python | 설명 |
+|------------|--------|------|
+| **`pushToExtension({extension, subtype, title?, body?, linkedId?, data?})`** | **`push_to_extension(...)`** | **범용 푸시 — 임의 subtype + data(문자열 맵) 전달. 모든 편의 메서드의 기반** |
+| **`notifyCallSummary(linkedId, {extension, summaryUrl?, transcriptUrl?, audioUrl?, ...})`** | **`notify_call_summary(...)`** | **통화 종료 후 결과 링크 푸시(subtype=`call_summary`). 최소 1개 URL 필수. 짧은 만료 서명 URL 권장. 앱은 통화이력에 "요약 보기/녹취 듣기"로 노출** |
+| **`notifyMissedCall({extension, callerNumber?, callerName?, linkedId?})`** | **`notify_missed_call(...)`** | **부재중 알림(subtype=`missed_call`)** |
+
+> REST: `POST /api/v1/push/extension`, `POST /api/v1/push/call-summary/{linkedId}`. 페이로드·서명 규약은 [docs/warm-transfer-push-contract.md](../docs/warm-transfer-push-contract.md) 및 [docs/dvg-mobile-roadmap.md](../docs/dvg-mobile-roadmap.md) 참조. 수신 측(Function + 앱 라우팅)은 makecall 레포에서 구현.
+
 ### PBX 관리
 | TypeScript | Python | 설명 |
 |------------|--------|------|

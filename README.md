@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.7.2** | 업데이트: 2026-05-18
+> **최신 버전: 1.8.0** | 업데이트: 2026-05-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -55,6 +55,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | 15 | [같은 테넌트 멀티 구독자 충돌 방지](15-multi-subscriber-tenant-isolation.md) | 봇 + 모니터 + 데모를 한 테넌트로 운영할 때의 책임 분리, preempt 감지 |
 | 16 | [Web Playground 빠른 시작 — 코드 없이 5분 체험](16-web-playground-quickstart.md) | 브라우저만으로 통화 이벤트·TTS·DTMF·STT 클릭 체험, 본인 TTS/STT 키 테스트 |
 | 17 | [최소 비용 IVR 봇 (`mode=lite`)](17-lite-mode-ivr.md) | 안내 멘트 + DTMF만 받는 통화에 STT/LLM/TTS 없이 ARI Playback만 쓰는 표준 패턴. 비용·동시통화 효율 극대화 |
+| 18 | [앱 푸시 / 알림 (모바일 FCM)](18-app-push-notifications.md) | 연동된 모바일 앱 사용자에게 푸시 — 통화 종료 후 요약/녹취 링크, 부재중, 범용 `dvg_event`. `pushToExtension`/`notifyCallSummary`/`notifyMissedCall` |
 
 ---
 

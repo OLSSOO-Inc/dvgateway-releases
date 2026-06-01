@@ -363,6 +363,71 @@ export class GatewayClient extends EventTarget {
     if (!res.ok) throw await mkApiError(res, "listProviders");
     return res.json();
   }
+
+  // ── 앱 푸시 / 알림 (gateway 1.4.8.0) ─────────────────────────────
+  // 연동된 모바일 앱(extension → userId → fcm_token)에 dvg_event 푸시.
+  // 게이트웨이에 푸시 릴레이(GW_WARM_TRANSFER_PUSH_ENABLED + URL + SECRET)가
+  // 설정돼 있어야 동작 — 미설정 시 503.
+
+  // POST /api/v1/push/extension → { delivered, subtype }
+  // 범용 푸시. data 는 문자열 맵(앱이 subtype 별로 해석).
+  async pushToExtension({ extension, subtype, title, body, linkedId, data }) {
+    if (!extension) throw new Error("extension is required");
+    if (!subtype) throw new Error("subtype is required");
+    const payload = { extension, subtype };
+    if (title) payload.title = title;
+    if (body) payload.body = body;
+    if (linkedId) payload.linkedid = linkedId;
+    if (data && Object.keys(data).length) payload.data = data;
+    const res = await fetch(`${this.apiBase}/api/v1/push/extension`, {
+      method: "POST",
+      headers: this._authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw await mkApiError(res, "pushToExtension");
+    return res.json();
+  }
+
+  // POST /api/v1/push/call-summary/{linkedId} → { delivered, subtype, linkedid }
+  // 통화 종료 후 결과 링크 푸시. summaryUrl/transcriptUrl/audioUrl 중 1개 이상 필수.
+  async notifyCallSummary(linkedId, { extension, summaryUrl, transcriptUrl, audioUrl, title, body }) {
+    if (!linkedId) throw new Error("linkedId is required");
+    if (!extension) throw new Error("extension is required");
+    if (!summaryUrl && !transcriptUrl && !audioUrl) {
+      throw new Error("at least one of summaryUrl/transcriptUrl/audioUrl is required");
+    }
+    const payload = { extension };
+    if (summaryUrl) payload.summaryUrl = summaryUrl;
+    if (transcriptUrl) payload.transcriptUrl = transcriptUrl;
+    if (audioUrl) payload.audioUrl = audioUrl;
+    if (title) payload.title = title;
+    if (body) payload.body = body;
+    const res = await fetch(
+      `${this.apiBase}/api/v1/push/call-summary/${encodeURIComponent(linkedId)}`,
+      {
+        method: "POST",
+        headers: this._authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!res.ok) throw await mkApiError(res, "notifyCallSummary");
+    return res.json();
+  }
+
+  // 부재중 알림 — pushToExtension 의 missed_call subtype 편의 래퍼.
+  async notifyMissedCall({ extension, callerNumber, callerName, linkedId }) {
+    const data = {};
+    if (callerNumber) data.caller_number = callerNumber;
+    if (callerName) data.caller_name = callerName;
+    return this.pushToExtension({
+      extension,
+      subtype: "missed_call",
+      title: callerName || callerNumber || undefined,
+      body: callerNumber || undefined,
+      linkedId,
+      data,
+    });
+  }
 }
 
 // ── JWT helpers ────────────────────────────────────────────────────
