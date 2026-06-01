@@ -12,6 +12,43 @@
 //   · 범용(custom)    — 임의 subtype + data
 //   · 통화 요약(call_summary) — summaryUrl/transcriptUrl/audioUrl
 //   · 부재중(missed_call)     — callerNumber/callerName
+//
+// 우측에 Android/iOS 앱 설치 QR(오프라인 생성, 외부 의존 없음)을 표시.
+
+import { renderQr } from "../lib/qrcode.js";
+
+const ANDROID_URL = "https://play.google.com/store/apps/details?id=com.olssoo.makecall_app";
+const IOS_URL = "https://apps.apple.com/kr/app/makecall/id6475055702";
+
+// 공식 스토어 배지 스타일을 인라인 SVG로 재현(외부 이미지/다운로드 없음 →
+// 오프라인·폐쇄망에서도 동작, 외부 서버 의존 0). 검정 라운드 버튼 +
+// 스토어 아이콘 + "GET IT ON / Google Play", "Download on the / App Store".
+// 폭 132로 QR과 동일 정렬.
+const BADGE_W = 132;
+const BADGE_H = 40;
+
+// Google Play 삼각 재생 아이콘(4색) + 텍스트
+const GOOGLE_PLAY_SVG = `
+<svg width="${BADGE_W}" height="${BADGE_H}" viewBox="0 0 132 40" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Get it on Google Play">
+  <rect x="0.5" y="0.5" width="131" height="39" rx="6" fill="#000" stroke="#a6a6a6" stroke-width="1"/>
+  <g transform="translate(11,10)">
+    <path d="M0 0.6 L0 19.4 L10 10 Z" fill="#00d2ff"/>
+    <path d="M0 0.6 L13.8 8.0 L10 10 Z" fill="#00f076"/>
+    <path d="M0 19.4 L13.8 12.0 L10 10 Z" fill="#fc3349"/>
+    <path d="M13.8 8.0 L18 10 L13.8 12.0 L10 10 Z" fill="#ffce00"/>
+  </g>
+  <text x="40" y="15" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="7" letter-spacing="0.5">GET IT ON</text>
+  <text x="40" y="30" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="600">Google Play</text>
+</svg>`;
+
+// Apple 로고 + 텍스트
+const APP_STORE_SVG = `
+<svg width="${BADGE_W}" height="${BADGE_H}" viewBox="0 0 132 40" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Download on the App Store">
+  <rect x="0.5" y="0.5" width="131" height="39" rx="6" fill="#000" stroke="#a6a6a6" stroke-width="1"/>
+  <path fill="#fff" transform="translate(12,9) scale(0.9)" d="M14.94 11.07c-.02-2.06 1.68-3.05 1.76-3.1-0.96-1.4-2.45-1.6-2.98-1.62-1.27-.13-2.48.75-3.12.75-.64 0-1.64-.73-2.7-.71-1.39.02-2.67.81-3.38 2.05-1.44 2.5-.37 6.2 1.04 8.23.69.99 1.51 2.1 2.58 2.06 1.04-.04 1.43-.67 2.69-.67 1.25 0 1.61.67 2.7.65 1.12-.02 1.83-1 2.51-2 .79-1.15 1.12-2.26 1.14-2.32-.03-.01-2.18-.84-2.2-3.32zM12.9 5.01c.56-.69.94-1.63.84-2.59-.81.03-1.81.54-2.39 1.22-.52.6-.98 1.58-.86 2.5.91.07 1.84-.46 2.41-1.13z"/>
+  <text x="32" y="15" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="7" letter-spacing="0.3">Download on the</text>
+  <text x="32" y="30" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="600">App Store</text>
+</svg>`;
 
 const CODE = `// SDK로 동일하게:
 import { DVGatewayClient } from "dvgateway-sdk";
@@ -43,6 +80,9 @@ await client.notifyMissedCall({
 function mount(ctx) {
   ctx.body.innerHTML = `
     <p class="help">연동된 <b>모바일 앱</b> 사용자(내선 기준)에게 푸시를 보냅니다. 게이트웨이가 <code>extension → userId → fcm_token</code> 으로 라우팅하고, 테넌트는 JWT에서 강제돼요. <b>사전 요구</b>: 게이트웨이에 푸시 릴레이(<code>GW_WARM_TRANSFER_PUSH_ENABLED</code> + URL + SECRET)가 설정돼 있어야 합니다 — 미설정이면 503으로 안내해요.</p>
+
+    <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+     <div style="flex:1 1 360px;min-width:300px;">
 
     <div class="field">
       <label>대상 내선 (extension)
@@ -106,12 +146,43 @@ function mount(ctx) {
     <div class="transcript" id="ap-result" style="margin-top:16px;">
       <p class="muted small">대기 중 — <b>대상 내선</b>만 입력하고 위의 <b>빠른 예시</b>를 클릭하면 바로 발송돼요. 세부 값은 직접 입력해도 됩니다.</p>
     </div>
+
+     </div><!-- /left column -->
+
+     <div style="flex:0 0 auto;min-width:180px;">
+       <div class="field" style="margin-top:0;">
+         <label>📱 받을 앱 설치 <span class="muted small">— 폰으로 QR 스캔</span></label>
+         <p class="help">푸시는 이 앱을 설치하고 <b>로그인·내선 등록</b>을 마친 기기로 도착해요.</p>
+       </div>
+       <div style="display:flex;gap:16px;flex-wrap:wrap;">
+         <div style="text-align:center;width:132px;">
+           <a href="${ANDROID_URL}" target="_blank" rel="noopener" title="Android — Google Play"
+              style="display:block;margin-bottom:6px;line-height:0;">${GOOGLE_PLAY_SVG}</a>
+           <canvas id="ap-qr-android" title="Android — Google Play" style="display:block;border:1px solid var(--border,#333);border-radius:6px;"></canvas>
+         </div>
+         <div style="text-align:center;width:132px;">
+           <a href="${IOS_URL}" target="_blank" rel="noopener" title="iOS — App Store"
+              style="display:block;margin-bottom:6px;line-height:0;">${APP_STORE_SVG}</a>
+           <canvas id="ap-qr-ios" title="iOS — App Store" style="display:block;border:1px solid var(--border,#333);border-radius:6px;"></canvas>
+         </div>
+       </div>
+     </div><!-- /qr column -->
+
+    </div><!-- /flex row -->
   `;
 
   const $ = (sel) => ctx.body.querySelector(sel);
   const kindEl = $("#ap-kind");
   const resultEl = $("#ap-result");
   const result = [];
+
+  // 앱 설치 QR (오프라인 생성). 실패해도 링크는 남으므로 치명적 아님.
+  try {
+    renderQr($("#ap-qr-android"), ANDROID_URL, { size: 132 });
+    renderQr($("#ap-qr-ios"), IOS_URL, { size: 132 });
+  } catch (e) {
+    ctx.log("warn", "push:qr_render_failed", { error: String(e && e.message || e) });
+  }
 
   function pushResult(ok, msg) {
     result.push({ ok, msg, _t: Date.now() });
