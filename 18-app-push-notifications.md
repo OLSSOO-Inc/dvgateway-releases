@@ -45,6 +45,19 @@ subtype 카탈로그: [dvg-mobile-roadmap.md](../dvg-mobile-roadmap.md).
 
 ---
 
+## 멀티테넌트 — 테넌트 격리 & 라우팅
+
+푸시는 **처음부터 테넌트 격리**가 적용됩니다(별도 옵션 아님).
+
+- **발신(SDK) 측**: `tenantId`는 **요청 본문이 아니라 인증(JWT `tid` / `X-Tenant-ID`)에서 강제**됩니다. 따라서 한 테넌트로 인증한 클라이언트는 **자기 테넌트의 내선으로만** 푸시할 수 있고, 본문에 다른 tenantId를 넣어도 무시됩니다. SDK 메서드에 `tenantId`를 직접 넘기지 않습니다 — 클라이언트 초기화 시 결정됩니다.
+- **페이로드의 `tenantId`** = **Dynamic VoIP 테넌트 `path`** (16-hex, 예: `7be69580e27641df`). 게이트웨이가 `PBX_TENANT_SYNC_ENABLED=true`로 동작할 때, 이 값은 다이얼플랜 `${TENANT_PATH}` = REST `tenant` 헤더 = 통화 세션 tenantId와 **전 구간 동일한 단일 값**입니다.
+- **`extension`은 bare**(prefix 없음). Dynamic VoIP는 테넌트별 `T{tenant_id}_` prefix를 쓰지만(예: 테넌트2 내선 2000 = `T2_2000`), 페이로드에는 `2000`처럼 prefix 없이 담깁니다.
+- **수신(앱) 측 라우팅 키 = `(tenantId, extension)` 복합키**. 같은 내선 번호가 서로 다른 테넌트에 동시에 존재할 수 있으므로, extension 단독으로 토큰을 조회하면 **다른 테넌트 사용자에게 오발송**될 수 있습니다. 매칭 실패 시 extension 단독 폴백 금지(fail-closed). 수신 측 구현·온보딩 규약: [handoff-makecall-tenant-push.md](../handoff-makecall-tenant-push.md).
+
+> 즉 SDK 사용자는 평소처럼 `extension`만 지정하면 되고(테넌트는 인증에서 자동), 멀티테넌트 정합성은 게이트웨이(발신 격리) + 앱(수신 복합키 라우팅)이 함께 보장합니다.
+
+---
+
 ## 1. 통화 종료 후 요약/녹취 링크 — `notifyCallSummary`
 
 가장 가치 있는 패턴입니다. 통화가 끝나면(`call:ended`) STT 전사·요약·녹취를 만들어

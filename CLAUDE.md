@@ -288,6 +288,18 @@ const s = await gw.getAudioStatus(linkedId);
 
 > REST: `POST /api/v1/push/extension`, `POST /api/v1/push/call-summary/{linkedId}`. 페이로드·서명 규약은 [docs/warm-transfer-push-contract.md](../docs/warm-transfer-push-contract.md) 및 [docs/dvg-mobile-roadmap.md](../docs/dvg-mobile-roadmap.md) 참조. 수신 측(Function + 앱 라우팅)은 makecall 레포에서 구현.
 
+### WebRTC 소프트폰 프로비저닝 (gateway 1.4.8.3+ / SDK 1.8.1+)
+| TypeScript | Python | 설명 |
+|------------|--------|------|
+| **`provisionSoftphone({enrollToken?, extension?, deviceId, platform?})`** | **`provision_softphone(device_id, *, enroll_token?, extension?, platform?)`** | **QR 의 1회용 enrollToken 으로 소프트폰 프로비저닝. 반환 `{extension, tenantId?, sip:{wssUri,authUser,authToken,realm,expiresAt}, ice[], refresh:{url,refreshToken,minTtlSeconds}}`. 앱은 `sip.wssUri`(dvg 엣지)로 등록 — PBX 직접 연결 아님** |
+| **`refreshSoftphone(refreshToken)`** | **`refresh_softphone(refresh_token)`** | **refreshToken 회전 → 새 sip+ice. `expiresAt - minTtlSeconds` 에 선제 호출. 401(revoke)이면 소프트폰 내리고 click-to-call 폴백** |
+| **`createSoftphoneEnrollment(extension)`** (admin) | **`create_softphone_enrollment(extension)`** | **1회용 enrollToken + `dvgprov://enroll?t=&h=` QR URI 발급. tenantPath 는 JWT 에서 서버 강제** |
+| **`deprovisionSoftphone({deviceId, extension})`** | **`deprovision_softphone(device_id, extension)`** | **토큰 체인 무효화(로그아웃). PBX device 는 삭제 안 함(운영자 관리)** |
+
+> REST: `POST /api/v1/softphone/{provision,refresh,enroll,deprovision}`. device 는 **운영자가 PBX 관리자 웹에서 생성**(protocol=wss·mobile_client=true), dvg 는 `GET /api/v2/devices` 로 조회만 한다(read-only). 토폴로지·QR·수명 규약은 [docs/webrtc-softphone-provisioning-contract.md](../docs/webrtc-softphone-provisioning-contract.md) 참조.
+>
+> **⚠️ INTERIM**: device WRITE/secret-rotation API 가 생기기 전까지 `sip.authToken` 은 device 의 **raw PBX secret** 을 그대로 담는다. WRITE API 도입 시 단기 회전 secret 으로 교체되며 **응답 스키마는 불변**이다. `GW_SOFTPHONE_ENABLED` 미설정 시 모든 엔드포인트 503.
+
 ### PBX 관리
 | TypeScript | Python | 설명 |
 |------------|--------|------|

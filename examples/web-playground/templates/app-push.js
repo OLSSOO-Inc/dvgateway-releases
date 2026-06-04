@@ -13,6 +13,11 @@
 //   · 통화 요약(call_summary) — summaryUrl/transcriptUrl/audioUrl
 //   · 부재중(missed_call)     — callerNumber/callerName
 //
+// 추가로 "전화 수신 시 자동 푸시" 토글 — call:new 마다 수신 내선으로
+// subtype="incoming_softphone" 를 자동 발사(소프트폰 깨우기 데모). 클라이언트가
+// callinfo WS 를 듣고 쏘는 데모이며, 운영 백그라운드 깨우기는 게이트웨이
+// 서버측 자동 발사가 필요하다(contract §6 — 별도 작업).
+//
 // 우측에 Android/iOS 앱 설치 QR(오프라인 생성, 외부 의존 없음)을 표시.
 
 import { renderQr } from "../lib/qrcode.js";
@@ -75,6 +80,22 @@ await client.notifyMissedCall({
   extension: "1001",
   callerNumber: "01012345678",
   callerName: "홍길동",
+});
+
+// 4) 전화 수신 시 자동 푸시 — call:new 마다 수신 내선 깨우기
+//    (데모는 클라이언트가 callinfo WS 를 듣고 발사. 운영 백그라운드
+//     깨우기는 게이트웨이 서버측 자동 발사가 필요 — contract §6.)
+client.addEventListener("event", (e) => {
+  const evt = e.detail;
+  if (evt.event !== "call:new") return;
+  client.pushToExtension({
+    extension: evt.callee,            // 수신 대상 내선
+    subtype: "incoming_softphone",    // 소프트폰 깨우기 신호
+    title: "수신 전화",
+    body: evt.callerName || evt.caller,
+    linkedId: evt.linkedId,
+    data: { caller_number: evt.caller || "", caller_name: evt.callerName || "" },
+  });
 });`;
 
 function mount(ctx) {
@@ -135,12 +156,19 @@ function mount(ctx) {
       <div id="ap-presets" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
     </div>
 
-    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button id="ap-send" class="primary">푸시 전송</button>
       <button id="ap-clear" type="button">입력 지우기</button>
       <label class="muted small" style="display:flex;align-items:center;gap:4px;">
         <input id="ap-autosend" type="checkbox" checked /> 예시 클릭 시 바로 발송
       </label>
+    </div>
+
+    <div class="field" style="margin-top:12px;padding:10px;border:1px dashed var(--border,#444);border-radius:6px;">
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input id="ap-incoming" type="checkbox" /> <b>📞 전화 수신 시 자동 푸시</b>
+      </label>
+      <p class="help">켜 두면 인바운드 통화가 들어올 때(<code>call:new</code>) <b>수신 대상 내선</b>으로 <code>subtype="incoming_softphone"</code> 푸시를 자동 발사합니다 — 백그라운드 앱(소프트폰)을 깨워 통화를 받게 하는 신호예요. 위 「대상 내선」이 비어 있으면 통화의 <code>callee</code>(수신 내선)로 자동 지정돼요. <span class="muted">데모용 클라이언트 트리거 — 운영 백그라운드 깨우기는 게이트웨이 서버측 자동 발사가 필요(contract §6).</span></p>
     </div>
 
     <div class="transcript" id="ap-result" style="margin-top:16px;">
@@ -354,9 +382,56 @@ function mount(ctx) {
     pushResult(true, "입력을 지웠어요");
   });
 
-  // call:ended 시 call_summary 패널의 통화 목록 갱신
+  // ── 전화 수신 시 자동 푸시 (incoming_softphone) ──────────────────
+  // 토글이 켜져 있으면 call:new 마다 수신 대상 내선으로 incoming_softphone
+  // 푸시를 한 번 발사한다. 같은 통화(linkedId)에 중복 발사 방지.
+  const pushedIncoming = new Set();
+  async function autoPushIncoming(evt) {
+    if (!ctx.client || !evt.linkedId || pushedIncoming.has(evt.linkedId)) return;
+    // 대상: 수동 입력 내선 우선, 없으면 통화의 수신 내선(callee/agentNumber/did).
+    const target = $("#ap-ext").value.trim() || evt.callee || evt.agentNumber || evt.did;
+    if (!target) {
+      pushResult(false, "자동 푸시: 수신 내선을 알 수 없어요 — 「대상 내선」을 입력해 주세요.");
+      return;
+    }
+    pushedIncoming.add(evt.linkedId);
+    try {
+      await ctx.client.pushToExtension({
+        extension: target,
+        subtype: "incoming_softphone",
+        title: "수신 전화",
+        body: evt.callerName || evt.caller || "전화가 왔어요",
+        linkedId: evt.linkedId,
+        data: {
+          caller_number: evt.caller || "",
+          caller_name: evt.callerName || "",
+        },
+      });
+      pushResult(true, `📞 수신 자동 푸시 → 내선 ${target} (통화 ${evt.linkedId})`);
+      ctx.log("ok", "push:incoming_softphone", { extension: target, linkedId: evt.linkedId });
+    } catch (err) {
+      pushedIncoming.delete(evt.linkedId); // 실패 시 재시도 가능
+      const m = String(err && err.message || err);
+      if (m.includes("(503)")) {
+        pushResult(false, "자동 푸시 실패: 릴레이 미설정 (GW_WARM_TRANSFER_PUSH_ENABLED + URL + SECRET).");
+      } else if (m.includes("(404)")) {
+        pushResult(false, `자동 푸시 실패: 내선 ${target} 으로 등록된 기기가 없어요.`);
+      } else {
+        pushResult(false, `자동 푸시 실패: ${m}`);
+      }
+      ctx.log("err", "push:incoming_fail", { error: m });
+    }
+  }
+
+  // call:new → (토글 시) 자동 푸시 / call:ended 시 call_summary 통화목록 갱신
   const handler = (e) => {
     const evt = e.detail;
+    if (evt.event === "call:new" && $("#ap-incoming") && $("#ap-incoming").checked) {
+      autoPushIncoming(evt);
+    }
+    if (evt.event === "call:ended" && evt.linkedId) {
+      pushedIncoming.delete(evt.linkedId);
+    }
     if (kindEl.value === "call_summary" &&
         (evt.event === "call:new" || evt.event === "call:ended")) {
       renderCalls();
