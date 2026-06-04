@@ -254,6 +254,27 @@ button.danger { background: var(--err); border-color: var(--err); color: white; 
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* Template panel: pinned near the top of the sidebar and self-scrolling so
+   the 10+ item list is always reachable and never pushes the credential /
+   provider / active-call panels off-screen. The list scrolls inside the
+   panel; the panel itself stays sticky as the sidebar scrolls. */
+.panel-templates {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.panel-templates .menu {
+  max-height: 38vh;
+  overflow-y: auto;
+}
+/* Stronger "you are here" cue: an accent bar on the selected item so the
+   current template is obvious even when the list is scrolled. */
+.menu li.active {
+  border-left: 3px solid var(--accent);
+  padding-left: 9px;
+  font-weight: 600;
+}
 .menu li .desc {
   display: block;
   font-size: 11px;

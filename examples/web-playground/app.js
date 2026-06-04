@@ -1130,6 +1130,8 @@ let templateMenuWired = false;
 
 function renderTemplateMenu() {
   const ul = $("template-menu");
+  const countEl = $("template-count");
+  if (countEl) countEl.textContent = `(${templates.length}개)`;
   ul.innerHTML = templates.map((t) => {
     const reqs = (t.requires || []);
     const tags = reqs.length
@@ -1210,7 +1212,11 @@ function selectTemplate(id) {
   }
 
   document.querySelectorAll("#template-menu li").forEach((li) => {
-    li.classList.toggle("active", li.dataset.id === id);
+    const isActive = li.dataset.id === id;
+    li.classList.toggle("active", isActive);
+    // Keep the selected template visible inside the self-scrolling list so the
+    // "you are here" cue is never off-screen (esp. for items lower in the list).
+    if (isActive) li.scrollIntoView({ block: "nearest" });
   });
 
   state.currentTemplate = tpl;
