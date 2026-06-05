@@ -300,6 +300,26 @@ const s = await gw.getAudioStatus(linkedId);
 >
 > **⚠️ INTERIM**: device WRITE/secret-rotation API 가 생기기 전까지 `sip.authToken` 은 device 의 **raw PBX secret** 을 그대로 담는다. WRITE API 도입 시 단기 회전 secret 으로 교체되며 **응답 스키마는 불변**이다. `GW_SOFTPHONE_ENABLED` 미설정 시 모든 엔드포인트 503.
 
+### 모바일 사용자 seat 관리 (테넌트별 정원·발급, gateway 1.4.9.0+)
+연동된 모바일 앱(makecall) **사용자 정원(seat)** 을 테넌트별로 관리. dvg 가 정원·발급권을 소유하고, **이메일은 식별 라벨로만 저장**한다(검증·인증은 makecall Firebase 가 SSOT — 기존 경계 불변). 발급(enrollment)은 위 소프트폰 `enrollToken` 을 재사용한다. seat 정원은 동시통화 한도와 **별개**다.
+
+| REST 엔드포인트 | 권한 | 설명 |
+|---|---|---|
+| `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함 |
+| `GET /api/v1/tenants/{id}/seats/devices?protocol=wss` | admin · 본인 | **내선 후보** — PBX 단말 중 `protocol=wss` 만 `{extension, deviceName, mobileClient}`. seat 의 내선은 이 목록에서만 선택(임의 입력 금지) |
+| `POST /api/v1/tenants/{id}/seats` | admin | seat 생성 `{email, extension?, admin?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded` |
+| `POST /api/v1/tenants/{id}/seats/self-enroll` | 본인 테넌트 · admin | **앱 자동 등록**(policy=auto 일 때만). `{email, extension?}` → seat + enrollment. email 기준 **멱등**(재설치/재로그인이 seat 안 늘림). manual 이면 **403** `self_enroll_disabled`, 정원 초과 **409**. `admin:true` 는 무시(권한 상승 방지) |
+| `POST /api/v1/tenants/{id}/seats/import` | admin | CSV/JSON 일괄 등록(부분 성공 `created/skipped/errors`). CSV 헤더 `email,extension,admin` |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/{suspend\|resume\|archive}` | admin | 보류/재개/보관(archived=정원 슬롯 반환) |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/admin` | admin | `{admin:bool}` 관리계정 토글(테넌트 관리 알림/푸시 구분 라벨) |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/enroll` | admin | enrollToken 재발급(QR 재전송). softphone 미구성 시 **503**(seat 은 유지) |
+| `GET\|PUT /api/v1/tenants/{id}/seats/limit` | admin(PUT) | seat 정원 조회/설정(동시통화 한도와 독립) |
+| `GET\|PUT /api/v1/tenants/{id}/seats/policy` | admin(PUT) | 등록 정책 `{policy: "manual"\|"auto"}` |
+
+> **등록 정책**: `manual`(기본)=관리자 사전등록만 / `auto`=앱 self-enroll 허용(정원 내 즉시 active). **자동 등록 흐름**: 앱 → makecall 서버(Firebase 로그인 검증) → dvg `self-enroll` 대행 호출. dvg 는 자신이 발급한 인증(SDK 키→JWT, 본인 테넌트)만 신뢰하고 email 은 라벨로 저장한다. **앱은 dvg 에 직결하지 않는다.** 정원이 무단 가입의 게이트.
+>
+> SDK 메서드(TS `SeatManager` / Python `seats`)는 후속 SDK 릴리즈에서 추가 예정 — 현재는 REST 직접 호출(makecall 서버). 통합 흐름·필드 상세는 [docs/mobile-app-sdk-guide.md](../docs/mobile-app-sdk-guide.md), 경계·라이프사이클은 [docs/mobile-seats-contract.md](../docs/mobile-seats-contract.md) 참조.
+
 ### PBX 관리
 | TypeScript | Python | 설명 |
 |------------|--------|------|
