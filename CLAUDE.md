@@ -278,6 +278,8 @@ const s = await gw.getAudioStatus(linkedId);
 | **`flow()`** | **`flow()`** | **VoiceFlow 빌더 — stage 그래프 기반 IVR 자동화 (아래 섹션 참조)** |
 
 ### 앱 푸시/알림 (모바일 FCM, gateway 1.4.8.0+)
+> **모바일 단말용 SDK 설계 카탈로그**(어떤 기능을 단말 SDK로 제공 가능한지 + 보안 경계 + 로드맵): [docs/dvg-mobile-sdk-catalog.md](../docs/dvg-mobile-sdk-catalog.md). TS/Python SDK는 백엔드(신뢰) SDK이므로 단말에 그대로 올리지 않는다(정적 API 키·AI 프로바이더 키 노출 금지).
+
 연동된 모바일 앱(예: makecall) 사용자에게 푸시 전송. gateway가 `extension → userId → fcm_token`(앱 온보딩으로 생성된 매핑)으로 라우팅해 FCM 릴레이(Cloud Function)에 HMAC 서명 전달. 모든 이벤트는 `dvg_event{subtype}` 단일 스키마. 테넌트는 서버가 JWT에서 강제. gateway에 릴레이 미설정 시 503.
 
 | TypeScript | Python | 설명 |
