@@ -282,11 +282,14 @@ const s = await gw.getAudioStatus(linkedId);
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| **`pushToExtension({extension, subtype, title?, body?, linkedId?, data?})`** | **`push_to_extension(...)`** | **범용 푸시 — 임의 subtype + data(문자열 맵) 전달. 모든 편의 메서드의 기반** |
+| **`pushToExtension({extension, subtype, title?, body?, linkedId?, did?, caller?, callerName?, data?})`** | **`push_to_extension(...)`** | **범용 푸시(extension 라우팅). 임의 subtype + data(문자열 맵). did/caller/callerName 은 외부수신 표시·라우팅 필드(선택)** |
+| **`pushToUser({email, subtype, title?, body?, linkedId?, did?, caller?, callerName?, data?})`** (gateway 1.4.9.0+) | **`push_to_user(...)`** | **email 라우팅 푸시 — extension 이 아직 없는(email-우선 신규) 사용자용. 릴레이가 email→userId→fcm_token. 일반 알림·외부수신 표시에 사용** |
 | **`notifyCallSummary(linkedId, {extension, summaryUrl?, transcriptUrl?, audioUrl?, ...})`** | **`notify_call_summary(...)`** | **통화 종료 후 결과 링크 푸시(subtype=`call_summary`). 최소 1개 URL 필수. 짧은 만료 서명 URL 권장. 앱은 통화이력에 "요약 보기/녹취 듣기"로 노출** |
 | **`notifyMissedCall({extension, callerNumber?, callerName?, linkedId?})`** | **`notify_missed_call(...)`** | **부재중 알림(subtype=`missed_call`)** |
 
-> REST: `POST /api/v1/push/extension`, `POST /api/v1/push/call-summary/{linkedId}`. 페이로드·서명 규약은 [docs/warm-transfer-push-contract.md](../docs/warm-transfer-push-contract.md) 및 [docs/dvg-mobile-roadmap.md](../docs/dvg-mobile-roadmap.md) 참조. 수신 측(Function + 앱 라우팅)은 makecall 레포에서 구현.
+> REST: `POST /api/v1/push/extension`, **`POST /api/v1/push/user`** (email 라우팅), `POST /api/v1/push/call-summary/{linkedId}`. 모든 푸시는 `did`(대표번호)/`caller`/`callerName` 를 **extension 유무와 무관하게** 실어 보낼 수 있다 — 외부수신(DVG/IVR/AI 선수신)은 단말 extension 없이 **대표번호(DID)** 로 라우팅·표시되므로(앱 수신 Function 이 accountCode 매칭), self-enroll 후 extension 이 없어도 외부수신/부재중/요약/일반알림은 즉시 동작한다. 단말이 직접 ring 되는 `incoming_softphone` 만 extension 전제. tenantId 는 JWT 강제(본문 신뢰 금지). 페이로드·서명 규약은 [docs/warm-transfer-push-contract.md](../docs/warm-transfer-push-contract.md)·[docs/dvg-mobile-roadmap.md](../docs/dvg-mobile-roadmap.md). 수신 측(Function + 앱 라우팅)은 makecall 레포에서 구현.
+>
+> **외부수신 자동 푸시 (gateway 1.4.8.14+)**: `GW_PUSH_ON_CALL_NEW=true` (기본 false, 푸시 릴레이 구성 전제) 시, 외부 수신(dir=in + caller 있음) `call:new` 마다 dvg 가 **자동으로** `subtype=incoming_call` 푸시(did/caller/callerName/tenantId/linkedId 포함)를 송신한다. 켜면 makecall 서버가 call:new 를 받아 `/push/*` 를 직접 호출할 필요가 없다. 발신(out)·내부통화·보조채널(caller 없음)은 제외. best-effort 비차단.
 
 ### WebRTC 소프트폰 프로비저닝 (gateway 1.4.8.3+ / SDK 1.8.1+)
 | TypeScript | Python | 설명 |
