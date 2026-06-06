@@ -388,6 +388,43 @@ export class GatewayClient extends EventTarget {
     return res.json();
   }
 
+  // POST /api/v1/push/user → { delivered, subtype }
+  // 이메일 키 푸시. 단말(extension) 도달 전(IVR/시스템 선응답)이거나 내선이 아직
+  // 없는 사용자에게도 라우팅(email → userId → fcm_token). 게이트웨이 자동
+  // incoming_call 푸시와 동일한 receiverEmail 라우팅 레일.
+  async pushToUser({ email, subtype, title, body, linkedId, did, caller, callerName, data }) {
+    if (!email) throw new Error("email is required");
+    if (!subtype) throw new Error("subtype is required");
+    const payload = { email, subtype };
+    if (title) payload.title = title;
+    if (body) payload.body = body;
+    if (linkedId) payload.linkedid = linkedId;
+    if (did) payload.did = did;
+    if (caller) payload.caller = caller;
+    if (callerName) payload.callerName = callerName;
+    if (data && Object.keys(data).length) payload.data = data;
+    const res = await fetch(`${this.apiBase}/api/v1/push/user`, {
+      method: "POST",
+      headers: this._authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw await mkApiError(res, "pushToUser");
+    return res.json();
+  }
+
+  // GET /api/v1/tenants/{id}/seats → { seats:[{seatId,email,extension,did,status,...}], limit, used, ... }
+  // 테넌트에 등록된 모바일 앱 사용자(seat) 목록. 푸시 대상 선택 드롭다운 소스.
+  async listSeats() {
+    const tid = this.tenantId;
+    if (!tid) throw new Error("tenantId is required");
+    const res = await fetch(
+      `${this.apiBase}/api/v1/tenants/${encodeURIComponent(tid)}/seats`,
+      { headers: this._authHeaders() },
+    );
+    if (!res.ok) throw await mkApiError(res, "listSeats");
+    return res.json();
+  }
+
   // POST /api/v1/push/call-summary/{linkedId} → { delivered, subtype, linkedid }
   // 통화 종료 후 결과 링크 푸시. summaryUrl/transcriptUrl/audioUrl 중 1개 이상 필수.
   async notifyCallSummary(linkedId, { extension, summaryUrl, transcriptUrl, audioUrl, title, body }) {

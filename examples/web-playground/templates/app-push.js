@@ -1,8 +1,8 @@
 // App push / notifications (앱 푸시·알림) — 연동된 모바일 앱으로 푸시 전송.
 //
-// 게이트웨이가 extension → userId → fcm_token 매핑(앱 온보딩 산출물)으로 라우팅해
-// FCM 릴레이(Cloud Function)에 HMAC 서명 전달합니다. 모든 이벤트는
-// dvg_event{subtype} 단일 스키마.
+// 대상은 테넌트에 등록된 모바일 사용자(seat) 목록에서 고른다(직접 입력 X). 푸시는
+// 그 사용자의 이메일로 라우팅된다(email → userId → fcm_token). 게이트웨이가 FCM
+// 릴레이(Cloud Function)에 HMAC 서명 전달. 모든 이벤트는 dvg_event{subtype} 스키마.
 //
 // 사전 요구: 게이트웨이에 푸시 릴레이가 설정돼 있어야 합니다
 //   GW_WARM_TRANSFER_PUSH_ENABLED=true + _URL + _SECRET.
@@ -10,13 +10,13 @@
 //
 // 프리셋 3종으로 다양한 푸시를 바로 테스트:
 //   · 범용(custom)    — 임의 subtype + data
-//   · 통화 요약(call_summary) — summaryUrl/transcriptUrl/audioUrl
+//   · 통화 요약(call_summary) — summaryUrl/transcriptUrl/audioUrl (내선 기반)
 //   · 부재중(missed_call)     — callerNumber/callerName
 //
-// 추가로 "전화 수신 시 자동 푸시" 토글 — call:new 마다 수신 내선으로
-// subtype="incoming_softphone" 를 자동 발사(소프트폰 깨우기 데모). 클라이언트가
-// callinfo WS 를 듣고 쏘는 데모이며, 운영 백그라운드 깨우기는 게이트웨이
-// 서버측 자동 발사가 필요하다(contract §6 — 별도 작업).
+// 추가로 "전화 수신 시 자동 푸시" 토글 — call:new 마다 통화 DID 에 매핑된 seat
+// (없으면 선택한 사용자)에게 subtype="incoming_call" + receiverEmail 을 발사하는
+// 데모. 운영에서는 게이트웨이가 GW_PUSH_ON_CALL_NEW=true 일 때 서버측에서 같은
+// 푸시를 자동 멀티캐스트한다(앱은 따로 켤 필요 없음).
 //
 // 우측에 Android/iOS 앱 설치 QR(오프라인 생성, 외부 의존 없음)을 표시.
 
@@ -59,57 +59,64 @@ const CODE = `// SDK로 동일하게:
 import { DVGatewayClient } from "dvgateway-sdk";
 const client = new DVGatewayClient({ baseUrl, auth: { type: "apiKey", apiKey } });
 
-// 1) 범용 푸시
-await client.pushToExtension({
-  extension: "1001",
+// 0) 테넌트에 등록된 모바일 사용자(seat) 목록 — 푸시 대상 선택용
+const { seats } = await client.listSeats();   // [{ seatId, email, extension, did, status }]
+const target = seats.find((s) => s.status === "active");
+
+// 1) 범용 푸시 — 이메일로 라우팅 (email → userId → fcm_token)
+await client.pushToUser({
+  email: target.email,
   subtype: "custom",
   title: "공지",
   body: "잠시 후 회의가 시작됩니다",
   data: { room: "A-301" },
 });
 
-// 2) 통화 종료 후 결과 링크 (짧은 만료 서명 URL 권장)
+// 2) 통화 종료 후 결과 링크 (짧은 만료 서명 URL 권장) — 내선 기반
 await client.notifyCallSummary(linkedId, {
-  extension: "1001",
+  extension: target.extension,
   summaryUrl: "https://.../s/abc",
   audioUrl:   "https://.../a/abc",
 });
 
-// 3) 부재중
-await client.notifyMissedCall({
-  extension: "1001",
-  callerNumber: "01012345678",
-  callerName: "홍길동",
+// 3) 부재중 — 이메일로
+await client.pushToUser({
+  email: target.email,
+  subtype: "missed_call",
+  data: { caller_number: "01012345678", caller_name: "홍길동" },
 });
 
-// 4) 전화 수신 시 자동 푸시 — call:new 마다 수신 내선 깨우기
-//    (데모는 클라이언트가 callinfo WS 를 듣고 발사. 운영 백그라운드
-//     깨우기는 게이트웨이 서버측 자동 발사가 필요 — contract §6.)
+// 4) 전화 수신 — 운영은 게이트웨이가 자동(GW_PUSH_ON_CALL_NEW): 통화 DID 에
+//    매핑된 seat 전원에게 incoming_call + receiverEmail 을 서버측 멀티캐스트.
+//    클라이언트가 직접 쏘려면(데모):
 client.addEventListener("event", (e) => {
   const evt = e.detail;
   if (evt.event !== "call:new") return;
-  client.pushToExtension({
-    extension: evt.callee,            // 수신 대상 내선
-    subtype: "incoming_softphone",    // 소프트폰 깨우기 신호
-    title: "수신 전화",
-    body: evt.callerName || evt.caller,
-    linkedId: evt.linkedId,
-    data: { caller_number: evt.caller || "", caller_name: evt.callerName || "" },
-  });
+  const recipients = seats
+    .filter((s) => s.status === "active" && s.did === evt.did)
+    .map((s) => s.email);
+  for (const email of recipients) {
+    client.pushToUser({
+      email, subtype: "incoming_call",
+      title: "수신 전화", body: evt.callerName || evt.caller,
+      linkedId: evt.linkedId, did: evt.did,
+      caller: evt.caller, callerName: evt.callerName,
+    });
+  }
 });`;
 
 function mount(ctx) {
   ctx.body.innerHTML = `
-    <p class="help">연동된 <b>모바일 앱</b> 사용자(내선 기준)에게 푸시를 보냅니다. 게이트웨이가 <code>extension → userId → fcm_token</code> 으로 라우팅하고, 테넌트는 JWT에서 강제돼요. <b>사전 요구</b>: 게이트웨이에 푸시 릴레이(<code>GW_WARM_TRANSFER_PUSH_ENABLED</code> + URL + SECRET)가 설정돼 있어야 합니다 — 미설정이면 503으로 안내해요.</p>
+    <p class="help">연동된 <b>모바일 앱</b> 사용자에게 푸시를 보냅니다. 아래에서 <b>테넌트에 등록된 모바일 사용자(seat)</b>를 골라요 — 직접 입력할 필요 없어요. 푸시는 그 사용자의 <b>이메일</b>로 라우팅돼요(<code>email → userId → fcm_token</code>). <b>사전 요구</b>: 게이트웨이에 푸시 릴레이(<code>GW_WARM_TRANSFER_PUSH_ENABLED</code> + URL + SECRET)가 설정돼 있어야 합니다 — 미설정이면 503으로 안내해요.</p>
 
     <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
      <div style="flex:1 1 360px;min-width:300px;">
 
     <div class="field">
-      <label>대상 내선 (extension)
-        <input id="ap-ext" type="text" placeholder="예: 1001" />
+      <label>대상 모바일 사용자 (seat)
+        <select id="ap-seat"><option value="">불러오는 중…</option></select>
       </label>
-      <p class="help">앱에서 이미 등록·승인된 내선이어야 푸시가 도착해요(미등록이면 게이트웨이가 발송 안 함).</p>
+      <p class="help">테넌트에 등록된 모바일 앱 사용자 목록이에요. 선택하면 그 사용자의 이메일로 푸시가 가요. 목록이 비었으면 위 「📱 모바일 앱 사용자」 관리에서 먼저 등록하세요. <a href="#" id="ap-seat-reload">새로고침</a></p>
     </div>
 
     <div class="field">
@@ -168,11 +175,11 @@ function mount(ctx) {
       <label style="display:flex;align-items:center;gap:6px;">
         <input id="ap-incoming" type="checkbox" /> <b>📞 전화 수신 시 자동 푸시</b>
       </label>
-      <p class="help">켜 두면 인바운드 통화가 들어올 때(<code>call:new</code>) <b>수신 대상 내선</b>으로 <code>subtype="incoming_softphone"</code> 푸시를 자동 발사합니다 — 백그라운드 앱(소프트폰)을 깨워 통화를 받게 하는 신호예요. 위 「대상 내선」이 비어 있으면 통화의 <code>callee</code>(수신 내선)로 자동 지정돼요. <span class="muted">데모용 클라이언트 트리거 — 운영 백그라운드 깨우기는 게이트웨이 서버측 자동 발사가 필요(contract §6).</span></p>
+      <p class="help">켜 두면 인바운드 통화가 들어올 때(<code>call:new</code>) <b>선택한 사용자</b>에게 <code>subtype="incoming_call"</code> + <code>receiverEmail</code> 푸시를 자동 발사합니다 — 단말 도달 전(IVR/시스템 선응답)에도 이메일로 수신자를 깨워요. <span class="muted">이건 데모용 클라이언트 트리거예요. 운영에서는 게이트웨이가 <code>GW_PUSH_ON_CALL_NEW=true</code> 일 때 통화의 대표번호(DID)에 매핑된 seat 들에게 <b>서버측에서 자동</b>으로 같은 푸시를 멀티캐스트합니다 — 앱은 따로 켤 필요 없어요.</span></p>
     </div>
 
     <div class="transcript" id="ap-result" style="margin-top:16px;">
-      <p class="muted small">대기 중 — <b>대상 내선</b>만 입력하고 위의 <b>빠른 예시</b>를 클릭하면 바로 발송돼요. 세부 값은 직접 입력해도 됩니다.</p>
+      <p class="muted small">대기 중 — <b>대상 사용자</b>를 고르고 위의 <b>빠른 예시</b>를 클릭하면 바로 발송돼요. 세부 값은 직접 입력해도 됩니다.</p>
     </div>
 
      </div><!-- /left column -->
@@ -203,6 +210,41 @@ function mount(ctx) {
   const kindEl = $("#ap-kind");
   const resultEl = $("#ap-result");
   const result = [];
+
+  // ── 모바일 사용자(seat) 목록 ───────────────────────────────────────
+  // 테넌트 등록 seat 을 드롭다운으로. 선택값은 seatId, 부가 정보(email/ext/did)는
+  // seatById 에 보관해 발송 시 꺼내 쓴다. active 상태만 노출(보류·보관 제외).
+  let seatById = {};
+  const seatEl = $("#ap-seat");
+  function selectedSeat() {
+    const id = seatEl && seatEl.value;
+    return id ? seatById[id] : null;
+  }
+  async function loadSeats() {
+    if (!ctx.client) { seatEl.innerHTML = `<option value="">로그인 후 사용 가능</option>`; return; }
+    seatEl.innerHTML = `<option value="">불러오는 중…</option>`;
+    try {
+      const d = await ctx.client.listSeats();
+      const seats = (d.seats || []).filter((s) => s.status === "active");
+      seatById = {};
+      if (!seats.length) {
+        seatEl.innerHTML = `<option value="">등록된 모바일 사용자 없음 — 「📱 모바일 앱 사용자」에서 추가</option>`;
+        return;
+      }
+      seatEl.innerHTML = seats.map((s) => {
+        seatById[s.seatId] = s;
+        const parts = [s.email];
+        if (s.extension) parts.push(`내선 ${s.extension}`);
+        if (s.did) parts.push(`수신 ${s.did}`);
+        return `<option value="${s.seatId}">${parts.join(" · ")}</option>`;
+      }).join("");
+    } catch (err) {
+      const m = String(err && err.message || err);
+      seatEl.innerHTML = `<option value="">목록 조회 실패</option>`;
+      ctx.log("err", "push:seats_load_fail", { error: m });
+      pushResult(false, `모바일 사용자 목록 조회 실패: ${m}`);
+    }
+  }
 
   // 앱 설치 QR (오프라인 생성). 실패해도 링크는 남으므로 치명적 아님.
   try {
@@ -305,9 +347,9 @@ function mount(ctx) {
     box.querySelectorAll(".ap-preset").forEach((b) => b.addEventListener("click", async () => {
       const p = PRESETS[kind][Number(b.dataset.idx)];
       fillFields(kind, p.fields);
-      // "바로 발송" 체크 시 채우고 즉시 전송 (대상 내선이 있을 때만).
+      // "바로 발송" 체크 시 채우고 즉시 전송 (대상 사용자가 선택됐을 때만).
       if ($("#ap-autosend").checked) {
-        if (!$("#ap-ext").value.trim()) { pushResult(false, "예시를 채웠어요 — 대상 내선(extension)을 입력하고 「푸시 전송」을 눌러주세요."); return; }
+        if (!selectedSeat()) { pushResult(false, "예시를 채웠어요 — 대상 모바일 사용자를 고르고 「푸시 전송」을 눌러주세요."); return; }
         await send();
       } else {
         pushResult(true, `예시 채움: ${p.label} — 확인 후 「푸시 전송」`);
@@ -317,8 +359,9 @@ function mount(ctx) {
 
   async function send() {
     if (!ctx.client) { pushResult(false, "먼저 왼쪽 「1. 게이트웨이 연결」에서 로그인해 주세요."); return; }
-    const extension = $("#ap-ext").value.trim();
-    if (!extension) { pushResult(false, "대상 내선(extension)을 입력하세요"); return; }
+    const seat = selectedSeat();
+    if (!seat) { pushResult(false, "대상 모바일 사용자를 선택하세요"); return; }
+    const who = seat.email;
     const kind = kindEl.value;
     const btn = $("#ap-send");
     btn.disabled = true;
@@ -332,33 +375,42 @@ function mount(ctx) {
           try { data = JSON.parse(raw); }
           catch { pushResult(false, "data 가 올바른 JSON이 아니에요"); btn.disabled = false; return; }
         }
-        res = await ctx.client.pushToExtension({
-          extension, subtype,
+        res = await ctx.client.pushToUser({
+          email: seat.email, subtype,
           title: $("#ap-title").value.trim() || undefined,
           body: $("#ap-body").value.trim() || undefined,
           data,
         });
-        pushResult(true, `전송됨 · subtype=${res.subtype || subtype} → 내선 ${extension}`);
-        ctx.log("ok", "push:extension", { extension, subtype });
+        pushResult(true, `전송됨 · subtype=${res.subtype || subtype} → ${who}`);
+        ctx.log("ok", "push:user", { email: seat.email, subtype });
       } else if (kind === "call_summary") {
+        // 통화요약 엔드포인트는 extension 기반 — seat 에 내선이 있어야 발송 가능.
+        if (!seat.extension) { pushResult(false, `통화요약 푸시는 내선이 필요해요 — 선택한 사용자(${who})에게 내선이 없어요. 다른 사용자를 고르거나 seat 에 내선을 지정하세요.`); btn.disabled = false; return; }
         const linkedId = $("#ap-linked").value.trim();
         if (!linkedId) { pushResult(false, "linkedId 를 입력하세요"); btn.disabled = false; return; }
         res = await ctx.client.notifyCallSummary(linkedId, {
-          extension,
+          extension: seat.extension,
           summaryUrl: $("#ap-summary").value.trim() || undefined,
           transcriptUrl: $("#ap-transcript").value.trim() || undefined,
           audioUrl: $("#ap-audio").value.trim() || undefined,
         });
-        pushResult(true, `통화요약 푸시 전송됨 · linkedId=${linkedId} → 내선 ${extension}`);
-        ctx.log("ok", "push:call_summary", { extension, linkedId });
+        pushResult(true, `통화요약 푸시 전송됨 · linkedId=${linkedId} → ${who} (내선 ${seat.extension})`);
+        ctx.log("ok", "push:call_summary", { extension: seat.extension, linkedId });
       } else { // missed_call
-        res = await ctx.client.notifyMissedCall({
-          extension,
-          callerNumber: $("#ap-caller-num").value.trim() || undefined,
-          callerName: $("#ap-caller-name").value.trim() || undefined,
+        const data = {};
+        const cn = $("#ap-caller-num").value.trim();
+        const cnm = $("#ap-caller-name").value.trim();
+        if (cn) data.caller_number = cn;
+        if (cnm) data.caller_name = cnm;
+        res = await ctx.client.pushToUser({
+          email: seat.email,
+          subtype: "missed_call",
+          title: cnm || cn || undefined,
+          body: cn || undefined,
+          data,
         });
-        pushResult(true, `부재중 푸시 전송됨 → 내선 ${extension}`);
-        ctx.log("ok", "push:missed_call", { extension });
+        pushResult(true, `부재중 푸시 전송됨 → ${who}`);
+        ctx.log("ok", "push:missed_call", { email: seat.email });
       }
     } catch (err) {
       const m = String(err && err.message || err);
@@ -366,7 +418,7 @@ function mount(ctx) {
       if (m.includes("(503)")) {
         pushResult(false, "푸시 릴레이가 게이트웨이에 설정되지 않았어요 (GW_WARM_TRANSFER_PUSH_ENABLED + URL + SECRET). 운영자에게 설정을 요청하세요.");
       } else if (m.includes("(404)")) {
-        pushResult(false, "해당 내선으로 등록된 기기가 없어요 — 앱에서 로그인·내선 등록·기기 승인이 끝났는지 확인하세요.");
+        pushResult(false, "해당 사용자(이메일)로 등록된 기기가 없어요 — 앱에서 로그인·기기 승인이 끝났는지 확인하세요.");
       } else {
         pushResult(false, m);
       }
@@ -382,45 +434,56 @@ function mount(ctx) {
     pushResult(true, "입력을 지웠어요");
   });
 
-  // ── 전화 수신 시 자동 푸시 (incoming_softphone) ──────────────────
-  // 토글이 켜져 있으면 call:new 마다 수신 대상 내선으로 incoming_softphone
-  // 푸시를 한 번 발사한다. 같은 통화(linkedId)에 중복 발사 방지.
+  // ── 전화 수신 시 자동 푸시 (incoming_call + receiverEmail) ──────────
+  // 토글이 켜져 있으면 call:new 마다 수신 대상에게 incoming_call 푸시를 한 번
+  // 발사한다(데모: 클라이언트 트리거). 운영은 게이트웨이가 통화 DID 에 매핑된 seat
+  // 전원에게 서버측 자동 멀티캐스트한다(GW_PUSH_ON_CALL_NEW). 여기서는 통화 DID 에
+  // 매핑된 seat 들(없으면 선택한 사용자)에게 보낸다. 같은 통화 중복 발사 방지.
   const pushedIncoming = new Set();
   async function autoPushIncoming(evt) {
     if (!ctx.client || !evt.linkedId || pushedIncoming.has(evt.linkedId)) return;
-    // 대상: 수동 입력 내선 우선, 없으면 통화의 수신 내선(callee/agentNumber/did).
-    const target = $("#ap-ext").value.trim() || evt.callee || evt.agentNumber || evt.did;
-    if (!target) {
-      pushResult(false, "자동 푸시: 수신 내선을 알 수 없어요 — 「대상 내선」을 입력해 주세요.");
+    // 대상 이메일: 통화 대표번호(DID)에 매핑된 active seat 들 → 없으면 선택한 사용자.
+    let targets = [];
+    if (evt.did) {
+      targets = Object.values(seatById)
+        .filter((s) => s.status === "active" && (s.did || "").trim() === String(evt.did).trim())
+        .map((s) => s.email);
+    }
+    if (!targets.length && selectedSeat()) targets = [selectedSeat().email];
+    if (!targets.length) {
+      pushResult(false, "자동 푸시: 수신 대상을 알 수 없어요 — 통화 DID 에 매핑된 seat 이 없고 선택된 사용자도 없어요.");
       return;
     }
     pushedIncoming.add(evt.linkedId);
-    try {
-      await ctx.client.pushToExtension({
-        extension: target,
-        subtype: "incoming_softphone",
-        title: "수신 전화",
-        body: evt.callerName || evt.caller || "전화가 왔어요",
-        linkedId: evt.linkedId,
-        data: {
-          caller_number: evt.caller || "",
-          caller_name: evt.callerName || "",
-        },
-      });
-      pushResult(true, `📞 수신 자동 푸시 → 내선 ${target} (통화 ${evt.linkedId})`);
-      ctx.log("ok", "push:incoming_softphone", { extension: target, linkedId: evt.linkedId });
-    } catch (err) {
-      pushedIncoming.delete(evt.linkedId); // 실패 시 재시도 가능
-      const m = String(err && err.message || err);
-      if (m.includes("(503)")) {
-        pushResult(false, "자동 푸시 실패: 릴레이 미설정 (GW_WARM_TRANSFER_PUSH_ENABLED + URL + SECRET).");
-      } else if (m.includes("(404)")) {
-        pushResult(false, `자동 푸시 실패: 내선 ${target} 으로 등록된 기기가 없어요.`);
-      } else {
-        pushResult(false, `자동 푸시 실패: ${m}`);
+    let okCount = 0;
+    for (const email of targets) {
+      try {
+        await ctx.client.pushToUser({
+          email,
+          subtype: "incoming_call",
+          title: "수신 전화",
+          body: evt.callerName || evt.caller || "전화가 왔어요",
+          linkedId: evt.linkedId,
+          did: evt.did || undefined,
+          caller: evt.caller || undefined,
+          callerName: evt.callerName || undefined,
+        });
+        okCount++;
+        ctx.log("ok", "push:incoming_call", { email, linkedId: evt.linkedId });
+      } catch (err) {
+        const m = String(err && err.message || err);
+        if (m.includes("(503)")) {
+          pushResult(false, "자동 푸시 실패: 릴레이 미설정 (GW_WARM_TRANSFER_PUSH_ENABLED + URL + SECRET).");
+        } else if (m.includes("(404)")) {
+          pushResult(false, `자동 푸시: ${email} 으로 등록된 기기가 없어요(스킵).`);
+        } else {
+          pushResult(false, `자동 푸시 실패(${email}): ${m}`);
+        }
+        ctx.log("err", "push:incoming_fail", { email, error: m });
       }
-      ctx.log("err", "push:incoming_fail", { error: m });
     }
+    if (okCount) pushResult(true, `📞 수신 자동 푸시 → ${okCount}명 (통화 ${evt.linkedId})`);
+    else pushedIncoming.delete(evt.linkedId); // 전부 실패면 재시도 가능
   }
 
   // call:new → (토글 시) 자동 푸시 / call:ended 시 call_summary 통화목록 갱신
@@ -438,6 +501,11 @@ function mount(ctx) {
     }
   };
   if (ctx.client) ctx.client.addEventListener("event", handler);
+
+  // 모바일 사용자(seat) 드롭다운 로드 + 새로고침 링크.
+  const reloadLink = $("#ap-seat-reload");
+  if (reloadLink) reloadLink.addEventListener("click", (ev) => { ev.preventDefault(); loadSeats(); });
+  loadSeats();
 
   showPane();
   return () => {
