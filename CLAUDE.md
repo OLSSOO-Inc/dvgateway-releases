@@ -318,7 +318,8 @@ const s = await gw.getAudioStatus(linkedId);
 | `POST /api/v1/tenants/{id}/seats/{seatId}/{suspend\|resume\|archive\|restore}` | admin | 보류/재개/보관/복원. archive=정원 슬롯 반환, **restore=보관(archived)→활성(active), 복원 시 정원 재확인(초과 409 `seat_limit_exceeded`)** |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/admin` | admin | `{admin:bool}` 관리계정 토글(테넌트 관리 알림/푸시 구분 라벨) |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/enroll` | admin · **본인 테넌트** | enrollToken 재발급(QR 재전송). 본인 테넌트 토큰도 자기 seat 의 QR 발급 허용(대시보드 "내 테넌트" self-view 🔗 QR). softphone 미구성 시 **503**(seat 은 유지) |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/email` | admin | enrollToken 재발급 후 seat 이메일로 **QR(인라인 PNG)+딥링크+토큰** 발송(대시보드 "✉" 버튼). dvg SMTP(`GW_SMTP_HOST`+`GW_SMTP_FROM`) 필요 — 미설정 시 **503** `mailer_disabled`; softphone 미구성 시 503; seat 이메일 없으면 400 |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/extension` | admin · **본인 테넌트** | seat 내선(WSS 단말) 선택/변경/저장. body `{extension}`(빈 값=미배정). PBX WSS 단말 목록(`/seats/devices`)에 있는 내선만 허용 — 임의 입력 시 **400** `ext_not_wss`, 다른 seat 가 쓰는 내선이면 **409** `extension_taken`. 후보 조회는 `GET …/seats/devices?protocol=wss`(본인 테넌트 허용) |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/email` | admin · **본인 테넌트** | enrollToken 재발급 후 **seat 의 라벨 이메일로** **QR(인라인 PNG)+딥링크+토큰** 발송(대시보드 admin 모달 + "내 테넌트" self-view 의 "✉" 버튼). 수신자는 seat 이메일로 고정(임의 지정 불가) → 본인 테넌트도 자기 seat 사용자에게 전송 가능. dvg SMTP(`GW_SMTP_HOST`+`GW_SMTP_FROM`) 필요 — 미설정 시 **503** `mailer_disabled`; softphone 미구성 시 503; seat 이메일 없으면 400 |
 | `GET\|PUT /api/v1/tenants/{id}/seats/limit` | admin(PUT) | seat 정원 조회/설정(동시통화 한도와 독립) |
 | `GET\|PUT /api/v1/tenants/{id}/seats/policy` | admin(PUT) | 등록 정책 `{policy: "manual"\|"auto"}` |
 
