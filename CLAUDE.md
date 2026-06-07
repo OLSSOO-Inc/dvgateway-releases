@@ -304,6 +304,8 @@ const s = await gw.getAudioStatus(linkedId);
 > REST: `POST /api/v1/softphone/{provision,refresh,enroll,deprovision}`. device 는 **운영자가 PBX 관리자 웹에서 생성**(protocol=wss·mobile_client=true), dvg 는 `GET /api/v2/devices` 로 조회만 한다(read-only). 토폴로지·QR·수명 규약은 [docs/webrtc-softphone-provisioning-contract.md](../docs/webrtc-softphone-provisioning-contract.md) 참조.
 >
 > **⚠️ INTERIM**: device WRITE/secret-rotation API 가 생기기 전까지 `sip.authToken` 은 device 의 **raw PBX secret** 을 그대로 담는다. WRITE API 도입 시 단기 회전 secret 으로 교체되며 **응답 스키마는 불변**이다. `GW_SOFTPHONE_ENABLED` 미설정 시 모든 엔드포인트 503.
+>
+> **인증 B — Firebase ID 토큰 (gateway 1.4.8.21+)**: `GW_SOFTPHONE_FIREBASE_PROJECT` 설정 시 `provision` 이 `enrollToken` 대신 **`Authorization: Bearer <firebase-id-token>`** 도 수용. dvg 가 토큰을 검증(RS256·aud=project·iss·exp)하고 **email → active seat** 으로 (tenant·내선)을 해석한다(seat 가 SSOT). seat 없음 403 `no_seat`, 다건 409 `ambiguous_seat`, 내선 미배정 409 `no_extension`. `provision`/`refresh` 는 RLS 게이트 면제(토큰 자체가 자격증명).
 
 ### 모바일 사용자 seat 관리 (테넌트별 정원·발급, gateway 1.4.9.0+)
 연동된 모바일 앱(makecall) **사용자 정원(seat)** 을 테넌트별로 관리. dvg 가 정원·발급권을 소유하고, **이메일은 식별 라벨로만 저장**한다(검증·인증은 makecall Firebase 가 SSOT — 기존 경계 불변). 발급(enrollment)은 위 소프트폰 `enrollToken` 을 재사용한다. seat 정원은 동시통화 한도와 **별개**다.
