@@ -315,9 +315,9 @@ const s = await gw.getAudioStatus(linkedId);
 | `POST /api/v1/tenants/{id}/seats` | admin | seat 생성 `{email, extension?, admin?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded` |
 | `POST /api/v1/tenants/{id}/seats/self-enroll` | 본인 테넌트 · admin | **앱 자동 등록**(policy=auto 일 때만). `{email, extension?}` → seat + enrollment. email 기준 **멱등**(재설치/재로그인이 seat 안 늘림). manual 이면 **403** `self_enroll_disabled`, 정원 초과 **409**. `admin:true` 는 무시(권한 상승 방지) |
 | `POST /api/v1/tenants/{id}/seats/import` | admin | CSV/JSON 일괄 등록(부분 성공 `created/skipped/errors`). CSV 헤더 `email,extension,admin` |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/{suspend\|resume\|archive}` | admin | 보류/재개/보관(archived=정원 슬롯 반환) |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/{suspend\|resume\|archive\|restore}` | admin | 보류/재개/보관/복원. archive=정원 슬롯 반환, **restore=보관(archived)→활성(active), 복원 시 정원 재확인(초과 409 `seat_limit_exceeded`)** |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/admin` | admin | `{admin:bool}` 관리계정 토글(테넌트 관리 알림/푸시 구분 라벨) |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/enroll` | admin | enrollToken 재발급(QR 재전송). softphone 미구성 시 **503**(seat 은 유지) |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/enroll` | admin · **본인 테넌트** | enrollToken 재발급(QR 재전송). 본인 테넌트 토큰도 자기 seat 의 QR 발급 허용(대시보드 "내 테넌트" self-view 🔗 QR). softphone 미구성 시 **503**(seat 은 유지) |
 | `GET\|PUT /api/v1/tenants/{id}/seats/limit` | admin(PUT) | seat 정원 조회/설정(동시통화 한도와 독립) |
 | `GET\|PUT /api/v1/tenants/{id}/seats/policy` | admin(PUT) | 등록 정책 `{policy: "manual"\|"auto"}` |
 
