@@ -296,7 +296,7 @@ const s = await gw.getAudioStatus(linkedId);
 ### WebRTC 소프트폰 프로비저닝 (gateway 1.4.8.3+ / SDK 1.8.1+)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| **`provisionSoftphone({enrollToken?, extension?, deviceId, platform?})`** | **`provision_softphone(device_id, *, enroll_token?, extension?, platform?)`** | **QR 의 1회용 enrollToken 으로 소프트폰 프로비저닝. 반환 `{extension, tenantId?, sip:{wssUri,authUser,authToken,realm,expiresAt}, ice[], refresh:{url,refreshToken,minTtlSeconds}}`. 앱은 `sip.wssUri`(dvg 엣지)로 등록 — PBX 직접 연결 아님** |
+| **`provisionSoftphone({enrollToken?, extension?, deviceId, platform?, deviceModel?, vendor?, firmware?, appVersion?})`** | **`provision_softphone(device_id, *, enroll_token?, extension?, platform?, device_model?, vendor?, firmware?, app_version?)`** | **QR 의 1회용 enrollToken 으로 소프트폰 프로비저닝. 반환 `{extension, tenantId?, sip:{wssUri,authUser,authToken,realm,expiresAt}, ice[], refresh:{url,refreshToken,minTtlSeconds}}`. 앱은 `sip.wssUri`(dvg 엣지)로 등록 — PBX 직접 연결 아님. `platform/deviceModel/vendor/firmware/appVersion` 은 **선택적 표시 전용 단말 메타데이터**(gateway 1.4.8.24+) — dvg 가 seat 에 저장하고 대시보드 모바일 사용자 목록의 "단말" 컬럼에 노출(사용자/단말 구분용). 매 provision 마다 보내면 최신값으로 갱신** |
 | **`refreshSoftphone(refreshToken)`** | **`refresh_softphone(refresh_token)`** | **refreshToken 회전 → 새 sip+ice. `expiresAt - minTtlSeconds` 에 선제 호출. 401(revoke)이면 소프트폰 내리고 click-to-call 폴백** |
 | **`createSoftphoneEnrollment(extension)`** (admin) | **`create_softphone_enrollment(extension)`** | **1회용 enrollToken + `dvgprov://enroll?t=&h=` QR URI 발급. tenantPath 는 JWT 에서 서버 강제** |
 | **`deprovisionSoftphone({deviceId, extension})`** | **`deprovision_softphone(device_id, extension)`** | **토큰 체인 무효화(로그아웃). PBX device 는 삭제 안 함(운영자 관리)** |
@@ -312,7 +312,7 @@ const s = await gw.getAudioStatus(linkedId);
 
 | REST 엔드포인트 | 권한 | 설명 |
 |---|---|---|
-| `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함 |
+| `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함. provision 시 앱이 단말 메타데이터를 보냈으면 각 seat 에 **`device:{platform?, model?, vendor?, firmware?, appVersion?, deviceId?, updatedAt?}`**(표시 전용, gateway 1.4.8.24+) 포함 |
 | `GET /api/v1/tenants/{id}/seats/devices?protocol=wss` | admin · 본인 | **내선 후보** — PBX 단말 중 `protocol=wss` 만 `{extension, deviceName, mobileClient}`. seat 의 내선은 이 목록에서만 선택(임의 입력 금지) |
 | `POST /api/v1/tenants/{id}/seats` | admin | seat 생성 `{email, extension?, admin?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded` |
 | `POST /api/v1/tenants/{id}/seats/self-enroll` | 본인 테넌트 · admin | **앱 자동 등록**(policy=auto 일 때만). `{email, extension?}` → seat + enrollment. email 기준 **멱등**(재설치/재로그인이 seat 안 늘림). manual 이면 **403** `self_enroll_disabled`, 정원 초과 **409**. `admin:true` 는 무시(권한 상승 방지) |
