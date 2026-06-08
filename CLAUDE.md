@@ -335,6 +335,7 @@ const s = await gw.getAudioStatus(linkedId);
 |------------|--------|------|
 | `applyChanges()` | `apply_changes()` | PBX 설정 재적용 |
 | `clickToCall({caller,callee,...})` | `click_to_call(caller,callee,...)` | 클릭투콜 |
+| `getPhonebook(tenantId?)` | `get_phonebook(tenant_id)` | 테넌트 내선 폰북(internal contacts) 조회 — 게이트웨이가 VitalPBX phonebooks→internal 첫 id→contacts 를 조인. 반환 `{phonebookId, contacts[]}`. tenant 토큰은 자사, admin 은 tenantId 지정 |
 
 ### 착신전환
 | TypeScript | Python | 설명 |
