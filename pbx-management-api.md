@@ -6,8 +6,9 @@
 
 ## 목차
 
-1. [인증](#1-인증)
+1. [인증](#1-인증) · [모바일 Firebase 인증](#11-모바일-앱-firebase-id-토큰-인증-v14844)
 2. [착신전환 (Diversions)](#2-착신전환-diversions)
+   - [폰북 (Phonebook)](#폰북-phonebook)
 3. [발신자표시 (Caller ID)](#3-발신자표시-caller-id)
 4. [API 키 관리 (App Keys)](#4-api-키-관리-app-keys)
 5. [외부 DB 프록시](#5-외부-db-프록시)
@@ -28,7 +29,7 @@ DID 번호 = "070" + 단말번호
 
 ## 1. 인증
 
-모든 요청에 JWT 토큰이 필요합니다.
+서버/관리 용도는 게이트웨이 `dvgw_` API 키로 JWT 토큰을 발급해 사용합니다.
 
 ```bash
 # API Key로 JWT 토큰 발급
@@ -48,6 +49,40 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/...
 | API 키 | ✅ | ✅ |
 | 외부 DB 프록시 | - | ✅ (Admin만) |
 | DB 설정 | - | ✅ (Admin만) |
+
+### 1.1 모바일 앱: Firebase ID 토큰 인증 (v1.4.8.44+)
+
+`dvgw_` 키는 게이트웨이 **전역 권한**(모든 테넌트 조회/제어)이라 모바일 앱에 임베드할 수
+없습니다(유출 시 전 테넌트 위험). 대신 **착신전환·폰북** 두 엔드포인트는 소프트폰 프로비저닝
+(`/api/v1/softphone/*`)과 **동일한 Firebase ID 토큰**을 추가로 수용합니다.
+
+| 엔드포인트 | Firebase 토큰 | dvgw 키→JWT |
+|------------|:-------------:|:-----------:|
+| `GET/PUT/DELETE /api/v1/diversions/{ext}[/{type}]` | ✅ (v1.4.8.44+) | ✅ (병행) |
+| `GET /api/v1/phonebook` | ✅ (v1.4.8.44+) | ✅ (병행) |
+
+```bash
+# Firebase ID 토큰만으로 호출 (dvgw 키 불필요)
+curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
+  http://localhost:8080/api/v1/diversions/1010
+```
+
+**동작 / 권한 모델:**
+
+- 게이트웨이는 토큰을 검증(RS256·aud·iss·exp)한 뒤 `email` → **활성 모바일 seat** 으로
+  `tenantId`(Dynamic VoIP path) 와 배정 `extension` 을 **서버가 해석**합니다(요청 본문/쿼리의
+  테넌트·extension 신뢰 안 함).
+- **소유 검증**: 토큰 사용자의 seat 에 **배정된 extension** 에만 접근 가능.
+- 활성화 조건: 게이트웨이에 `GW_SOFTPHONE_FIREBASE_PROJECT` 설정(소프트폰 Firebase 인증과 동일) +
+  모바일 seat 활성. 미구성 시 이 엔드포인트는 기존 `dvgw_`→JWT 방식만 동작.
+
+| 상황 | HTTP |
+|------|:----:|
+| 정상 | `200` |
+| 토큰 무효/만료, 해당 email 의 활성 seat 없음, 동일 email 이 복수 테넌트에 매칭(모호) | `401` |
+| 타 extension 요청(비소유) / seat 에 extension 미배정 | `403` |
+
+> Firebase 수용은 위 **두 경로에만** 적용됩니다(다른 관리 API 로 번지지 않음).
 
 ---
 
@@ -92,6 +127,11 @@ Dynamic VoIP AstDB의 착신전환 설정을 관리합니다.
 | `GET` | `/api/v1/diversions/{단말번호}/{타입}` | 특정 착신전환 타입 조회 |
 | `PUT` | `/api/v1/diversions/{단말번호}/{타입}` | 착신전환 설정 |
 | `DELETE` | `/api/v1/diversions/{단말번호}/{타입}` | 착신전환 해제 |
+
+> **모바일(Firebase) 인증** (v1.4.8.44+): 위 엔드포인트는 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)
+> 의 Firebase ID 토큰으로도 호출할 수 있습니다. 단, 모바일 토큰은 **자기 seat 에 배정된 단말번호**
+> 에만 접근 가능하며(타 단말번호 → 403), 전체 현황 조회(`GET /api/v1/diversions`, 단말번호 미지정)는
+> 모바일 토큰으로는 허용되지 않습니다(특정 단말번호 필수).
 
 ### 2.1 전체 내선 현황 조회
 
@@ -221,6 +261,126 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   "action": "disabled"
 }
 ```
+
+---
+
+## 폰북 (Phonebook)
+
+테넌트의 내부 디렉터리를 조회합니다. 모바일 앱(makecall)이 **연락처 화면 분류**와
+**"기능번호·음성회의는 인터넷통화(mVoIP) 전용 발신"** 분기에 사용하므로, 각 항목에
+**카테고리(`type`)** 가 포함됩니다. (v1.4.8.44+)
+
+### 엔드포인트
+
+| 메서드 | 경로 | 설명 |
+|:------:|:-----|:-----|
+| `GET` | `/api/v1/phonebook[?tenantId=...]` | 테넌트 폰북(연락처 목록) 조회 |
+
+- **인증**: 착신전환과 동일 — `dvgw_`→JWT(서버/관리) **또는** Firebase ID 토큰(모바일).
+  자세한 내용은 [1.1 모바일 Firebase 인증](#11-모바일-앱-firebase-id-토큰-인증-v14844).
+- **테넌트 범위**: 테넌트/모바일 토큰은 자기 테넌트로 자동 스코프(`?tenantId=` 무시).
+  Admin(`dvgw_`) 토큰은 `?tenantId={path}` 필수.
+
+### 응답 스키마 (`contacts[]`)
+
+```json
+{
+  "phonebookId": "internal-7be69580e27641df",
+  "tenantId": "7be69580e27641df",
+  "contacts": [
+    {
+      "name": "기술이사",
+      "number": "1010",
+      "type": "Extensions",
+      "email": "cto@makecall.io",
+      "company": "OLSSOO",
+      "mobile": "01011112222"
+    },
+    {
+      "name": "영업팀",
+      "number": "6000",
+      "type": "Ring Groups"
+    }
+  ]
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|:----:|:----:|------|
+| `phonebookId` | string | ✅ | 폰북 식별자(`internal-{tenantId}`) |
+| `tenantId` | string | ✅ | 테넌트 식별자(Dynamic VoIP path, 16-hex) |
+| `contacts` | array | ✅ | 연락처 목록 |
+| `contacts[].name` | string | ✅ | 표시 이름(없으면 번호로 폴백) |
+| `contacts[].number` | string | ✅ | **발신 번호**(단말번호/그룹번호/회의번호/기능번호) |
+| `contacts[].type` | string | ✅ | **카테고리** — 아래 고정 집합 중 하나 |
+| `contacts[].email` | string | - | 이메일(있을 때만) |
+| `contacts[].company` | string | - | 회사/부서(있을 때만) |
+| `contacts[].mobile` | string | - | 휴대폰 번호(있을 때만) |
+
+#### 카테고리(`type`) 값 집합 — 앱 매핑
+
+| `type` 값 | 앱 분류 | 발신 방식 |
+|-----------|---------|-----------|
+| `Extensions` | 단말번호 | 일반(단말/인터넷통화) |
+| `Feature Codes` | 기능번호 | **mVoIP 전용** |
+| `Ring Groups` | 그룹번호 | 일반 |
+| `Conferences` | 음성회의 | **mVoIP 전용** |
+
+> 카테고리는 **PBX 원본 값을 그대로 보존**합니다(게이트웨이가 추론·재분류하지 않음). 정렬은
+> 카테고리 선언 순서 → 번호 오름차순.
+
+### 예시
+
+```bash
+# Firebase 토큰(모바일) — 자기 테넌트 폰북
+curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
+  http://localhost:8080/api/v1/phonebook
+
+# dvgw 키→JWT(Admin) — 특정 테넌트 지정
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/api/v1/phonebook?tenantId=7be69580e27641df"
+```
+
+### 데이터 소스 / 운영 메모
+
+소스는 **Dynamic VoIP(VitalPBX) REST API** 이며, PBX 가 contact 마다 `category` 를 이미 내려주므로
+게이트웨이는 그대로 프록시합니다(카테고리 추론·재분류·유실 없음). 게이트웨이는 두 단계를 거칩니다:
+
+1. `GET /api/v2/phonebooks` — 테넌트의 전화번호부 목록. 각 항목은
+   `{id, description, source_type:"internal"|"external", tenant_id, ...}`.
+   **`source_type:"internal"`** 전화번호부가 내선/그룹/회의/기능번호를 자동 집계한 디렉터리이며,
+   게이트웨이는 **첫 번째 internal** 전화번호부의 `id` 를 선택합니다.
+2. `GET /api/v2/phonebooks/{id}/contacts` — 그 전화번호부의 contact 목록. 각 항목은
+   `{name, telephone, mobile_number, home_number, email, organization, job_title, category}`.
+
+```jsonc
+// 1) GET /api/v2/phonebooks  (발췌)
+{ "status": "success", "data": [
+  { "id": 2,  "description": "얼쑤팩토리", "source_type": "external", "tenant_id": 6 },
+  { "id": 12, "description": "내선그룹",   "source_type": "internal", "tenant_id": 6 }  // ← 첫 internal 선택
+]}
+
+// 2) GET /api/v2/phonebooks/12/contacts  (발췌)
+{ "status": "success", "data": [
+  { "name": "웹폰", "telephone": "1000", "mobile_number": null, "email": null,
+    "organization": null, "job_title": null, "category": "Extensions" }
+]}
+```
+
+**필드 매핑** (PBX contact → `/api/v1/phonebook` contact):
+
+| PBX 필드 | 게이트웨이 필드 |
+|----------|-----------------|
+| `name` | `name` (빈 값이면 `number` 로 폴백) |
+| `telephone` | `number` (빈 값이면 해당 contact 제외) |
+| `category` | `type` (**원본 그대로 보존**) |
+| `email` | `email` |
+| `organization` | `company` |
+| `mobile_number` | `mobile` |
+
+> REST 인증(`app-key` + `tenant` 헤더)은 단말 조회(`GET /api/v2/devices`)와 동일한 read-only
+> 경로를 재사용합니다. PBX 동기화(`PBX_TENANT_SYNC_ENABLED`)가 꺼져 있으면 폰북은 **503**,
+> internal 전화번호부가 없으면 빈 `contacts` 를 반환합니다(타 테넌트 누출 없음).
 
 ---
 
