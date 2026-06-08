@@ -298,6 +298,41 @@ export class GatewayClient extends EventTarget {
     return res.ok;
   }
 
+  // ── warm transfer (SDK 1.4.x / gateway warm_transfer) ─────────────
+  // POST /api/v1/transfer/warm/{linkedId}
+  //   → { connected, transferId, bridgeId?, whisperPlayed?, whisperSkipReason?,
+  //       mixedStreamUrl?, ... }
+  // 현재 통화(linkedId)를 보류하고 destination(상담원/외부번호)을 호출 → 응답하면
+  // 두 레그를 브릿지로 연결한다. whisperText 지정 시 상담원에게 먼저 안내 멘트를
+  // 들려준 뒤 연결(서버측 cloud TTS). outbound=true 면 destination 을 외부 트렁크로
+  // 발신(context=cos-all 등 트렁크 컨텍스트 필요). 게이트웨이 ARI 활성 필수.
+  async warmTransfer(linkedId, opts = {}) {
+    if (!linkedId) throw new Error("linkedId is required");
+    if (!opts.destination) throw new Error("destination is required");
+    const body = {
+      destination: opts.destination,
+      timeoutMs: Math.floor(opts.timeoutMs || 30000),
+    };
+    if (opts.context) body.context = opts.context;
+    if (opts.whisperText) body.whisperText = opts.whisperText;
+    if (opts.holdAudioUrl) body.holdAudioUrl = opts.holdAudioUrl;
+    if (opts.outbound) body.outbound = true;
+    if (opts.cidNumber) body.cidNumber = opts.cidNumber;
+    if (opts.cidName) body.cidName = opts.cidName;
+    if (opts.accountCode) body.accountCode = opts.accountCode;
+    if (opts.streamMixedToExternalMedia) body.streamMixedToExternalMedia = true;
+    const res = await fetch(
+      `${this.apiBase}/api/v1/transfer/warm/${encodeURIComponent(linkedId)}`,
+      {
+        method: "POST",
+        headers: this._authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      },
+    );
+    if (!res.ok) throw await mkApiError(res, "warmTransfer");
+    return res.json();
+  }
+
   // ── provider API keys (Mode A — gateway-side storage) ────────────
   // Mirrors what the gateway dashboard's "API Keys" panel does. Lets demo
   // users register their own STT/TTS/LLM provider keys against the

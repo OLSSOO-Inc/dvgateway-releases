@@ -22,6 +22,7 @@ import callEnded from "./call-ended.js";
 import liteIvr from "./lite-ivr.js";
 import smsOptout from "./sms-optout.js";
 import appPush from "./app-push.js";
+import warmTransfer from "./warm-transfer.js";
 
 // recommendedTrigger: which call-start path makes the demo easiest to try.
 //   "outbound" — user should originate via the click-to-call panel
@@ -121,6 +122,14 @@ export const templates = [
     module: appPush,
     recommendedTrigger: "either",
     requires: [], // 푸시 릴레이 설정이 필요(provider 키 아님). 미설정 시 503 안내.
+  },
+  {
+    id: "warm-transfer",
+    title: "12. 🔀 웜 트랜스퍼",
+    desc: "활성 통화를 보류하고 상담원/외부번호를 호출해 연결 — 선택적으로 상담원에게 안내 멘트(whisper) 재생. 게이트웨이 ARI 필요.",
+    module: warmTransfer,
+    recommendedTrigger: "either",
+    requires: [], // whisper 안내 멘트는 게이트웨이측 cloud TTS 사용(프로바이더 키 별도 등록 시 동작)
   },
 ];
 
