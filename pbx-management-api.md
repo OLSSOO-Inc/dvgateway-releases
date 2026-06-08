@@ -572,8 +572,11 @@ PBX 통화기록을 DVG 경유로 조회합니다. 앱이 기존에 PBX `GET /ap
     `tenant` 헤더가 보장(앱 직접호출과 동일 스코프).
 - **쿼리 전달**: 앱이 보낸 쿼리(`search`/`search_fields`/페이지·기간 등)를 그대로 PBX 로 전달합니다
   (게이트웨이 전용 `tenantId`/`token` 키만 제거). 예: linkedid 단건 조회.
-- **응답**: **PBX `/api/v2/cdr` 원본 형식 그대로**(passthrough). 모바일은 동일 envelope 에서
-  본인 통화 행만 남깁니다(행 형식 보존).
+- **응답**: **PBX `/api/v2/cdr` 원본 형식 그대로**(passthrough, 레거시 호환). 모바일은 동일
+  envelope 에서 본인 통화 행만 남깁니다(행 형식·봉투 구조 보존). 행 배열 위치는 배포마다 다를 수
+  있어(`data`[] · `data.result`[] · `data.results`[] · 최상위 `results`[]) 게이트웨이가 그중
+  처음 발견한 배열을 필터합니다(v1.4.8.54+). 어떤 형태도 못 찾으면 원본을 변형 없이 통과(깨짐 방지).
+  앱 파서도 `data.result`/`data.results`/`data`/`results` 를 모두 처리합니다.
 
 ### 예시
 
