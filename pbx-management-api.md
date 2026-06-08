@@ -60,6 +60,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/...
 |------------|:-------------:|:-----------:|
 | `GET/PUT/DELETE /api/v1/diversions/{ext}[/{type}]` | ✅ (v1.4.8.44+) | ✅ (병행) |
 | `GET /api/v1/phonebook` | ✅ (v1.4.8.44+) | ✅ (병행) |
+| `GET /api/v1/callerid/{ext}` (조회 전용) | ✅ (v1.4.8.47+) | ✅ (병행, GET+PUT) |
 
 ```bash
 # Firebase ID 토큰만으로 호출 (dvgw 키 불필요)
@@ -440,6 +441,22 @@ curl -H "Authorization: Bearer $TOKEN" \
   }
 }
 ```
+
+#### 모바일(Firebase) 조회 — flat `{name, number}` (v1.4.8.47+)
+
+모바일 앱은 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)의 Firebase ID 토큰으로 **GET 만** 호출하며
+(PUT 은 403 `read_only` — CID 변경은 admin/서버 전용), 응답은 **외부 발신표시(이름/번호)만** flat 으로
+받습니다(내부 CID 미노출). 멀티 테넌트는 `?tenantId=<path>`. 자기 배정 단말번호만 접근(타 단말 → 403).
+
+```bash
+curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
+  "http://localhost:8080/api/v1/callerid/1010?tenantId=7be69580e27641df"
+```
+```json
+{ "name": "OLSSOO 대표", "number": "07045141010" }
+```
+
+> dvgw 키→JWT(admin) 호출은 기존 rich 응답(extension/did/internalCid/externalCid) 그대로 유지.
 
 ### 3.2 외부 발신자표시 변경
 
