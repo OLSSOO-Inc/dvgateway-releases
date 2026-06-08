@@ -10,6 +10,7 @@
 2. [착신전환 (Diversions)](#2-착신전환-diversions)
    - [폰북 (Phonebook)](#폰북-phonebook)
 3. [발신자표시 (Caller ID)](#3-발신자표시-caller-id)
+   - [통화기록 (CDR)](#통화기록-cdr)
 4. [API 키 관리 (App Keys)](#4-api-키-관리-app-keys)
 5. [외부 DB 프록시](#5-외부-db-프록시)
 6. [Early Media (응답 전 안내음)](#6-early-media-응답-전-안내음)
@@ -61,6 +62,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/...
 | `GET/PUT/DELETE /api/v1/diversions/{ext}[/{type}]` | ✅ (v1.4.8.44+) | ✅ (병행) |
 | `GET /api/v1/phonebook` | ✅ (v1.4.8.44+) | ✅ (병행) |
 | `GET /api/v1/callerid/{ext}` (조회 전용) | ✅ (v1.4.8.47+) | ✅ (병행, GET+PUT) |
+| `GET /api/v1/pbx/cdr` (통화기록) | ✅ (v1.4.8.52+, 본인 통화만) | ✅ (병행, 테넌트 전체) |
+| `POST /api/v1/pbx/click-to-call` | ✅ (v1.4.8.53+, caller=본인 내선) | ✅ (병행) |
 
 ```bash
 # Firebase ID 토큰만으로 호출 (dvgw 키 불필요)
@@ -544,6 +547,49 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
   "applied": true
 }
 ```
+
+---
+
+## 통화기록 (CDR)
+
+PBX 통화기록을 DVG 경유로 조회합니다. 앱이 기존에 PBX `GET /api/v2/cdr` 를 직접 호출하던 것을
+**모든 트래픽을 DVG 로 통일**하면서 이 프록시가 대신 호출합니다(전역 PBX app-key 를 앱에
+임베드하지 않기 위함). (v1.4.8.52+)
+
+### 엔드포인트
+
+| 메서드 | 경로 | 설명 |
+|:------:|:-----|:-----|
+| `GET` | `/api/v1/pbx/cdr` | 통화기록 조회 (PBX `/api/v2/cdr` 프록시) |
+
+- **인증**: 착신전환·폰북과 동일 — `dvgw_`→JWT(서버/관리) **또는** Firebase ID 토큰(모바일).
+  멀티 테넌트는 `?tenantId=<path>`([1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)).
+- **노출 범위**:
+  - **모바일(Firebase)**: 토큰 사용자의 **자기 단말(내선) 또는 그 단말에 걸린 착신통화만**.
+    게이트웨이가 PBX 응답 행을 caller 의 내선(`src`/`dst`)·수신 DID(`did`)로 post-filter 합니다
+    (fail-closed — 일치 필드 없으면 제외, 타인 통화 누출 방지). 내선 미배정(push-only) 사용자는 빈 결과.
+  - **dvgw 키→JWT(admin/tenant)**: 테넌트 전체(필터 없음 — 서버/관리 경로). 테넌트 격리는 PBX
+    `tenant` 헤더가 보장(앱 직접호출과 동일 스코프).
+- **쿼리 전달**: 앱이 보낸 쿼리(`search`/`search_fields`/페이지·기간 등)를 그대로 PBX 로 전달합니다
+  (게이트웨이 전용 `tenantId`/`token` 키만 제거). 예: linkedid 단건 조회.
+- **응답**: **PBX `/api/v2/cdr` 원본 형식 그대로**(passthrough). 모바일은 동일 envelope 에서
+  본인 통화 행만 남깁니다(행 형식 보존).
+
+### 예시
+
+```bash
+# 모바일(Firebase) — 본인 통화 중 특정 linkedid 조회
+curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
+  "http://localhost:8080/api/v1/pbx/cdr?search=1700000000.123&search_fields=linkedid"
+
+# dvgw 키→JWT(admin) — 특정 테넌트 전체
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/api/v1/pbx/cdr?tenantId=7be69580e27641df&search=1010&search_fields=src,dst"
+```
+
+> **필드 가정**: 본인 통화 필터는 VitalPBX/Asterisk CDR 표준 필드(`src` 발신·`dst` 착신·`did`
+> 수신 대표번호)를 기준으로 정확히 일치합니다. PBX 스키마가 다르면 과소노출(빈 결과)로 **안전하게**
+> 동작하므로(누출 없음), 그 경우 필드명을 확인해 `internal/api/pbxcdr.go` 의 `cdrRowOwned` 를 조정하세요.
 
 ---
 
@@ -1290,6 +1336,26 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 | `cidNumber` | string | - | 발신자 표시 번호 |
 | `accountCode` | string | - | 과금 코드 |
 | `customValue1~3` | string | - | 커스텀 변수 (다이얼플랜 전달) |
+
+> `cos_id` 는 게이트웨이가 호출 테넌트 기준으로 자동 해석합니다(클라이언트 미전송). `cidNumber`·
+> `accountCode` 도 테넌트 등록값으로 서버가 강제(과금 안전).
+
+#### 모바일(Firebase) 클릭투콜 (v1.4.8.53+)
+
+모바일 앱은 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)의 Firebase ID 토큰으로 호출합니다
+(레거시 VitalPBX `/core/click_to_call` 직접호출의 cross-tenant 503 문제 해소 — seat 가 속한
+테넌트·COS 를 서버가 해석). 멀티 테넌트는 `?tenantId=<path>`(또는 `X-Tenant-ID`).
+
+- **`caller` 는 토큰 사용자 본인 seat 에 배정된 내선이어야 함**(타 내선 → 403 `not_owner`,
+  내선 미배정 → 403 `no_extension`).
+- `cos_id` 는 게이트웨이가 그 테넌트 기준으로 자동 해석 — 클라이언트가 보내지 않습니다.
+- 본문은 위와 동일(`caller`/`callee`/`cidName`/`cidNumber`/`accountCode`/`customValue1~3`).
+
+```bash
+curl -X POST -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" -H "Content-Type: application/json" \
+  "http://localhost:8080/api/v1/pbx/click-to-call?tenantId=7be69580e27641df" \
+  -d '{"caller":"1010","callee":"01012345678"}'
+```
 
 ---
 
