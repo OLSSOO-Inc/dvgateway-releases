@@ -73,13 +73,21 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
   `tenantId`(Dynamic VoIP path) 와 배정 `extension` 을 **서버가 해석**합니다(요청 본문/쿼리의
   테넌트·extension 신뢰 안 함).
 - **소유 검증**: 토큰 사용자의 seat 에 **배정된 extension** 에만 접근 가능.
+- **멀티 테넌트(gateway 1.4.8.45+)**: 동일 이메일이 여러 테넌트(팀)에 소속된 경우, 어느 팀으로
+  해석할지 **`?tenantId=<path>`** 쿼리(또는 `X-Tenant-ID` 헤더)로 선택합니다. 선택값은 토큰
+  사용자 **본인 seat 범위 안에서만** 유효(타 테넌트 지정 시 401). 단일 테넌트면 생략 가능.
+  후보 목록은 `GET /api/v1/softphone/seats` 로 받습니다.
+  ```bash
+  curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
+    "http://localhost:8080/api/v1/diversions/1010?tenantId=7be69580e27641df"
+  ```
 - 활성화 조건: 게이트웨이에 `GW_SOFTPHONE_FIREBASE_PROJECT` 설정(소프트폰 Firebase 인증과 동일) +
   모바일 seat 활성. 미구성 시 이 엔드포인트는 기존 `dvgw_`→JWT 방식만 동작.
 
 | 상황 | HTTP |
 |------|:----:|
 | 정상 | `200` |
-| 토큰 무효/만료, 해당 email 의 활성 seat 없음, 동일 email 이 복수 테넌트에 매칭(모호) | `401` |
+| 토큰 무효/만료, 해당 email 의 활성 seat 없음, 멀티 테넌트인데 `tenantId` 미지정/비소유(모호) | `401` |
 | 타 extension 요청(비소유) / seat 에 extension 미배정 | `403` |
 
 > Firebase 수용은 위 **두 경로에만** 적용됩니다(다른 관리 API 로 번지지 않음).
