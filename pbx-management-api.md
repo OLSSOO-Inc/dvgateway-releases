@@ -458,6 +458,27 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
 
 > dvgw 키→JWT(admin) 호출은 기존 rich 응답(extension/did/internalCid/externalCid) 그대로 유지.
 
+#### 테넌트 대표 CID — `GET /api/v1/callerid/_default` (v1.4.8.49+)
+
+외부발신 표시정보 **폴백 체인**의 ②단계 — 내선별 CID(`/callerid/{ext}`)가 비어 있을 때 쓰는
+**테넌트 대표 발신표시**(대표 이름 `cid_name` / 대표 번호 `cid_number`). PBX 테넌트 설정에서
+가져오며, 인증·테넌트 스코프는 다른 callerid GET 과 동일(Firebase 또는 admin JWT). **GET 전용**
+(대표 CID 변경은 테넌트 설정 `PUT /api/v1/tenants/{id}` 의 `cidName`/`cidNumber`).
+
+- `_default` 는 **테넌트 단위** 정보라 per-extension 소유 검증이 없다 — 그 테넌트에 seat 을 가진
+  사용자면 누구나 조회. 멀티 테넌트는 `?tenantId=<path>`.
+
+```bash
+curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
+  "http://localhost:8080/api/v1/callerid/_default?tenantId=7be69580e27641df"
+```
+```json
+{ "name": "OLSSOO", "number": "0270001000" }
+```
+
+> 앱 폴백 체인: ① `/callerid/{ext}` → ② (비면) `/callerid/_default`(테넌트 대표) → ③ (그래도 비면)
+> 앱 최종 PBX `external_cid`.
+
 ### 3.2 외부 발신자표시 변경
 
 > ⚠️ **중요:** 발신자 정보 변경 후 PBX에 반영하려면 **설정 재적용(apply_changes)**이 필요합니다.
