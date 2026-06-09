@@ -23,6 +23,7 @@ import liteIvr from "./lite-ivr.js";
 import smsOptout from "./sms-optout.js";
 import appPush from "./app-push.js";
 import warmTransfer from "./warm-transfer.js";
+import ivrRouteTransfer from "./ivr-route-transfer.js";
 
 // recommendedTrigger: which call-start path makes the demo easiest to try.
 //   "outbound" — user should originate via the click-to-call panel
@@ -130,6 +131,14 @@ export const templates = [
     module: warmTransfer,
     recommendedTrigger: "either",
     requires: [], // whisper 안내 멘트는 게이트웨이측 cloud TTS 사용(프로바이더 키 별도 등록 시 동작)
+  },
+  {
+    id: "ivr-route-transfer",
+    title: "13. 📦 대표번호 안내 → 담당자 연결",
+    desc: "실전 시나리오(소호·1인 사업자) — 연결 시 업종 인사말 TTS(부동산·보험·사주·O2O·타지역) → 곧바로 담당자(휴대폰/내선)로 웜 트랜스퍼. 인사말 TTS·웜트랜스퍼를 하나의 콜플로우로 엮은 응용 사례(키 입력·메뉴 없음). 게이트웨이 ARI 필요.",
+    module: ivrRouteTransfer,
+    recommendedTrigger: "either",
+    requires: ["tts"], // 업종 인사말 멘트 TTS
   },
 ];
 
