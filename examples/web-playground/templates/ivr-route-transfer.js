@@ -107,7 +107,11 @@ function mount(ctx) {
     </div>
     <p class="help">담당자가 <b>휴대폰/외부번호</b>면 외부발신을 켜세요(트렁크 컨텍스트로 발신). 사내 <b>내선</b>이면 끄세요.</p>
 
-    <div class="transcript" id="irt-state" style="margin-top:16px;">
+    <div class="row" style="margin-top:16px;justify-content:space-between;align-items:center;">
+      <span class="muted small">단계별 진행 상황</span>
+      <button id="irt-clear" class="ghost small" type="button">🧹 Clear</button>
+    </div>
+    <div class="transcript" id="irt-state">
       <p class="muted small">대기 중 — 통화가 연결되면 여기에 단계별 진행 상황이 표시돼요.</p>
     </div>
   `;
@@ -119,6 +123,7 @@ function mount(ctx) {
   const destEl = ctx.body.querySelector("#irt-dest");
   const outboundEl = ctx.body.querySelector("#irt-outbound");
   const stateEl = ctx.body.querySelector("#irt-state");
+  const clearBtn = ctx.body.querySelector("#irt-clear");
 
   // 상호({biz}) 기준 기본 whisper 문구.
   const whisperDefault = (biz) => `${biz || "저희 업체"} 고객 연결입니다.`;
@@ -164,6 +169,15 @@ function mount(ctx) {
     log.push({ linkedId, msg, _t: Date.now() });
     if (log.length > 40) log.shift();
     renderLog();
+  }
+
+  // Clear — 진행 상황 로그를 비운다(진행 중인 통화나 가드 상태는 건드리지 않음,
+  // 화면 정리 용도). 활성 통화가 다시 단계를 진행하면 새 줄이 쌓인다.
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      log.length = 0;
+      renderLog();
+    });
   }
 
   // ── TTS 재생 (mode 무관 폴백) ───────────────────────────────────
@@ -240,11 +254,41 @@ function mount(ctx) {
     if (sessions.get(linkedId)) sessions.get(linkedId).phase = "done";
   }
 
-  // 이미 연결(up)된 활성 통화가 있으면 템플릿을 켠 즉시 시작.
+  // 한 물리 통화당 1회만 처리하기 위한 가드. click-to-call 아웃바운드는 Local
+  // 채널로 같은 통화에 여러 leg(서로 다른 linkedId)를 만들고, 각 leg 가 channel:state
+  // up 을 내보낸다. 그런데 보조 Local leg 는 call:new 를 받지 못한다(메인 통화만
+  // call:new). 따라서:
+  //   · call:new 를 받은 linkedId 만 "처리 대상 메인 통화"로 인정(mainCalls)하고,
+  //   · 그 통화의 leg=="a" up 에서만 1회(handledCalls) beginSession.
+  //   · 추가로, 동시에 1건만 라우팅(routingActive)해 중복 originate("Allocation
+  //     failed")를 원천 차단한다 — 소호 단일 회선 시나리오는 동시 다발 통화를
+  //     가정하지 않는다.
+  // 보조 leg(b)·스눕·call:new 없는 leg 는 무시한다.
+  const mainCalls = new Set();    // call:new 를 받은 메인 linkedId
+  const handledCalls = new Set(); // 이미 beginSession 한 메인 linkedId
+  let routingActive = false;      // 현재 인사말/연결 진행 중인 통화가 있나
+
+  async function maybeBegin(linkedId) {
+    if (!linkedId || handledCalls.has(linkedId)) return;
+    if (!mainCalls.has(linkedId)) return; // call:new 없는 보조 leg → 무시
+    if (routingActive) return;            // 이미 한 통화 처리 중 → 중복 방지
+    handledCalls.add(linkedId);
+    routingActive = true;
+    try {
+      await beginSession(linkedId);
+    } finally {
+      routingActive = false;
+    }
+  }
+
+  // 이미 연결(up)된 활성 통화가 있으면 템플릿을 켠 즉시 시작(메인 통화 하나만).
+  // 템플릿을 통화 도중 켠 경우 call:new 를 못 봤을 수 있으므로, 활성 통화는
+  // mainCalls 로 인정해 준다(이 경우 이미 게이트웨이가 1:1 통화로 추적 중).
   const live = Array.from(ctx.getActiveCalls().values());
   const upCall = live.find((c) => c.state === "up" || c.channelState === "up");
   if (upCall) {
-    beginSession(upCall.linkedId);
+    mainCalls.add(upCall.linkedId);
+    maybeBegin(upCall.linkedId);
   } else if (live.length) {
     pushLog(live[0].linkedId, "📞 통화가 연결되면 자동으로 인사말 → 담당자 연결을 시작해요 (벨 울리는 중 대기)");
   }
@@ -253,9 +297,18 @@ function mount(ctx) {
     if (!ctx.client) return;
     const evt = e.detail;
 
-    // 0) 통화 종료 → 세션/로그 정리
+    // call:new → 메인 통화로 등록(보조 Local leg 와 구분하는 기준).
+    if (evt.event === "call:new" && evt.linkedId) {
+      mainCalls.add(evt.linkedId);
+      return;
+    }
+
+    // 0) 통화 종료 → 세션/로그/가드 정리. 메인 통화가 끝나면 routingActive 해제.
     if (evt.event === "call:ended" && evt.linkedId) {
       sessions.delete(evt.linkedId);
+      if (handledCalls.has(evt.linkedId)) routingActive = false;
+      handledCalls.delete(evt.linkedId);
+      mainCalls.delete(evt.linkedId);
       for (let i = log.length - 1; i >= 0; i--) {
         if (log[i].linkedId === evt.linkedId) log.splice(i, 1);
       }
@@ -263,9 +316,12 @@ function mount(ctx) {
       return;
     }
 
-    // 1) 통화 연결 → 인사말 → 담당자 연결
+    // 1) 통화 연결 → 인사말 → 담당자 연결.
+    //    leg=="a"(최초 채널) up 만 발동 — 보조 leg(b)·스눕은 무시.
+    //    leg 정보가 없는 구버전 이벤트는 그대로 허용(maybeBegin 가 다중 가드).
     if (evt.event === "channel:state" && evt.state === "up" && evt.linkedId) {
-      await beginSession(evt.linkedId);
+      if (evt.leg && evt.leg !== "a") return;
+      await maybeBegin(evt.linkedId);
       return;
     }
   };
