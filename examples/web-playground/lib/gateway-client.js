@@ -427,13 +427,14 @@ export class GatewayClient extends EventTarget {
   // 이메일 키 푸시. 단말(extension) 도달 전(IVR/시스템 선응답)이거나 내선이 아직
   // 없는 사용자에게도 라우팅(email → userId → fcm_token). 게이트웨이 자동
   // incoming_call 푸시와 동일한 receiverEmail 라우팅 레일.
-  async pushToUser({ email, subtype, title, body, linkedId, did, caller, callerName, data }) {
+  async pushToUser({ email, subtype, title, body, linkedId, extension, did, caller, callerName, data }) {
     if (!email) throw new Error("email is required");
     if (!subtype) throw new Error("subtype is required");
     const payload = { email, subtype };
     if (title) payload.title = title;
     if (body) payload.body = body;
     if (linkedId) payload.linkedid = linkedId;
+    if (extension) payload.extension = extension;
     if (did) payload.did = did;
     if (caller) payload.caller = caller;
     if (callerName) payload.callerName = callerName;

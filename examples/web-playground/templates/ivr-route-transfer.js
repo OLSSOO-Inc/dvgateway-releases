@@ -196,23 +196,34 @@ function mount(ctx) {
   // 통화의 발신정보를 푸시 요청에 함께 실어야 한다(게이트웨이는 이벤트에 실린
   // caller/callerName/did 로 템플릿을 렌더한다). 활성 통화에서 꺼내 전달한다 —
   // 안 실으면 게이트웨이가 빈 값으로 치환해 "{caller}" 가 빈칸으로 보인다.
-  async function sendPush(linkedId, subtype, label) {
+  // transferTo: 전환통화(warm_transfer) 푸시일 때만 전달하는 전환 대상 번호
+  // ({transferTo} 치환용). incoming_call 등에는 빈 값.
+  async function sendPush(linkedId, subtype, label, transferTo) {
     const seat = selectedSeat();
     if (!seat || !seat.email || !ctx.client) return;
     const call = ctx.getActiveCalls().get(linkedId) || {};
     // 발신번호: 인바운드는 caller, click-to-call 아웃바운드는 peer(고객번호).
     const caller = call.caller || call.peer || "";
+    // 활성 통화 정보가 없으면 caller/did/callerName 변수는 빈 값으로 치환된다(정상).
+    // 실제 수신 통화에서는 call:new 의 값이 채워진다 — 테스트 시 안내만 남긴다.
+    if (!caller && !call.did && !call.callerName) {
+      pushLog(linkedId, "ℹ 활성 통화 정보가 없어 발신번호 변수는 빈 값으로 전송돼요 (실제 통화에선 채워짐)");
+    }
     try {
       await ctx.client.pushToUser({
         email: seat.email,
         subtype,
         linkedId,
+        // {extension} 치환용 — 선택한 seat 의 내선. 게이트웨이도 email→seat 으로
+        // 자동 채우지만 아는 값을 명시 전달해 단일 소스로 둔다.
+        extension: seat.extension || "",
         caller,
         callerName: call.callerName || "",
         did: call.did || "",
+        transferTo: transferTo || "",
       });
-      pushLog(linkedId, `📲 ${label} 푸시 전송 → ${seat.email}${caller ? ` (발신 ${caller})` : ""}`);
-      ctx.log("ok", "ivr-route:push", { linkedId, subtype, email: seat.email, caller });
+      pushLog(linkedId, `📲 ${label} 푸시 전송 → ${seat.email}${caller ? ` (발신 ${caller})` : ""}${transferTo ? ` (전환 ${transferTo})` : ""}`);
+      ctx.log("ok", "ivr-route:push", { linkedId, subtype, email: seat.email, caller, extension: seat.extension || "", transferTo: transferTo || "" });
     } catch (err) {
       const m = String(err && err.message || err);
       pushLog(linkedId, `✗ ${label} 푸시 실패: ${m}`);
@@ -299,7 +310,7 @@ function mount(ctx) {
     // warmTransfer 는 담당자 응답까지 최대 30초 블로킹하므로, 성사 후 푸시하면
     // 너무 늦다. 담당자/사장이 "지금 전환 전화가 걸려온다"를 연결 전에 받게 한다.
     // (토글 ON + seat 선택 시. fire-and-forget — 전환 진행을 막지 않는다.)
-    if (pushTransferEl && pushTransferEl.checked) sendPush(linkedId, "warm_transfer", "전환통화");
+    if (pushTransferEl && pushTransferEl.checked) sendPush(linkedId, "warm_transfer", "전환통화", dest);
 
     try {
       const r = await ctx.client.warmTransfer(linkedId, {
