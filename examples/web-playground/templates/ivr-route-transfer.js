@@ -18,7 +18,7 @@
 // Playback(lite/flow)으로 자동 폴백한다. warm transfer 는 게이트웨이 ARI 활성 필요.
 
 const CODE = `// 소호 대표번호: 업종 인사말 → 담당자 연결 (warm transfer)
-const GREETING = "안녕하세요, OO공인중개사입니다. 담당자에게 연결해 드리겠습니다.";
+const GREETING = "안녕하세요, 지화자입니다. 담당자에게 연결해 드리겠습니다.";
 const AGENT = "01012345678";       // 담당자(사업자 본인) 번호 — 외부면 outbound:true
 const connected = new Set();       // 통화별 1회 처리 가드
 
@@ -75,7 +75,7 @@ function mount(ctx) {
       </div>
       <div class="field" style="flex:1;min-width:160px;">
         <label>상호 (멘트의 {biz} 자리)
-          <input id="irt-biz" type="text" value="OO공인중개사" placeholder="예: OO공인중개사">
+          <input id="irt-biz" type="text" value="지화자" placeholder="예: 지화자">
         </label>
       </div>
     </div>

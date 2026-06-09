@@ -1,5 +1,5 @@
 import { GatewayClient } from "./lib/gateway-client.js";
-import { templates, getTemplate } from "./templates/index.js";
+import { templates, getTemplate, groups } from "./templates/index.js";
 import { getBrowserTtsAdapter, listBrowserTtsProviders, listTtsProviders, listSttProviders } from "./lib/providers/index.js";
 
 const STORAGE_KEY = "dvgw-playground-creds-v2";
@@ -1030,6 +1030,10 @@ function highlightOutboundCard(linkedId) {
 function wireOutboundPanel() {
   loadOutboundForm();
   setOutboundEnabled(false, "먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.");
+  // "3. 발신 후 Flow 연결" 패널 접기/펴기. 처음엔 접힌 상태(공간 절약)이며
+  // 사용자의 선택을 localStorage 에 보관한다.
+  setupOutboundToggle();
+
   $("btn-originate").addEventListener("click", () => originate());
   $("btn-ob-clear").addEventListener("click", () => {
     ["ob-callee", "ob-caller"].forEach((id) => {
@@ -1128,26 +1132,116 @@ function reqTag(kind) {
 
 let templateMenuWired = false;
 
+// 그룹 펼침 상태는 localStorage 에 보관해 사용자의 접기/펴기 선택이 새로고침
+// 후에도 유지되게 한다. 첫 방문(저장값 없음)은 group.defaultOpen 을 따른다.
+const GROUP_OPEN_KEY = "dvg_pg_group_open";
+function loadGroupOpen() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(GROUP_OPEN_KEY) || "{}") || {}; } catch { saved = {}; }
+  const state = {};
+  for (const g of groups) {
+    state[g.id] = typeof saved[g.id] === "boolean" ? saved[g.id] : !!g.defaultOpen;
+  }
+  return state;
+}
+function saveGroupOpen(stateMap) {
+  try { localStorage.setItem(GROUP_OPEN_KEY, JSON.stringify(stateMap)); } catch { /* ignore */ }
+}
+
+// setupOutboundToggle: "3. 발신 후 Flow 연결" 패널의 접기/펴기. 처음엔 접힘
+// (defaultOpen=false). 사용자의 선택은 localStorage 에 보관.
+const OB_OPEN_KEY = "dvg_pg_outbound_open";
+function setupOutboundToggle() {
+  const panel = $("outbound-panel");
+  const toggle = $("ob-toggle");
+  const bodyEl = $("ob-body");
+  if (!panel || !toggle || !bodyEl) return;
+
+  let open = false;
+  try { open = localStorage.getItem(OB_OPEN_KEY) === "1"; } catch { open = false; }
+
+  const apply = () => {
+    panel.classList.toggle("collapsed", !open);
+    bodyEl.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    const caret = toggle.querySelector(".panel-caret");
+    if (caret) caret.textContent = open ? "－" : "＋";
+  };
+  const setOpen = (v) => {
+    open = v;
+    try { localStorage.setItem(OB_OPEN_KEY, v ? "1" : "0"); } catch { /* ignore */ }
+    apply();
+  };
+  apply();
+
+  toggle.addEventListener("click", () => setOpen(!open));
+  toggle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); }
+  });
+}
+
 function renderTemplateMenu() {
   const ul = $("template-menu");
   const countEl = $("template-count");
   if (countEl) countEl.textContent = `(${templates.length}개)`;
-  ul.innerHTML = templates.map((t) => {
+
+  const openState = loadGroupOpen();
+
+  // 한 템플릿의 <li> 마크업.
+  const liHtml = (t) => {
     const reqs = (t.requires || []);
     const tags = reqs.length
       ? `<span class="req-tags">${reqs.map(reqTag).join("")}</span>`
       : `<span class="req-tags"><span class="req-tag none" title="API 키 없이도 동작해요">키 불필요</span></span>`;
+    const activeCls = state.currentTemplate && state.currentTemplate.id === t.id ? " active" : "";
     return `
-    <li data-id="${t.id}" class="${state.currentTemplate && state.currentTemplate.id === t.id ? "active" : ""}">
-      <span class="tpl-head">${escapeHtml(t.title)}${tags}</span>
-      <span class="desc">${escapeHtml(t.desc)}</span>
-    </li>
-  `;
+      <li data-id="${t.id}" class="tpl-item${activeCls}">
+        <span class="tpl-head">${escapeHtml(t.title)}${tags}</span>
+        <span class="desc">${escapeHtml(t.desc)}</span>
+      </li>`;
+  };
+
+  // 정의된 그룹 순서대로 렌더. group 미지정 템플릿은 마지막에 그룹 없이 노출(안전망).
+  const grouped = groups.map((g) => ({ g, items: templates.filter((t) => t.group === g.id) }))
+    .filter((x) => x.items.length > 0);
+  const ungrouped = templates.filter((t) => !groups.some((g) => g.id === t.group));
+
+  let html = grouped.map(({ g, items }) => {
+    const open = openState[g.id];
+    return `
+      <li class="tpl-group ${open ? "open" : "collapsed"}" data-group="${g.id}">
+        <button type="button" class="tpl-group-head" aria-expanded="${open}">
+          <span class="tpl-group-caret">${open ? "▾" : "▸"}</span>
+          <span class="tpl-group-label">${escapeHtml(g.label)}</span>
+          <span class="tpl-group-count muted small">${items.length}</span>
+        </button>
+        <ul class="tpl-group-items" ${open ? "" : "hidden"}>
+          ${items.map(liHtml).join("")}
+        </ul>
+      </li>`;
   }).join("");
+  if (ungrouped.length) {
+    html += `<li class="tpl-group open" data-group="_ungrouped"><ul class="tpl-group-items">${ungrouped.map(liHtml).join("")}</ul></li>`;
+  }
+  ul.innerHTML = html;
+
   // delegated click — attach once so repeated re-renders don't stack listeners.
   if (!templateMenuWired) {
     ul.addEventListener("click", (e) => {
-      const li = e.target.closest("li");
+      // 그룹 헤더 클릭 → 접기/펴기 토글 (localStorage 저장).
+      const head = e.target.closest(".tpl-group-head");
+      if (head) {
+        const groupLi = head.closest(".tpl-group");
+        const gid = groupLi && groupLi.dataset.group;
+        if (!gid) return;
+        const cur = loadGroupOpen();
+        cur[gid] = !cur[gid];
+        saveGroupOpen(cur);
+        renderTemplateMenu();
+        return;
+      }
+      // 템플릿 항목 클릭 → 선택.
+      const li = e.target.closest("li.tpl-item");
       if (!li) return;
       selectTemplate(li.dataset.id);
     });
@@ -1211,7 +1305,18 @@ function selectTemplate(id) {
     state.templateDispose = null;
   }
 
-  document.querySelectorAll("#template-menu li").forEach((li) => {
+  // 선택된 템플릿이 접힌 그룹에 있으면(딥링크·복원 등) 그 그룹을 펼쳐서
+  // 활성 항목이 항상 보이게 한다. 펼친 뒤 메뉴를 다시 그린다.
+  if (tpl.group) {
+    const cur = loadGroupOpen();
+    if (cur[tpl.group] === false) {
+      cur[tpl.group] = true;
+      saveGroupOpen(cur);
+      renderTemplateMenu();
+    }
+  }
+
+  document.querySelectorAll("#template-menu li.tpl-item").forEach((li) => {
     const isActive = li.dataset.id === id;
     li.classList.toggle("active", isActive);
     // Keep the selected template visible inside the self-scrolling list so the

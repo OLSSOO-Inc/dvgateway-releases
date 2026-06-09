@@ -184,6 +184,31 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* 접을 수 있는 패널 헤더(예: "3. 발신 후 Flow 연결"). h2 를 버튼처럼 만든다. */
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+.panel-toggle:hover { color: var(--accent); }
+.panel-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 3px;
+  color: var(--muted);
+}
+/* 접힌 패널은 헤더만 보이고 본문(margin)을 죽여 자리만 차지하게 한다. */
+.panel.collapsible.collapsed { padding-bottom: 14px; }
+.panel.collapsible.collapsed h2 { margin-bottom: 0; }
+
 label {
   display: block;
   margin-bottom: 10px;
@@ -282,6 +307,55 @@ button.danger { background: var(--err); border-color: var(--err); color: white; 
   margin-top: 2px;
   font-weight: normal;
 }
+
+/* ── 그룹(접기/펴기) ───────────────────────────────────────────────
+   템플릿 목록을 "실전 시나리오 / 기능 레퍼런스" 두 그룹으로 묶고 헤더를
+   눌러 접거나 편다. 그룹 wrapper <li>(.tpl-group)는 클릭 카드가 아니므로
+   .menu li 의 패딩/hover/cursor 를 무력화한다. */
+.menu li.tpl-group {
+  padding: 0;
+  margin-bottom: 8px;
+  border: none;
+  cursor: default;
+  background: none;
+}
+.menu li.tpl-group:hover { background: none; }
+.tpl-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 4px;
+  cursor: pointer;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.tpl-group-head:hover { border-color: var(--accent); }
+.tpl-group-caret {
+  width: 12px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.tpl-group-label { flex: 1 1 auto; }
+.tpl-group-count {
+  flex: 0 0 auto;
+  background: var(--panel, #1b1f27);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+.tpl-group-items {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0 0 0 6px;
+}
+/* 그룹 내부 항목(.tpl-item)이 실제 클릭 카드 — 기존 li 스타일을 그대로 받되
+   목록 들여쓰기만 살짝 준다. */
+.tpl-group-items li.tpl-item { margin-bottom: 4px; }
 
 /* 템플릿 카드 제목 + 요구 키 태그 */
 .menu li .tpl-head {

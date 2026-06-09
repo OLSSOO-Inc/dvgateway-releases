@@ -74,8 +74,11 @@
         <ul id="template-menu" class="menu"></ul>
       </section>
 
-      <section class="panel" id="outbound-panel">
-        <h2>3. 발신</h2>
+      <section class="panel collapsible collapsed" id="outbound-panel">
+        <h2 class="panel-toggle" id="ob-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="ob-body">
+          <span class="panel-caret">＋</span> 3. 발신 후 Flow 연결
+        </h2>
+        <div class="panel-body" id="ob-body" hidden>
         <p class="hint muted small" id="ob-conn-hint">먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.</p>
 
         <fieldset id="ob-fieldset" disabled>
@@ -102,6 +105,7 @@
 
           <div id="ob-result" class="ob-result hidden"></div>
         </fieldset>
+        </div><!-- /#ob-body -->
       </section>
 
       <section class="panel">
