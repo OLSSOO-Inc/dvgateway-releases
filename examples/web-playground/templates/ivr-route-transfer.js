@@ -193,13 +193,10 @@ function mount(ctx) {
 
   async function beginSession(linkedId) {
     if (!ctx.client || !linkedId || sessions.has(linkedId)) return;
-    const dest = destEl.value.trim();
-    if (!dest) {
-      pushLog(linkedId, "⚠ 담당자 번호가 비어 있어요 — 위에 연결할 번호를 입력하세요");
-      return;
-    }
     sessions.set(linkedId, { phase: "greeting" });
 
+    // 1) 인사말은 담당자 번호 유무와 무관하게 항상 들려준다 — 소호 안내 멘트는
+    //    번호를 안 넣어도 "인사말만" 체험할 수 있어야 한다(연결 단계만 번호 필요).
     const greet = greetEl.value.trim();
     if (greet) {
       pushLog(linkedId, "⏳ 연결됨 — 잠시 후 인사말을 재생해요");
@@ -207,9 +204,16 @@ function mount(ctx) {
       await speak(linkedId, greet, "📢 인사말 재생");
     }
 
-    // 인사말이 끝나면 곧바로 담당자 연결.
+    // 2) 인사말이 끝나면 담당자 연결. 번호가 비어 있으면 연결만 건너뛴다
+    //    (인사말은 이미 재생됨). 통화가 재생 중 끊겼으면 중단.
     const s = sessions.get(linkedId);
-    if (!s) return; // 재생 중 통화 종료
+    if (!s) return;
+    const dest = destEl.value.trim();
+    if (!dest) {
+      pushLog(linkedId, "⚠ 담당자 번호가 비어 있어 연결은 생략했어요 — 위에 연결할 번호를 입력하면 다음 통화부터 연결됩니다");
+      s.phase = "done";
+      return;
+    }
     s.phase = "routing";
     await routeTo(linkedId, dest, outboundEl.checked);
     if (sessions.get(linkedId)) sessions.get(linkedId).phase = "done";

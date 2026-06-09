@@ -154,7 +154,7 @@ export const templates = [
     title: "12. 🔀 웜 트랜스퍼",
     desc: "활성 통화를 보류하고 상담원/외부번호를 호출해 연결 — 선택적으로 상담원에게 안내 멘트(whisper) 재생. 게이트웨이 ARI 필요.",
     module: warmTransfer,
-    group: GROUP_SCENARIO,
+    group: GROUP_REFERENCE,
     recommendedTrigger: "either",
     requires: [], // whisper 안내 멘트는 게이트웨이측 cloud TTS 사용(프로바이더 키 별도 등록 시 동작)
   },
