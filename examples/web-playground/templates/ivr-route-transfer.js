@@ -37,16 +37,18 @@ ws.onmessage = async (msg) => {
     await pushToUser({ email: OWNER_EMAIL, subtype: "incoming_call", linkedid: lid });
 
     await injectTts(lid, GREETING);          // 발신자에게 업종 인사말
+
+    // 전환통화 알림 — 전환이 시작되는 시점에 푸시(warmTransfer 는 응답까지
+    // 블로킹하므로 호출 직전에 발사해야 담당자가 연결 전에 받는다)
+    pushToUser({ email: OWNER_EMAIL, subtype: "warm_transfer", linkedid: lid });
+
     const r = await warmTransfer(lid, {      // 담당자로 연결
       destination: AGENT,
       whisperText: WHISPER,                  // 담당자에게만 들려줄 안내(고객엔 안 들림)
       outbound: true,                        // 휴대폰/외부번호면 트렁크 발신
       timeoutMs: 30000,
     });
-    // 전환통화 알림 — 담당자 연결 성사 시 푸시
-    if (r.connected) {
-      await pushToUser({ email: OWNER_EMAIL, subtype: "warm_transfer", linkedid: lid });
-    }
+    // r.connected: 담당자 응답·연결 성사 여부
   }
 };`;
 
@@ -189,13 +191,28 @@ function mount(ctx) {
 
   // sendPush: 선택한 seat 의 이메일로 subtype 푸시(best-effort). seat 미선택이면
   // 스킵. 실패는 진행 로그에 사유까지 표시(게이트웨이가 릴레이 4xx 본문 전달).
+  //
+  // 알림 제목/본문 템플릿의 {caller}{callerName}{did} 가 실제 값으로 치환되려면
+  // 통화의 발신정보를 푸시 요청에 함께 실어야 한다(게이트웨이는 이벤트에 실린
+  // caller/callerName/did 로 템플릿을 렌더한다). 활성 통화에서 꺼내 전달한다 —
+  // 안 실으면 게이트웨이가 빈 값으로 치환해 "{caller}" 가 빈칸으로 보인다.
   async function sendPush(linkedId, subtype, label) {
     const seat = selectedSeat();
     if (!seat || !seat.email || !ctx.client) return;
+    const call = ctx.getActiveCalls().get(linkedId) || {};
+    // 발신번호: 인바운드는 caller, click-to-call 아웃바운드는 peer(고객번호).
+    const caller = call.caller || call.peer || "";
     try {
-      await ctx.client.pushToUser({ email: seat.email, subtype, linkedId });
-      pushLog(linkedId, `📲 ${label} 푸시 전송 → ${seat.email}`);
-      ctx.log("ok", "ivr-route:push", { linkedId, subtype, email: seat.email });
+      await ctx.client.pushToUser({
+        email: seat.email,
+        subtype,
+        linkedId,
+        caller,
+        callerName: call.callerName || "",
+        did: call.did || "",
+      });
+      pushLog(linkedId, `📲 ${label} 푸시 전송 → ${seat.email}${caller ? ` (발신 ${caller})` : ""}`);
+      ctx.log("ok", "ivr-route:push", { linkedId, subtype, email: seat.email, caller });
     } catch (err) {
       const m = String(err && err.message || err);
       pushLog(linkedId, `✗ ${label} 푸시 실패: ${m}`);
@@ -277,6 +294,13 @@ function mount(ctx) {
     const whisper = whisperEl.value.trim();
     pushLog(linkedId, `🔀 담당자 연결 중… (${dest}${outbound ? " · 외부" : " · 내선"}${whisper ? " · 안내멘트" : ""})`);
     ctx.log("info", "soho-route:transfer:start", { linkedId, dest, outbound, whisper: !!whisper });
+
+    // 전환통화 알림 — 전환이 "시작되는" 시점에 발사한다(연결 성사 후가 아님).
+    // warmTransfer 는 담당자 응답까지 최대 30초 블로킹하므로, 성사 후 푸시하면
+    // 너무 늦다. 담당자/사장이 "지금 전환 전화가 걸려온다"를 연결 전에 받게 한다.
+    // (토글 ON + seat 선택 시. fire-and-forget — 전환 진행을 막지 않는다.)
+    if (pushTransferEl && pushTransferEl.checked) sendPush(linkedId, "warm_transfer", "전환통화");
+
     try {
       const r = await ctx.client.warmTransfer(linkedId, {
         destination: dest,
@@ -289,8 +313,6 @@ function mount(ctx) {
       });
       if (r && r.connected) {
         pushLog(linkedId, `✓ 담당자 연결 완료 (${dest})${r.whisperPlayed ? " · 안내멘트 재생됨" : ""}`);
-        // 전환통화 알림 — 담당자 연결이 성사된 순간 푸시(토글 ON + seat 선택 시).
-        if (pushTransferEl && pushTransferEl.checked) sendPush(linkedId, "warm_transfer", "전환통화");
       } else {
         const reason = (r && (r.failureReason || r.whisperSkipReason)) || "응답 없음/거절";
         pushLog(linkedId, `⚠ 담당자 연결 안 됨: ${reason}`);
