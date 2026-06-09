@@ -188,8 +188,11 @@ async function connect() {
   state.pollTimer = setInterval(reconcileSessions, POLL_INTERVAL_MS);
 
   setStatus("connecting", "logging in…");
+  let tid = null;
   try {
-    const { tid, exp } = await client.login();
+    const res = await client.login();
+    tid = res.tid;
+    const exp = res.exp;
     if (tid && tid !== creds.tenantId) {
       log("err", "login:mismatch", { claimed: tid, input: creds.tenantId });
     }
@@ -214,6 +217,10 @@ async function connect() {
   refreshKeyStatus();
   // 헤더 좌측에 게이트웨이 버전 표시.
   fetchGatewayVersion();
+  // 연결되면 "1. 테넌트 자격증명" 패널을 자동으로 접고(공간 절약) 헤더에
+  // 연결 상태를 표시한다. 사용자가 다시 펼칠 수 있도록 persist 는 하지 않는다.
+  updateCredPanelStatus(true, tid || creds.tenantId);
+  if (credPanel) credPanel.setOpen(false, false);
 }
 
 function disconnect() {
@@ -229,6 +236,9 @@ function disconnect() {
   setTenantPill(null);
   setGatewayVersionPill(null);
   stopPolling();
+  // 연결 해제 → "1. 테넌트 자격증명" 패널을 다시 펴서 재입력/재연결을 유도.
+  updateCredPanelStatus(false, null);
+  if (credPanel) credPanel.setOpen(true, false);
 }
 
 function stopPolling() {
@@ -1030,9 +1040,8 @@ function highlightOutboundCard(linkedId) {
 function wireOutboundPanel() {
   loadOutboundForm();
   setOutboundEnabled(false, "먼저 Connect 하세요. 연결 후 게이트웨이에 등록된 발신표시번호·과금번호를 자동으로 불러옵니다.");
-  // "3. 발신 후 Flow 연결" 패널 접기/펴기. 처음엔 접힌 상태(공간 절약)이며
-  // 사용자의 선택을 localStorage 에 보관한다.
-  setupOutboundToggle();
+  // 사이드바 접이식 패널(1. 자격증명 / 3. 발신 후 Flow 연결 / 4. 프로바이더 키).
+  setupSidebarToggles();
 
   $("btn-originate").addEventListener("click", () => originate());
   $("btn-ob-clear").addEventListener("click", () => {
@@ -1148,17 +1157,22 @@ function saveGroupOpen(stateMap) {
   try { localStorage.setItem(GROUP_OPEN_KEY, JSON.stringify(stateMap)); } catch { /* ignore */ }
 }
 
-// setupOutboundToggle: "3. 발신 후 Flow 연결" 패널의 접기/펴기. 처음엔 접힘
-// (defaultOpen=false). 사용자의 선택은 localStorage 에 보관.
-const OB_OPEN_KEY = "dvg_pg_outbound_open";
-function setupOutboundToggle() {
-  const panel = $("outbound-panel");
-  const toggle = $("ob-toggle");
-  const bodyEl = $("ob-body");
-  if (!panel || !toggle || !bodyEl) return;
+// makePanelToggle: 접이식 사이드바 패널(헤더 ＋/－) 공통 컨트롤러. 패널의
+// 접힘 상태를 localStorage 에 보관하고, 컨트롤러({setOpen,isOpen})를 돌려준다.
+// connect 시 자동 접기 등 외부에서 프로그램적으로 여닫을 수 있게 한다.
+function makePanelToggle({ panelId, toggleId, bodyId, storageKey, defaultOpen }) {
+  const panel = $(panelId);
+  const toggle = $(toggleId);
+  const bodyEl = $(bodyId);
+  if (!panel || !toggle || !bodyEl) return { setOpen() {}, isOpen: () => false };
 
-  let open = false;
-  try { open = localStorage.getItem(OB_OPEN_KEY) === "1"; } catch { open = false; }
+  let open = !!defaultOpen;
+  if (storageKey) {
+    try {
+      const v = localStorage.getItem(storageKey);
+      if (v === "1") open = true; else if (v === "0") open = false;
+    } catch { /* keep default */ }
+  }
 
   const apply = () => {
     panel.classList.toggle("collapsed", !open);
@@ -1167,9 +1181,11 @@ function setupOutboundToggle() {
     const caret = toggle.querySelector(".panel-caret");
     if (caret) caret.textContent = open ? "－" : "＋";
   };
-  const setOpen = (v) => {
-    open = v;
-    try { localStorage.setItem(OB_OPEN_KEY, v ? "1" : "0"); } catch { /* ignore */ }
+  const setOpen = (v, persist = true) => {
+    open = !!v;
+    if (persist && storageKey) {
+      try { localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* ignore */ }
+    }
     apply();
   };
   apply();
@@ -1178,6 +1194,37 @@ function setupOutboundToggle() {
   toggle.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); }
   });
+  return { setOpen, isOpen: () => open };
+}
+
+// 사이드바 접이식 패널 컨트롤러들. credPanel/provPanel 은 connect·키상태에서
+// 헤더 배지/자동접기를 갱신하므로 모듈 스코프에 보관.
+let credPanel = null;
+let provPanel = null;
+function setupSidebarToggles() {
+  // "3. 발신 후 Flow 연결" — 처음 접힘.
+  makePanelToggle({ panelId: "outbound-panel", toggleId: "ob-toggle", bodyId: "ob-body", storageKey: "dvg_pg_outbound_open", defaultOpen: false });
+  // "1. 테넌트 자격증명" — 처음 펴짐(연결 전엔 입력해야 하므로). connect 시 자동 접힘.
+  credPanel = makePanelToggle({ panelId: "cred-panel", toggleId: "cred-toggle", bodyId: "cred-body", storageKey: "dvg_pg_cred_open", defaultOpen: true });
+  // "4. 프로바이더 API 키" — 처음 접힘.
+  provPanel = makePanelToggle({ panelId: "prov-panel", toggleId: "prov-toggle", bodyId: "prov-body", storageKey: "dvg_pg_prov_open", defaultOpen: false });
+}
+
+// updateCredPanelStatus: "1. 테넌트 자격증명" 접힌 헤더의 연결 상태 배지.
+// connected=true 면 "🟢 연결됨 · {tid}", 아니면 "🔴 연결 안 됨".
+function updateCredPanelStatus(connected, tid) {
+  const el = $("cred-status");
+  if (!el) return;
+  el.textContent = connected ? `🟢 연결됨 · ${tid || ""}`.trim() : "🔴 연결 안 됨";
+}
+
+// updateProvPanelStatus: "4. 프로바이더 API 키" 접힌 헤더의 키 요약 배지.
+// keyStatus: { tts: bool|null, stt: bool|null }. ✓=등록, —=미등록/미확인.
+function updateProvPanelStatus() {
+  const el = $("prov-status-badge");
+  if (!el) return;
+  const mark = (v) => (v === true ? "✓" : "—");
+  el.textContent = `TTS${mark(state.keyStatus?.tts)} · STT${mark(state.keyStatus?.stt)}`;
 }
 
 function renderTemplateMenu() {
@@ -1284,6 +1331,7 @@ async function refreshKeyStatus() {
     console.warn("refreshKeyStatus failed:", err);
   }
   renderTemplateMenu();
+  updateProvPanelStatus(); // "4. 프로바이더 API 키" 접힌 헤더의 키 요약 배지 갱신
 }
 
 // remountCurrentTemplate: connect 직후 호출. 템플릿이 mount() 안에서

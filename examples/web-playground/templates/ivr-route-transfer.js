@@ -18,7 +18,8 @@
 // Playback(lite/flow)으로 자동 폴백한다. warm transfer 는 게이트웨이 ARI 활성 필요.
 
 const CODE = `// 소호 대표번호: 업종 인사말 → 담당자 연결 (warm transfer)
-const GREETING = "안녕하세요, 지화자입니다. 담당자에게 연결해 드리겠습니다.";
+const GREETING = "안녕하세요, 지화자입니다. 담당자에게 연결해 드리겠습니다."; // 발신자에게
+const WHISPER  = "지화자 고객 연결입니다.";   // 담당자에게만 (받는 순간, 고객엔 안 들림)
 const AGENT = "01012345678";       // 담당자(사업자 본인) 번호 — 외부면 outbound:true
 const connected = new Set();       // 통화별 1회 처리 가드
 
@@ -31,13 +32,14 @@ ws.onmessage = async (msg) => {
     if (connected.has(lid)) return;
     connected.add(lid);
 
-    await injectTts(lid, GREETING);          // 1) 업종 인사말
+    await injectTts(lid, GREETING);          // 1) 발신자에게 업종 인사말
     const r = await warmTransfer(lid, {      // 2) 담당자로 연결
       destination: AGENT,
+      whisperText: WHISPER,                  // 담당자에게만 들려줄 안내(고객엔 안 들림)
       outbound: true,                        // 휴대폰/외부번호면 트렁크 발신
       timeoutMs: 30000,
     });
-    // r.connected: 담당자 응답·연결 성사 여부
+    // r.connected: 담당자 응답·연결 성사 여부 / r.whisperPlayed: 안내 재생 여부
   }
 };`;
 
@@ -81,9 +83,16 @@ function mount(ctx) {
     </div>
 
     <div class="field">
-      <label>인사말 멘트 (연결되면 자동 재생)
+      <label>인사말 멘트 (발신자에게 — 연결되면 자동 재생)
         <textarea id="irt-greet"></textarea>
       </label>
+    </div>
+
+    <div class="field">
+      <label>담당자 안내 멘트 (whisper — 연결 직전 담당자에게만 들려줌)
+        <input id="irt-whisper" type="text" value="지화자 고객 연결입니다." placeholder="예: 지화자 고객 연결입니다.">
+      </label>
+      <p class="help">웜 트랜스퍼의 핵심 — 담당자가 전화를 받는 순간, <b>고객에게는 안 들리고 담당자에게만</b> 짧게 들려주는 안내예요(누구 전화인지 미리 귀띔). 비우면 whisper 없이 바로 연결돼요.</p>
     </div>
 
     <div class="row" style="gap:14px;flex-wrap:wrap;align-items:flex-end;">
@@ -106,26 +115,35 @@ function mount(ctx) {
   const presetEl = ctx.body.querySelector("#irt-preset");
   const bizEl = ctx.body.querySelector("#irt-biz");
   const greetEl = ctx.body.querySelector("#irt-greet");
+  const whisperEl = ctx.body.querySelector("#irt-whisper");
   const destEl = ctx.body.querySelector("#irt-dest");
   const outboundEl = ctx.body.querySelector("#irt-outbound");
   const stateEl = ctx.body.querySelector("#irt-state");
 
+  // 상호({biz}) 기준 기본 whisper 문구.
+  const whisperDefault = (biz) => `${biz || "저희 업체"} 고객 연결입니다.`;
+
   // 프리셋 → 멘트 채우기({biz} 치환). "직접 입력"이면 비우고 사용자가 작성.
   // 사용자가 멘트를 수동 편집한 뒤에는 프리셋/상호 변경이 덮어쓰지 않도록 가드.
   let greetEdited = false;
+  let whisperEdited = false;
   function applyPreset() {
+    const biz = bizEl.value.trim();
+    // whisper 는 프리셋과 무관하게 상호만 반영(사용자 미편집 시).
+    if (!whisperEdited) whisperEl.value = whisperDefault(biz);
     const p = PRESETS.find((x) => x.id === presetEl.value) || PRESETS[0];
     if (p.id === "custom") {
       if (!greetEdited) greetEl.value = "";
       return;
     }
     if (!greetEdited) {
-      greetEl.value = p.text.replace(/\{biz\}/g, bizEl.value.trim() || "저희 업체");
+      greetEl.value = p.text.replace(/\{biz\}/g, biz || "저희 업체");
     }
   }
   presetEl.addEventListener("change", () => { greetEdited = false; applyPreset(); });
   bizEl.addEventListener("input", applyPreset);
   greetEl.addEventListener("input", () => { greetEdited = true; });
+  whisperEl.addEventListener("input", () => { whisperEdited = true; });
   applyPreset(); // 초기 멘트 채우기
 
   // ── 진행 상황 로그 (sms-optout 패턴) ────────────────────────────
@@ -164,18 +182,21 @@ function mount(ctx) {
 
   // ── warm transfer 연결 ──────────────────────────────────────────
   async function routeTo(linkedId, dest, outbound) {
-    pushLog(linkedId, `🔀 담당자 연결 중… (${dest}${outbound ? " · 외부" : " · 내선"})`);
-    ctx.log("info", "soho-route:transfer:start", { linkedId, dest, outbound });
+    const whisper = whisperEl.value.trim();
+    pushLog(linkedId, `🔀 담당자 연결 중… (${dest}${outbound ? " · 외부" : " · 내선"}${whisper ? " · 안내멘트" : ""})`);
+    ctx.log("info", "soho-route:transfer:start", { linkedId, dest, outbound, whisper: !!whisper });
     try {
       const r = await ctx.client.warmTransfer(linkedId, {
         destination: dest,
+        // whisper: 담당자가 받는 순간 담당자에게만 들려주는 안내(고객엔 안 들림).
+        whisperText: whisper || undefined,
         timeoutMs: 30000,
         outbound,
         // 외부발신이면 트렁크 컨텍스트가 필요(운영 환경에 맞게 조정). 내선이면 기본값.
         context: outbound ? "cos-all" : "from-internal",
       });
       if (r && r.connected) {
-        pushLog(linkedId, `✓ 담당자 연결 완료 (${dest})`);
+        pushLog(linkedId, `✓ 담당자 연결 완료 (${dest})${r.whisperPlayed ? " · 안내멘트 재생됨" : ""}`);
       } else {
         const reason = (r && (r.failureReason || r.whisperSkipReason)) || "응답 없음/거절";
         pushLog(linkedId, `⚠ 담당자 연결 안 됨: ${reason}`);

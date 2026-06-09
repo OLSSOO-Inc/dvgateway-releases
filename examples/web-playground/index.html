@@ -38,8 +38,12 @@
 
   <main class="layout">
     <aside class="sidebar">
-      <section class="panel">
-        <h2>1. 테넌트 자격증명</h2>
+      <section class="panel collapsible" id="cred-panel">
+        <h2 class="panel-toggle" id="cred-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="cred-body">
+          <span class="panel-caret">－</span> 1. 테넌트 자격증명
+          <span class="panel-status" id="cred-status"></span>
+        </h2>
+        <div class="panel-body" id="cred-body">
         <label>Gateway Host
           <input id="cred-host" type="text" placeholder="gw.example.com" />
         </label>
@@ -66,6 +70,7 @@
         <div class="row">
           <button id="btn-clear" class="ghost">Clear credentials</button>
         </div>
+        </div><!-- /#cred-body -->
       </section>
 
       <section class="panel panel-templates" id="template-panel">
@@ -108,8 +113,12 @@
         </div><!-- /#ob-body -->
       </section>
 
-      <section class="panel">
-        <h2>4. 프로바이더 API 키</h2>
+      <section class="panel collapsible collapsed" id="prov-panel">
+        <h2 class="panel-toggle" id="prov-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="prov-body">
+          <span class="panel-caret">＋</span> 4. 프로바이더 API 키
+          <span class="panel-status" id="prov-status-badge"></span>
+        </h2>
+        <div class="panel-body" id="prov-body" hidden>
         <p class="hint muted small">데모용 STT/TTS provider 키. 비워두면 게이트웨이의 기본 설정을 사용합니다.</p>
         <div class="provider-mode">
           <label class="radio">
@@ -156,6 +165,7 @@
           </div>
           <p id="prov-stt-status" class="hint muted small"></p>
         </details>
+        </div><!-- /#prov-body -->
       </section>
 
       <section class="panel">
