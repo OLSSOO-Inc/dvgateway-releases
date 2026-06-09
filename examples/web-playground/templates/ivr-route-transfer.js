@@ -17,29 +17,36 @@
 // mode=both·lite·flow 어디서나 동작: TTS는 PCM 주입(mode=both)이 안 되면 ARI
 // Playback(lite/flow)으로 자동 폴백한다. warm transfer 는 게이트웨이 ARI 활성 필요.
 
-const CODE = `// 소호 대표번호: 업종 인사말 → 담당자 연결 (warm transfer)
+const CODE = `// 소호 대표번호: 업종 인사말 → 담당자 연결 (warm transfer) + 모바일 푸시
 const GREETING = "안녕하세요, 지화자입니다. 담당자에게 연결해 드리겠습니다."; // 발신자에게
 const WHISPER  = "지화자 고객 연결입니다.";   // 담당자에게만 (받는 순간, 고객엔 안 들림)
 const AGENT = "01012345678";       // 담당자(사업자 본인) 번호 — 외부면 outbound:true
+const OWNER_EMAIL = "owner@biz.kr"; // 모바일 알림 받을 사장/담당자(seat 이메일)
 const connected = new Set();       // 통화별 1회 처리 가드
 
 ws.onmessage = async (msg) => {
   const evt = JSON.parse(msg.data);
 
-  // 통화 연결(up) → 인사말 재생 → 담당자 연결
+  // 통화 연결(up) → [전화수신 푸시] → 인사말 → 담당자 연결 → [전환통화 푸시]
   if (evt.event === "channel:state" && evt.state === "up") {
     const lid = evt.linkedId;
     if (connected.has(lid)) return;
     connected.add(lid);
 
-    await injectTts(lid, GREETING);          // 1) 발신자에게 업종 인사말
-    const r = await warmTransfer(lid, {      // 2) 담당자로 연결
+    // 전화수신 알림 — 통화가 연결되면 사장/담당자 앱으로 푸시(이메일 라우팅)
+    await pushToUser({ email: OWNER_EMAIL, subtype: "incoming_call", linkedid: lid });
+
+    await injectTts(lid, GREETING);          // 발신자에게 업종 인사말
+    const r = await warmTransfer(lid, {      // 담당자로 연결
       destination: AGENT,
       whisperText: WHISPER,                  // 담당자에게만 들려줄 안내(고객엔 안 들림)
       outbound: true,                        // 휴대폰/외부번호면 트렁크 발신
       timeoutMs: 30000,
     });
-    // r.connected: 담당자 응답·연결 성사 여부 / r.whisperPlayed: 안내 재생 여부
+    // 전환통화 알림 — 담당자 연결 성사 시 푸시
+    if (r.connected) {
+      await pushToUser({ email: OWNER_EMAIL, subtype: "warm_transfer", linkedid: lid });
+    }
   }
 };`;
 
@@ -107,6 +114,22 @@ function mount(ctx) {
     </div>
     <p class="help">담당자가 <b>휴대폰/외부번호</b>면 외부발신을 켜세요(트렁크 컨텍스트로 발신). 사내 <b>내선</b>이면 끄세요.</p>
 
+    <div class="field" style="margin-top:16px;border-top:1px solid var(--border,#2a2f3a);padding-top:14px;">
+      <label>📲 모바일 알림 받을 사람 (선택)
+        <select id="irt-seat"><option value="">로그인 후 사용 가능</option></select>
+      </label>
+      <p class="help">테넌트에 등록된 <b>모바일 앱 사용자(seat)</b>에게 앱 푸시를 보냅니다(이메일 라우팅). 목록이 비었으면 「📱 모바일 앱 사용자」에서 먼저 등록하세요. <a href="#" id="irt-seat-reload">새로고침</a></p>
+      <div class="row" style="gap:16px;flex-wrap:wrap;margin-top:6px;">
+        <label class="inline" style="display:flex;align-items:center;gap:5px;">
+          <input id="irt-push-incoming" type="checkbox"> 전화수신 알림 (incoming_call)
+        </label>
+        <label class="inline" style="display:flex;align-items:center;gap:5px;">
+          <input id="irt-push-transfer" type="checkbox"> 전환통화 알림 (warm_transfer)
+        </label>
+      </div>
+      <p class="help">켜면 <b>통화가 연결될 때</b> 전화수신 알림을, <b>담당자 연결이 성사될 때</b> 전환통화 알림을 선택한 사용자에게 푸시해요. 게이트웨이에 푸시 릴레이(<code>GW_WARM_TRANSFER_PUSH_*</code>)가 설정돼 있어야 동작합니다(미설정 시 진행 로그에 사유 표시).</p>
+    </div>
+
     <div class="row" style="margin-top:16px;justify-content:space-between;align-items:center;">
       <span class="muted small">단계별 진행 상황</span>
       <button id="irt-clear" class="ghost small" type="button">🧹 Clear</button>
@@ -124,6 +147,61 @@ function mount(ctx) {
   const outboundEl = ctx.body.querySelector("#irt-outbound");
   const stateEl = ctx.body.querySelector("#irt-state");
   const clearBtn = ctx.body.querySelector("#irt-clear");
+  const seatEl = ctx.body.querySelector("#irt-seat");
+  const seatReloadEl = ctx.body.querySelector("#irt-seat-reload");
+  const pushIncomingEl = ctx.body.querySelector("#irt-push-incoming");
+  const pushTransferEl = ctx.body.querySelector("#irt-push-transfer");
+
+  // ── 모바일 알림 수신자(seat) ────────────────────────────────────
+  // 테넌트 등록 seat 을 드롭다운으로. 선택값은 seatId, 부가 정보(email/ext)는
+  // seatById 에 보관해 푸시 시 email 로 라우팅. active 만 노출(11.app-push 패턴).
+  let seatById = {};
+  function selectedSeat() {
+    const id = seatEl && seatEl.value;
+    return id ? seatById[id] : null;
+  }
+  async function loadSeats() {
+    if (!ctx.client) { seatEl.innerHTML = `<option value="">로그인 후 사용 가능</option>`; return; }
+    seatEl.innerHTML = `<option value="">불러오는 중…</option>`;
+    try {
+      const d = await ctx.client.listSeats();
+      const seats = (d.seats || []).filter((s) => s.status === "active");
+      seatById = {};
+      if (!seats.length) {
+        seatEl.innerHTML = `<option value="">등록된 모바일 사용자 없음 — 「📱 모바일 앱 사용자」에서 추가</option>`;
+        return;
+      }
+      seatEl.innerHTML = `<option value="">(선택 안 함 — 푸시 보내지 않음)</option>` + seats.map((s) => {
+        seatById[s.seatId] = s;
+        const parts = [s.email];
+        if (s.extension) parts.push(`내선 ${s.extension}`);
+        return `<option value="${s.seatId}">${parts.join(" · ")}</option>`;
+      }).join("");
+    } catch (err) {
+      seatEl.innerHTML = `<option value="">목록 조회 실패</option>`;
+      ctx.log("err", "ivr-route:seats_load_fail", { error: String(err && err.message || err) });
+    }
+  }
+  if (seatReloadEl) {
+    seatReloadEl.addEventListener("click", (e) => { e.preventDefault(); loadSeats(); });
+  }
+  loadSeats();
+
+  // sendPush: 선택한 seat 의 이메일로 subtype 푸시(best-effort). seat 미선택이면
+  // 스킵. 실패는 진행 로그에 사유까지 표시(게이트웨이가 릴레이 4xx 본문 전달).
+  async function sendPush(linkedId, subtype, label) {
+    const seat = selectedSeat();
+    if (!seat || !seat.email || !ctx.client) return;
+    try {
+      await ctx.client.pushToUser({ email: seat.email, subtype, linkedId });
+      pushLog(linkedId, `📲 ${label} 푸시 전송 → ${seat.email}`);
+      ctx.log("ok", "ivr-route:push", { linkedId, subtype, email: seat.email });
+    } catch (err) {
+      const m = String(err && err.message || err);
+      pushLog(linkedId, `✗ ${label} 푸시 실패: ${m}`);
+      ctx.log("err", "ivr-route:push:fail", { subtype, error: m });
+    }
+  }
 
   // 상호({biz}) 기준 기본 whisper 문구.
   const whisperDefault = (biz) => `${biz || "저희 업체"} 고객 연결입니다.`;
@@ -211,6 +289,8 @@ function mount(ctx) {
       });
       if (r && r.connected) {
         pushLog(linkedId, `✓ 담당자 연결 완료 (${dest})${r.whisperPlayed ? " · 안내멘트 재생됨" : ""}`);
+        // 전환통화 알림 — 담당자 연결이 성사된 순간 푸시(토글 ON + seat 선택 시).
+        if (pushTransferEl && pushTransferEl.checked) sendPush(linkedId, "warm_transfer", "전환통화");
       } else {
         const reason = (r && (r.failureReason || r.whisperSkipReason)) || "응답 없음/거절";
         pushLog(linkedId, `⚠ 담당자 연결 안 됨: ${reason}`);
@@ -229,6 +309,10 @@ function mount(ctx) {
   async function beginSession(linkedId) {
     if (!ctx.client || !linkedId || sessions.has(linkedId)) return;
     sessions.set(linkedId, { phase: "greeting" });
+
+    // 0) 전화수신 알림 — 통화가 연결된 시점에 푸시(토글 ON + seat 선택 시).
+    //    인사말 재생 전에 발사해 사장/담당자가 "전화 왔다"를 즉시 받게 한다.
+    if (pushIncomingEl && pushIncomingEl.checked) sendPush(linkedId, "incoming_call", "전화수신");
 
     // 1) 인사말은 담당자 번호 유무와 무관하게 항상 들려준다 — 소호 안내 멘트는
     //    번호를 안 넣어도 "인사말만" 체험할 수 있어야 한다(연결 단계만 번호 필요).

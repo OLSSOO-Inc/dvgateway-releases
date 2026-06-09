@@ -161,7 +161,7 @@ export const templates = [
   {
     id: "ivr-route-transfer",
     title: "13. 📦 대표번호 안내 → 담당자 연결",
-    desc: "실전 시나리오(소호·1인 사업자) — 연결 시 업종 인사말 TTS(부동산·보험·사주·O2O·타지역) → 곧바로 담당자(휴대폰/내선)로 웜 트랜스퍼. 인사말 TTS·웜트랜스퍼를 하나의 콜플로우로 엮은 응용 사례(키 입력·메뉴 없음). 게이트웨이 ARI 필요.",
+    desc: "실전 시나리오(소호·1인 사업자) — 연결 시 업종 인사말 TTS(부동산·보험·사주·O2O·타지역) → 곧바로 담당자(휴대폰/내선)로 웜 트랜스퍼(담당자 whisper 안내). 전화수신·전환통화 모바일 앱 푸시 옵션. 인사말 TTS·웜트랜스퍼·푸시를 하나의 콜플로우로 엮은 응용 사례(키 입력·메뉴 없음). 게이트웨이 ARI 필요.",
     module: ivrRouteTransfer,
     group: GROUP_SCENARIO,
     recommendedTrigger: "either",
