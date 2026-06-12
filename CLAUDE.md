@@ -293,6 +293,8 @@ const s = await gw.getAudioStatus(linkedId);
 >
 > **외부수신 자동 푸시 (gateway 1.4.8.14+)**: `GW_PUSH_ON_CALL_NEW=true` (기본 false, 푸시 릴레이 구성 전제) 시, 외부 수신(dir=in + caller 있음) `call:new` 마다 dvg 가 **자동으로** `subtype=incoming_call` 푸시(did/caller/callerName/tenantId/linkedId 포함)를 송신한다. 켜면 makecall 서버가 call:new 를 받아 `/push/*` 를 직접 호출할 필요가 없다. 발신(out)·내부통화·보조채널(caller 없음)은 제외. best-effort 비차단.
 
+> **`call:ringing` 이벤트 (gateway 1.4.9.13+) — 수신 푸시 트리거는 이걸 쓰세요**: callinfo 구독으로 받는 `call:ringing`{linkedId, callee=울리는 seat 내선, caller, callerName, tenantId} 은 **단말이 울리기 시작하는 순간**(AMI 피호출 seat 레그 생성) 발행된다. `call:new` 는 Stasis 진입 시점이라 배포에 따라 사실상 **응답 시점**이어서 — 짧은 통화면 수신 푸시가 통화 종료 후에 도착하는 원인이 된다. 수신 알림을 직접 발송하는 서버(makecall 등)는 트리거를 call:new → **call:ringing** 으로 옮길 것. 내부/외부 수신 공통, 착신전환으로 seat 가 울리지 않는 통화는 미발행(앱이 안 울리므로 정상). (linkedid+내선) 단위 1회.
+
 ### WebRTC 소프트폰 프로비저닝 (gateway 1.4.8.3+ / SDK 1.8.1+)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
