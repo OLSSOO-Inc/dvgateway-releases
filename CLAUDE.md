@@ -339,6 +339,22 @@ const s = await gw.getAudioStatus(linkedId);
 | `clickToCall({caller,callee,...})` | `click_to_call(caller,callee,...)` | 클릭투콜 |
 | `getPhonebook(tenantId?)` | `get_phonebook(tenant_id)` | 테넌트 내선 폰북(internal contacts) 조회 — 게이트웨이가 VitalPBX phonebooks→internal 첫 id→contacts 를 조인. 반환 `{phonebookId, contacts[]}`. tenant 토큰은 자사, admin 은 tenantId 지정 |
 
+### 큐(대기열) 관리 + 에이전트 런타임 (gateway 1.4.11.30+ / SDK 1.8.7+)
+| TypeScript | Python | 설명 |
+|------------|--------|------|
+| `listQueues({direction?, tenantId?})` | `list_queues(*, direction?, tenant_id?)` | 테넌트 큐 목록(멤버 포함). `direction`=`inbound`/`outbound` 필터. 반환 `Queue[]` |
+| `getQueue(id, {tenantId?})` | `get_queue(id, *, tenant_id?)` | 단일 큐 상세 |
+| `createQueue(spec, {tenantId?})` | `create_queue(spec, *, tenant_id?)` | 큐 생성. `spec`=Dynamic VoIP 큐 본문(`extension`,`description`,`strategy`,`members[{extension_id}]`,…). **설정 변경은 Asterisk 반영에 별도 apply 단계가 필요할 수 있음** |
+| `updateQueue(id, spec, {tenantId?})` | `update_queue(id, spec, *, tenant_id?)` | 큐 수정(전체 본문) |
+| `deleteQueue(id, {tenantId?})` | `delete_queue(id, *, tenant_id?)` | 큐 삭제 |
+| `getQueueAgentStatus(deviceId, {tenantId?})` | `queue_agent_status(device_id, *, tenant_id?)` | 에이전트(단말) 큐별 상태 — 큐 id 키 맵 `{status,paused,queue,type}`. **`deviceId`는 PBX device id(내선번호 아님)** |
+| `queueAgentLogin(deviceId, {queues?, tenantId?})` | `queue_agent_login(device_id, *, queues?, tenant_id?)` | 큐 로그인. `queues`=`all`(기본)/콤마 목록. **라이브 AMI — 즉시 반영(apply 불필요)** |
+| `queueAgentLogout(deviceId, {queues?, tenantId?})` | `queue_agent_logout(device_id, *, queues?, tenant_id?)` | 큐 로그아웃 |
+| `queueAgentPause(deviceId, {queues?, reason?, tenantId?})` | `queue_agent_pause(device_id, *, queues?, reason?, tenant_id?)` | 일시정지. `reason`=사유 라벨(예 `break`) |
+| `queueAgentUnpause(deviceId, {queues?, tenantId?})` | `queue_agent_unpause(device_id, *, queues?, tenant_id?)` | 정지 해제 |
+
+> REST: `GET/POST /api/v1/queues`, `GET/PUT/DELETE /api/v1/queues/{id}`, `GET /api/v1/queues/agent/{deviceId}`, `POST /api/v1/queues/agent/{deviceId}/{login|logout|pause|unpause}`. tenantId 는 JWT 강제(=PBX path), admin 토큰만 `tenantId` 로 대상 지정. **PBX 동기화(`PBX_TENANT_SYNC_ENABLED`) 필요 — 미설정 시 503.** `Queue` 필드는 Dynamic VoIP 큐 모델 그대로(snake_case)이며, PBX 가 엔드포인트별로 bool/`"yes"`·`"no"` 를 혼용하므로 플래그 필드는 느슨히 타이핑. 상세·설계는 [docs/queue-api-analysis.md](../go-gateway/docs/queue-api-analysis.md).
+
 ### 착신전환
 | TypeScript | Python | 설명 |
 |------------|--------|------|
