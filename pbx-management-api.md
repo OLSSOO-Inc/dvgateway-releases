@@ -6,7 +6,7 @@
 
 ## 목차
 
-1. [인증](#1-인증) · [모바일 Firebase 인증](#11-모바일-앱-firebase-id-토큰-인증-v14844)
+1. [인증](#1-인증) · [모바일 Firebase 인증](#11-모바일-앱-firebase-id-토큰-인증-v14844) · [온프레미스 accessToken](#12-온프레미스firebase-없는-모바일-인증--apiaccesstoken-v141140)
 2. [착신전환 (Diversions)](#2-착신전환-diversions)
    - [폰북 (Phonebook)](#폰북-phonebook)
 3. [발신자표시 (Caller ID)](#3-발신자표시-caller-id)
@@ -95,6 +95,72 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
 | 타 extension 요청(비소유) / seat 에 extension 미배정 | `403` |
 
 > Firebase 수용은 위 **두 경로에만** 적용됩니다(다른 관리 API 로 번지지 않음).
+
+### 1.2 온프레미스(Firebase 없는) 모바일 인증 — `api.accessToken` (v1.4.11.40+)
+
+Firebase 클라우드를 쓰지 않는 **온프레미스 배포**를 위해, `POST /api/v1/softphone/provision`
+(enrollToken/QR 경로 — 이미 Firebase-free)와 `POST /api/v1/softphone/refresh` 응답에
+**REST 데이터 평면용 단기 게이트웨이 서명 토큰**(`api.accessToken`)을 추가로 내려줍니다.
+앱은 이 토큰 하나로 1.1 의 **모든 모바일 데이터 엔드포인트**(착신전환·폰북·발신표시·CDR·
+클릭투콜)를 **Firebase 없이** 호출합니다.
+
+```jsonc
+// provision / refresh 200 응답 (api 블록 신규, 나머지는 기존 계약 그대로)
+{
+  "extension": "1001",
+  "tenantId": "5a77fc279d842279",
+  "sip": { "wssUri": "...", "authUser": "...", "authToken": "...", "expiresAt": "..." },
+  "ice": [ /* ... */ ],
+  "api": {                                 // ★ v1.4.11.40+
+    "accessToken": "<HS256 JWT>",          //   (tenantId, extension) 스코프, kind=mobile
+    "expiresAt": "2026-06-19T13:00:00Z"    //   RFC3339, 기본 수명 1h
+  },
+  "refresh": { "url": "...", "refreshToken": "rt_...", "minTtlSeconds": 300 }
+}
+```
+
+```bash
+# provision 으로 받은 accessToken 으로 호출 (Firebase 토큰 불필요)
+TOKEN="<api.accessToken>"
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/diversions/1001   # 200
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/phonebook          # 200
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/callerid/1001      # 200
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/v1/pbx/cdr?search=...&search_fields=dst"  # 200
+```
+
+**규약 / 동작:**
+
+- `accessToken` 은 게이트웨이가 `JWT_SECRET` 으로 서명한 HS256 JWT 로, 클레임
+  `{tid, ext, kind:"mobile", iat, exp}` 를 담아 **(tenantId, extension) 단일 seat 에
+  스코프**됩니다. Firebase ID 토큰이 seat 으로 해석되던 것과 **동일한 권한·소유검증·경로
+  스코프**로 처리되므로, 1.1 의 권한 모델(본인 extension 만, CDR 본인 통화만, 클릭투콜
+  caller=본인, 발신표시 읽기전용)이 그대로 적용됩니다.
+- **경로 스코프(보안 핵심)**: 이 토큰은 1.1 표의 **모바일 엔드포인트에서만** 유효합니다.
+  그 외 경로(`/api/v1/sessions`, `/api/v1/tts/*`, `apply-changes` 등)에서는 `tid` 가 있어도
+  **테넌트 전역 토큰으로 승격되지 않고 `401`** 입니다(Firebase 경로와 동일한 게이팅).
+- **회전**: `POST /api/v1/softphone/refresh`(기존 `refreshToken`)가 `sip` 과 함께
+  `api.accessToken` 도 **새로 발급**합니다. 앱은 기존 refresh 메커니즘 하나로 SIP·REST
+  토큰을 모두 갱신합니다. stateless JWT 라 즉시 회수가 불가하므로 수명을 짧게 유지합니다
+  (`GW_SOFTPHONE_API_TOKEN_TTL`, 기본 1h).
+- **멀티 테넌트**: 토큰이 이미 특정 테넌트 `tid` 를 고정하므로 `?tenantId=` 는 동일 값일
+  때만 통과하고 다른 값이면 `403`(cross-tenant). 테넌트별로 각자의 enroll → 각자의
+  accessToken 을 받습니다.
+- **활성화 조건**: 별도 설정 없음. `JWT_SECRET`(미설정 시 자동 생성)만 있으면 발급되며,
+  **Firebase 프로젝트 설정과 무관**하게 동작합니다. `JWT_SECRET` 이 비활성(인증 OFF) 배포는
+  데이터 평면이 본래 개방 상태이므로 `api` 블록을 생략합니다.
+- enrollToken 미배정(push-only) 응답에도 `tid` 스코프 토큰(`ext=""`)을 발급합니다 — 본인검증
+  엔드포인트는 ext 없으면 `403`(fail-closed), 테넌트 디렉토리(폰북) 조회는 가능합니다.
+
+> **온프레미스 부팅**: `GW_SOFTPHONE_FIREBASE_PROJECT` 가 **하나도 없어도** 게이트웨이는
+> 정상 부팅하며(Firebase Admin 미초기화 — `firebaseauth.NewVerifier("")` → nil, fatal 없음),
+> enrollToken provision → `api.accessToken` → 모든 데이터 엔드포인트가 `200` 동작합니다.
+
+| 상황 | HTTP |
+|------|:----:|
+| 정상(모바일 경로) | `200` |
+| accessToken 무효/만료 | `401` |
+| 모바일 경로 밖에서 사용 | `401` (테넌트 전역 권한으로 승격되지 않음) |
+| 타 extension/테넌트 요청 | `403` |
 
 ---
 
@@ -593,6 +659,30 @@ curl -H "Authorization: Bearer $TOKEN" \
 > **필드 가정**: 본인 통화 필터는 VitalPBX/Asterisk CDR 표준 필드(`src` 발신·`dst` 착신·`did`
 > 수신 대표번호)를 기준으로 정확히 일치합니다. PBX 스키마가 다르면 과소노출(빈 결과)로 **안전하게**
 > 동작하므로(누출 없음), 그 경우 필드명을 확인해 `internal/api/pbxcdr.go` 의 `cdrRowOwned` 를 조정하세요.
+
+### 통화 ↔ linkedid 연계 (온프레미스: 푸시 없는 녹취 조회) — `X-Linkedid` SIP 헤더
+
+온프레미스는 푸시(FCM)가 없어 `call_summary`/`call_linkedid` 푸시로 linkedid 를 받을 수
+없습니다. 그래서 앱이 통화 직후 정확한 linkedid 로 CDR/녹취를 조회하려면(번호·시각 휴리스틱
+대신) mVoIP 통화의 SIP 메시지에 **`X-Linkedid` 커스텀 헤더**를 실어 앱이 SIP 시점에 캡처합니다.
+
+> **이 헤더는 게이트웨이가 주입하지 않습니다 — Dynamic VoIP 다이얼플랜에서 추가합니다.**
+> 게이트웨이는 **control plane**(프로비저닝·ICE·토큰)만 담당하고 SIP 미디어/시그널링 경로에
+> 끼지 않습니다(앱은 `nginx → Asterisk chan_pjsip wss` 로 직접 등록). 따라서 INVITE/200 OK 에
+> 헤더를 넣는 일은 구조상 PBX(Asterisk) 측에서만 가능합니다.
+
+WebRTC seat 통화에 헤더를 추가하는 다이얼플랜 예시(발신·수신 양방향):
+
+```ini
+; 소프트폰 발신/수신 레그에서 linkedid 를 커스텀 헤더로 부착
+exten => _X.,1,Set(PJSIP_HEADER(add,X-Linkedid)=${CHANNEL(linkedid)})
+ same => n,...   ; 이후 Dial(PJSIP/...) 등 기존 라우팅
+```
+
+- 헤더명: **`X-Linkedid`** (값 = Asterisk `${CHANNEL(linkedid)}`).
+- 앱은 SIP 연결 시 이 헤더를 읽어 로컬 통화이력에 linkedid 를 저장 → 위 `GET /api/v1/pbx/cdr?
+  search=<linkedid>&search_fields=linkedid` 로 정확히 조회(휴리스틱·푸시 불필요).
+- 클라우드 배포에서도 동일 헤더를 부착하면 푸시와 무관하게 더 견고합니다(공통 채택 권장).
 
 ---
 
