@@ -315,7 +315,8 @@ const s = await gw.getAudioStatus(linkedId);
 
 | REST 엔드포인트 | 권한 | 설명 |
 |---|---|---|
-| `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함. provision 시 앱이 단말 메타데이터를 보냈으면 각 seat 에 **`device:{platform?, model?, vendor?, firmware?, appVersion?, deviceName?, deviceId?, updatedAt?}`**(표시 전용, gateway 1.4.8.24+ · `deviceName` 1.4.11.70+) 포함. 다단말 seat 는 `devices[]` 배열로도 노출 |
+| `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함. provision 시 앱이 단말 메타데이터를 보냈으면 각 seat 에 **`device:{platform?, model?, vendor?, firmware?, appVersion?, deviceName?, label?, deviceId?, updatedAt?}`**(표시 전용, gateway 1.4.8.24+ · `deviceName` 1.4.11.70+ · `label` 1.4.11.70+ 운영자 지정 별명) 포함. 다단말 seat 는 `devices[]` 배열로도 노출 |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/device-label` | admin | 운영자가 단말에 **별명(label)** 지정 `{deviceId, label}`(gateway 1.4.11.70+). 앱 `deviceName` 과 별개·우선이며 provision 이 덮어쓰지 않는다(운영자 의도 보존). 빈 label=제거(자동 표시 폴백). 같은 모델 여러 대를 사람이 식별하는 용도. 대시보드 단말 셀 ✏️ 로 호출 |
 | `GET /api/v1/tenants/{id}/seats/devices?protocol=wss` | admin · 본인 | **내선 후보** — PBX 단말 중 `protocol=wss` 만 `{extension, deviceName, mobileClient}`. seat 의 내선은 이 목록에서만 선택(임의 입력 금지) |
 | `POST /api/v1/tenants/{id}/seats` | admin | seat 생성 `{email, extension?, admin?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded` |
 | `POST /api/v1/tenants/{id}/seats/self-enroll` | 본인 테넌트 · admin | **앱 자동 등록**(policy=auto 일 때만). `{email, extension?}` → seat + enrollment. email 기준 **멱등**(재설치/재로그인이 seat 안 늘림). manual 이면 **403** `self_enroll_disabled`, 정원 초과 **409**. `admin:true` 는 무시(권한 상승 방지) |
