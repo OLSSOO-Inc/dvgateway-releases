@@ -166,34 +166,49 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/v1/pbx/cdr?sea
 
 ## 2. 착신전환 (Diversions)
 
-Dynamic VoIP AstDB의 착신전환 설정을 관리합니다.
+Dynamic VoIP AstDB의 착신전환(Call Forward)·**방해금지(DND)**·**개인비서(Personal Assistant)**
+설정을 관리합니다. 셋 다 동일한 `diversions/` 네임스페이스에 저장됩니다.
 
-### 착신전환 타입
+### 착신전환 / 부가서비스 타입
 
-| 약어 | 전체 명칭 | 한글명 | 설명 | 적용 조건 |
-|:----:|:----------|:------:|:-----|:----------|
-| **CFI** | CallForwardImmediately | 즉시 착신전환 | 무조건 착신전환 | 즉시 |
-| **CFB** | CallForwardBusy | 통화중 착신전환 | 통화중이면 착신전환 | 통화중일 때 |
-| **CFN** | CallForwardNoanswer | 부재중 착신전환 | 일정시간 미응답 시 착신전환 | 미응답 시 |
-| **CFU** | CallForwardUnavailable | 미연결 착신전환 | 단말기 미등록 시 착신전환 | 단말기 오프라인 |
+| 약어 | 전체 명칭 | 한글명 | 설명 | 적용 조건 | destination |
+|:----:|:----------|:------:|:-----|:----------|:-----------:|
+| **CFI** | CallForwardImmediately | 즉시 착신전환 | 무조건 착신전환 | 즉시 | ✅ 필요 |
+| **CFB** | CallForwardBusy | 통화중 착신전환 | 통화중이면 착신전환 | 통화중일 때 | ✅ 필요 |
+| **CFN** | CallForwardNoanswer | 부재중 착신전환 | 일정시간 미응답 시 착신전환 | 미응답 시 | ✅ 필요 |
+| **CFU** | CallForwardUnavailable | 미연결 착신전환 | 단말기 미등록 시 착신전환 | 단말기 오프라인 | ✅ 필요 |
+| **DND** | Do-Not-Disturb | 방해금지 | 모든 수신 차단 | 즉시 (on/off) | ❌ 없음 |
+| **PEA** | Personal Assistant | 개인비서 | 개인비서가 통화를 먼저 받음 | 즉시 (on/off) | ❌ 없음 |
 
 > 각 타입은 **독립적으로 설정 가능**하며, 동시에 여러 타입을 활성화할 수 있습니다.
 
+> **⚠️ 개인비서(PEA) 우선 동작**: PEA를 활성화하면 **착신전환 규칙이 설정되어 있어도
+> 개인비서가 먼저 전화를 수신**합니다. 이 우선순위 판단은 Dynamic VoIP(Asterisk)
+> 다이얼플랜이 수행하며, 게이트웨이/SDK는 `PEA/enable` 플래그를 기록할 뿐입니다.
+
 ### ⚠️ 활성화 필수 조건
 
-착신전환이 실제로 동작하려면 **두 가지 조건**을 모두 충족해야 합니다:
+**착신전환(CFI/CFB/CFN/CFU)** 이 실제로 동작하려면 **두 가지 조건**을 모두 충족해야 합니다:
 
 1. `enable` 값이 **`yes`** 이어야 함
 2. `destination`에 **착신번호**가 설정되어야 함
 
 > 둘 중 하나라도 누락되면 착신전환이 동작하지 않습니다.
 
+> **DND·PEA는 destination이 없는 on/off 토글**입니다. `{"enable":"yes"}` 또는
+> `{"enable":"no"}` 만 의미가 있으며, destination/timeGroup을 보내도 무시됩니다.
+
 ### AstDB 저장 구조
 
 ```
+# 착신전환 (CFI/CFB/CFN/CFU)
 /{tenantId}/diversions/{단말번호}/{타입}/enable       → yes | no
 /{tenantId}/diversions/{단말번호}/{타입}/destination   → sub-custom-numbers,{전화번호},1
 /{tenantId}/diversions/{단말번호}/{타입}/time_group    → (시간 조건 그룹)
+
+# 방해금지 / 개인비서 (enable-only 토글)
+/{tenantId}/diversions/{단말번호}/DND/enable           → yes | no
+/{tenantId}/diversions/{단말번호}/PEA/enable           → yes | no
 ```
 
 ### 엔드포인트 목록
@@ -201,10 +216,10 @@ Dynamic VoIP AstDB의 착신전환 설정을 관리합니다.
 | 메서드 | 경로 | 설명 |
 |:------:|:-----|:-----|
 | `GET` | `/api/v1/diversions` | 전체 내선 착신전환 현황 |
-| `GET` | `/api/v1/diversions/{단말번호}` | 특정 내선 전체 규칙 (CFI/CFB/CFN/CFU) |
-| `GET` | `/api/v1/diversions/{단말번호}/{타입}` | 특정 착신전환 타입 조회 |
-| `PUT` | `/api/v1/diversions/{단말번호}/{타입}` | 착신전환 설정 |
-| `DELETE` | `/api/v1/diversions/{단말번호}/{타입}` | 착신전환 해제 |
+| `GET` | `/api/v1/diversions/{단말번호}` | 특정 내선 전체 규칙 (CFI/CFB/CFN/CFU + DND/PEA) |
+| `GET` | `/api/v1/diversions/{단말번호}/{타입}` | 특정 타입 조회 (CFI/CFB/CFN/CFU/DND/PEA) |
+| `PUT` | `/api/v1/diversions/{단말번호}/{타입}` | 착신전환 설정 / DND·PEA 토글 |
+| `DELETE` | `/api/v1/diversions/{단말번호}/{타입}` | 착신전환 해제 / DND·PEA 끄기 |
 
 > **모바일(Firebase) 인증** (v1.4.8.44+): 위 엔드포인트는 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)
 > 의 Firebase ID 토큰으로도 호출할 수 있습니다. 단, 모바일 토큰은 **자기 seat 에 배정된 단말번호**
@@ -310,6 +325,37 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
     "destination": "01012345678",
     "rawDestination": "sub-custom-numbers,01012345678,1"
   }
+}
+```
+
+### 2.3.1 방해금지(DND) · 개인비서(PEA) 토글
+
+DND·PEA는 **destination 없는 on/off 토글**입니다. `{"enable":"yes"|"no"}` 만 보냅니다.
+
+```bash
+# 방해금지(DND) 켜기 / 끄기
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  http://localhost:8080/api/v1/diversions/45144801/DND -d '{"enable":"yes"}'
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  http://localhost:8080/api/v1/diversions/45144801/DND -d '{"enable":"no"}'
+
+# 개인비서(PEA) 켜기 — 착신전환이 설정되어 있어도 개인비서가 먼저 수신
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  http://localhost:8080/api/v1/diversions/45144801/PEA -d '{"enable":"yes"}'
+
+# 조회 (단일 타입 / 전체) — 전체 조회 시 rules[]에 DND·PEA도 포함
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/diversions/45144801/PEA
+```
+
+**응답 (PEA):**
+```json
+{
+  "ok": true,
+  "tenantId": "bdd23e154a7ea1c8",
+  "extension": "45144801",
+  "did": "07045144801",
+  "rule": { "type": "PEA", "enable": "yes" }
 }
 ```
 
@@ -1771,7 +1817,7 @@ EXT_DB_NAME=ombutel
 | HTTP 코드 | 원인 | 예시 응답 |
 |:---------:|------|----------|
 | 400 | 잘못된 요청 | `{"error":"table name required"}` |
-| 400 | 잘못된 착신전환 타입 | `{"error":"invalid forwarding type","supportedTypes":"CFI, CFB, CFN, CFU"}` |
+| 400 | 잘못된 착신전환 타입 | `{"error":"invalid forwarding type","supportedTypes":"CFI, CFB, CFN, CFU, DND, PEA"}` |
 | 400 | WHERE 누락 | `{"error":"where clause required (full-table update not allowed)"}` |
 | 401 | 인증 실패 | `{"error":"authentication required"}` |
 | 403 | 권한 부족 | `{"error":"admin access required"}` |
@@ -1792,6 +1838,10 @@ asterisk -rx "database show bdd23e154a7ea1c8/diversions/45144801"
 
 # 특정 값 조회
 asterisk -rx "database get bdd23e154a7ea1c8 diversions/45144801/CFI/enable"
+
+# 방해금지(DND) / 개인비서(PEA) 토글 상태 조회
+asterisk -rx "database get bdd23e154a7ea1c8 diversions/45144801/DND/enable"
+asterisk -rx "database get bdd23e154a7ea1c8 diversions/45144801/PEA/enable"
 ```
 
 ## MariaDB 직접 확인 (서버 CLI)

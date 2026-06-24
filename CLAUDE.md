@@ -356,14 +356,34 @@ const s = await gw.getAudioStatus(linkedId);
 
 > REST: `GET/POST /api/v1/queues`, `GET/PUT/DELETE /api/v1/queues/{id}`, `GET /api/v1/queues/agent/{deviceId}`, `POST /api/v1/queues/agent/{deviceId}/{login|logout|pause|unpause}`. tenantId 는 JWT 강제(=PBX path), admin 토큰만 `tenantId` 로 대상 지정. **PBX 동기화(`PBX_TENANT_SYNC_ENABLED`) 필요 — 미설정 시 503.** `Queue` 필드는 Dynamic VoIP 큐 모델 그대로(snake_case)이며, PBX 가 엔드포인트별로 bool/`"yes"`·`"no"` 를 혼용하므로 플래그 필드는 느슨히 타이핑. 상세·설계는 [docs/queue-api-analysis.md](../go-gateway/docs/queue-api-analysis.md).
 
-### 착신전환
+### 착신전환 / 방해금지 / 개인비서 (Diversions)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| `getDiversions(ext, tenantId?)` | `get_diversions(ext, tenant_id)` | 착신전환 조회 |
-| `setDiversion(ext, type, params)` | `set_diversion(ext, cf_type, ...)` | 착신전환 설정 |
-| `deleteDiversion(ext, type)` | `delete_diversion(ext, cf_type)` | 착신전환 해제 |
+| `getDiversions(ext, tenantId?)` | `get_diversions(ext, tenant_id)` | 전체 규칙 조회 (CF 4종 + DND + PEA) |
+| `setDiversion(ext, type, params)` | `set_diversion(ext, cf_type, ...)` | 규칙/토글 설정 |
+| `deleteDiversion(ext, type)` | `delete_diversion(ext, cf_type)` | 규칙/토글 해제 |
 
-착신전환 타입: `CFI` (즉시), `CFB` (통화중), `CFN` (부재중), `CFU` (미연결)
+타입(`DiversionType`): `CFI` (즉시), `CFB` (통화중), `CFN` (부재중), `CFU` (미연결),
+`DND` (방해금지), `PEA` (개인비서, Personal Assistant)
+
+- **CFI/CFB/CFN/CFU** — 착신전환. 활성화하려면 `enable: 'yes'` + `destination`(착신번호) 둘 다 필요.
+- **DND** — 방해금지. destination 없는 enable-only 토글 (`{ enable: 'yes' | 'no' }`).
+- **PEA** — 개인비서. enable-only 토글. **켜면 PBX 다이얼플랜이 착신전환보다 먼저 개인비서로
+  통화를 받는다**(우선순위는 다이얼플랜이 결정, SDK/게이트웨이는 플래그만 기록).
+
+```typescript
+// DND 켜기 / 끄기
+await gw.setDiversion('1001', 'DND', { enable: 'yes' }, tenantId);
+await gw.setDiversion('1001', 'DND', { enable: 'no' }, tenantId);
+
+// 개인비서(PEA) 켜기 — 착신전환이 있어도 PEA가 먼저 수신
+await gw.setDiversion('1001', 'PEA', { enable: 'yes' }, tenantId);
+```
+
+```python
+await gw.set_diversion("1001", "DND", enable="yes", tenant_id=tenant_id)
+await gw.set_diversion("1001", "PEA", enable="yes", tenant_id=tenant_id)
+```
 
 ### 발신자표시
 | TypeScript | Python | 설명 |

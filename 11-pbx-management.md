@@ -32,7 +32,7 @@ GW_SERVER_ID=server-01   # 환경변수 (미설정 시 hostname 자동 사용)
 ### TypeScript
 
 ```typescript
-// 전체 규칙 조회 (CFI/CFB/CFN/CFU)
+// 전체 규칙 조회 (CFI/CFB/CFN/CFU + DND/PEA)
 const rules = await gw.getDiversions('45144801', 'tenant-id');
 
 // CFI 즉시 착신전환 활성화
@@ -46,6 +46,13 @@ await gw.setDiversion('45144801', 'CFI', { enable: 'no' }, 'tenant-id');
 
 // 완전 해제 (번호 삭제)
 await gw.deleteDiversion('45144801', 'CFI', 'tenant-id');
+
+// 방해금지(DND) 켜기 / 끄기 — destination 없는 토글
+await gw.setDiversion('45144801', 'DND', { enable: 'yes' }, 'tenant-id');
+await gw.setDiversion('45144801', 'DND', { enable: 'no' }, 'tenant-id');
+
+// 개인비서(PEA) 켜기 — 착신전환이 있어도 개인비서가 먼저 수신
+await gw.setDiversion('45144801', 'PEA', { enable: 'yes' }, 'tenant-id');
 ```
 
 ### Python
@@ -63,18 +70,29 @@ await gw.set_diversion("45144801", "CFI", enable="no", tenant_id="tenant-id")
 
 # 완전 해제
 await gw.delete_diversion("45144801", "CFI", tenant_id="tenant-id")
+
+# 방해금지(DND) / 개인비서(PEA) 토글
+await gw.set_diversion("45144801", "DND", enable="yes", tenant_id="tenant-id")
+await gw.set_diversion("45144801", "PEA", enable="yes", tenant_id="tenant-id")
 ```
 
-### 착신전환 타입
+### 착신전환 / 부가서비스 타입 (`DiversionType`)
 
-| 타입 | 설명 | 적용 조건 |
-|:----:|------|----------|
-| **CFI** | 즉시 착신전환 | 무조건 |
-| **CFB** | 통화중 착신전환 | 통화중일 때 |
-| **CFN** | 부재중 착신전환 | 미응답 시 |
-| **CFU** | 미연결 착신전환 | 단말기 오프라인 |
+| 타입 | 설명 | 적용 조건 | destination |
+|:----:|------|----------|:-----------:|
+| **CFI** | 즉시 착신전환 | 무조건 | ✅ 필요 |
+| **CFB** | 통화중 착신전환 | 통화중일 때 | ✅ 필요 |
+| **CFN** | 부재중 착신전환 | 미응답 시 | ✅ 필요 |
+| **CFU** | 미연결 착신전환 | 단말기 오프라인 | ✅ 필요 |
+| **DND** | 방해금지 (Do-Not-Disturb) | 즉시 (on/off) | ❌ 없음 |
+| **PEA** | 개인비서 (Personal Assistant) | 즉시 (on/off) | ❌ 없음 |
 
-> ⚠️ 활성화 조건: `enable=yes` **AND** `destination` 설정 (둘 다 필요)
+> ⚠️ **착신전환(CFI/CFB/CFN/CFU)** 활성화 조건: `enable=yes` **AND** `destination` 설정 (둘 다 필요)
+>
+> **DND·PEA**는 destination 없는 on/off 토글입니다 (`{ enable }` 만 의미 있음).
+>
+> 🔔 **개인비서(PEA) 우선**: PEA를 켜면 **착신전환이 설정되어 있어도 개인비서가 먼저
+> 전화를 받습니다.** 우선순위는 PBX 다이얼플랜이 결정하며 SDK는 플래그만 설정합니다.
 
 ---
 

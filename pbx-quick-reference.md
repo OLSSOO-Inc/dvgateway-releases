@@ -19,7 +19,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/token \
 ### 조회
 
 ```bash
-# 내선 전체 규칙 조회 (CFI/CFB/CFN/CFU)
+# 내선 전체 규칙 조회 (CFI/CFB/CFN/CFU + DND/PEA)
 curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8080/api/v1/diversions/45144801?tenantId=YOUR_TENANT_ID"
 ```
@@ -48,7 +48,20 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 # 착신전환 완전 해제 (번호 삭제)
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8080/api/v1/diversions/45144801/CFI?tenantId=YOUR_TENANT_ID"
+
+# 방해금지(DND) 켜기 / 끄기 — destination 없는 토글
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "http://localhost:8080/api/v1/diversions/45144801/DND?tenantId=YOUR_TENANT_ID" \
+  -d '{"enable":"yes"}'
+
+# 개인비서(PEA) 켜기 — 착신전환이 있어도 개인비서가 먼저 수신
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "http://localhost:8080/api/v1/diversions/45144801/PEA?tenantId=YOUR_TENANT_ID" \
+  -d '{"enable":"yes"}'
 ```
+
+> 🔔 **개인비서(PEA)** 를 켜면 착신전환이 설정되어 있어도 **개인비서가 먼저 전화를 받습니다**
+> (우선순위는 PBX 다이얼플랜이 결정). DND·PEA는 destination 없는 `{"enable":"yes"|"no"}` 토글입니다.
 
 ---
 
@@ -170,8 +183,8 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 | 기능 | 메서드 | 경로 |
 |------|:------:|------|
 | 착신전환 조회 | `GET` | `/api/v1/diversions/{내선}?tenantId=...` |
-| 착신전환 설정 | `PUT` | `/api/v1/diversions/{내선}/{CFI\|CFB\|CFN\|CFU}?tenantId=...` |
-| 착신전환 해제 | `DELETE` | `/api/v1/diversions/{내선}/{타입}?tenantId=...` |
+| 착신전환/토글 설정 | `PUT` | `/api/v1/diversions/{내선}/{CFI\|CFB\|CFN\|CFU\|DND\|PEA}?tenantId=...` |
+| 착신전환/토글 해제 | `DELETE` | `/api/v1/diversions/{내선}/{타입}?tenantId=...` |
 | 발신자 조회 | `GET` | `/api/v1/callerid/{내선}` |
 | 발신자 변경 | `PUT` | `/api/v1/callerid/{내선}` + `{"applyChanges":true}` |
 | Early Media 조회 | `GET` | `/api/v1/earlymedia/{내선}?tenantId=...` |
