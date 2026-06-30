@@ -7,6 +7,21 @@
 
 ---
 
+## 🧩 DVGateway 연동 방식 — 3가지 중 선택
+
+이 문서는 그중 **① SDK** 중심이지만, DVGateway는 SDK 없이도 쓸 수 있습니다.
+
+| 방식 | 누구에게 | 무엇을 |
+|------|----------|--------|
+| **① SDK (TypeScript / Python)** | 개발자 — AI 음성 봇 구축 | `dvgateway-sdk`, `dvgateway-python`. 이 가이드의 대부분 |
+| **② REST API 직접 호출** | SDK 없이 통합하려는 팀 | 모든 `/api/v1/...` 엔드포인트(TTS 주입·CDR·클릭투콜·팩스·프레즌스 등) 직접 호출 |
+| **③ 게이트웨이 내장 연동** | 코드 없이 대시보드 설정만 | **네이버웍스(WORKS) 봇·WOFF 미니앱**, YouTube Live, 모바일 푸시 |
+
+③은 SDK·코드가 필요 없습니다 — 대시보드에서 값만 입력하면 동작합니다.
+네이버웍스 연동은 **[20. 네이버웍스 연동](20-naverworks-integration.md)** 참조.
+
+---
+
 ## 👋 비전공자 / 의사결정자라면
 
 기술 세부사항보다 **"우리 회사에 어떤 활용이 가능한가?"**가 궁금하다면
@@ -57,6 +72,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | 17 | [최소 비용 IVR 봇 (`mode=lite`)](17-lite-mode-ivr.md) | 안내 멘트 + DTMF만 받는 통화에 STT/LLM/TTS 없이 ARI Playback만 쓰는 표준 패턴. 비용·동시통화 효율 극대화 |
 | 18 | [앱 푸시 / 알림 (모바일 FCM)](18-app-push-notifications.md) | 연동된 모바일 앱 사용자에게 푸시 — 통화 종료 후 요약/녹취 링크, 부재중, 범용 `dvg_event`. `pushToExtension`/`notifyCallSummary`/`notifyMissedCall` |
 | 19 | [큐(대기열) 관리 + 에이전트 런타임](19-queues.md) | 콜센터 큐 조회·생성·수정·삭제 + 상담원 실시간 로그인/이석/복귀/로그아웃. `listQueues`/`createQueue`/`queueAgentLogin`/`queueAgentPause` |
+| 20 | [네이버웍스(NAVER WORKS) 연동](20-naverworks-integration.md) | **SDK 아님 · 게이트웨이 내장.** ① 봇 알림(통화·팩스 → WORKS 메시지) ② WOFF 미니앱(WORKS 안 클릭투콜·팩스·이력·프레즌스). 대시보드 "네이버웍스" 탭 / `…/config/lineworks`·`…/config/woff` |
 
 ---
 
