@@ -800,7 +800,8 @@ asyncio.run(main())
 | **`call:dtmf`** | **DTMF 키 입력 (AMI DTMFBegin/DTMFEnd 기반)** | **`linkedId`, `digit`, `phase` (`begin`/`end`), `durationMs` (end 단계), `direction` (`received`/`sent`), `tenantId`, `serverId`, `ts`** |
 | **`channel:state`** *(SDK 1.5.3+, identity fields SDK 1.6.8+)* | **Asterisk 채널 상태 변화 (AMI Newstate / DialEnd 기반)** | **`linkedId`, `channelId`, `leg` (`a`/`b`), `state` (`ring`/`up`/`down`/`busy`/`no_answer`/`rejected`), `direction` (`inbound`/`outbound`), `sipResponseCode` (선택), `did`/`caller`/`callerName`/`callee` (선택 · 게이트웨이 v1.4.3.1+ · `call:new` 등록 이후의 이벤트에만 채워짐), `tenantId`, `serverId`, `ts`** |
 | **`audio:playback`** *(SDK 1.6.0+)* | **`play_audio()` 라이프사이클** | **`linkedId`, `playbackId`, `url`, `phase` (`start`/`complete`/`canceled`/`failed`), `durationMs`, `errorReason` (failed 시), `tenantId`, `serverId`, `ts`** |
-| **`tts:playback`** *(SDK 1.6.1+)* | **`inject_tts()` 라이프사이클** | **`linkedId`, `injectId`, `phase` (`start`/`complete`/`canceled`/`failed`), `durationMs` (frames × 20ms — RTP-paced), `errorReason` (canceled: `preempted`/`barge_in`/`hangup`/`user_request` · failed: `channel_lost`/`playback_failed`), `tenantId`, `serverId`, `ts`** |
+| **`tts:playback`** *(SDK 1.6.1+)* | **`inject_tts()` 라이프사이클** | **`linkedId`, `injectId`, `phase` (`playout`/`complete`/`canceled`/`failed` — `playout` 은 게이트웨이 v1.4.14.17+, 첫 실오디오 프레임이 Asterisk 채널에 write 된 **실재생 시작** 실측 앵커 · `durationMs=0` · media-ready 대기/pre-roll 워밍업 이후라 inject 시점과 0~3s+ 차이날 수 있음 — 녹취 타임라인 마커 정렬에는 반드시 `playout` 의 `ts` 를 쓸 것), `durationMs` (frames × 20ms — RTP-paced), `errorReason` (canceled: `preempted`/`barge_in`/`hangup`/`user_request` · failed: `channel_lost`/`playback_failed`), `tenantId`, `serverId`, `ts`** |
+| **`recording:started`** *(게이트웨이 v1.4.14.17+)* | **PBX 녹취(MixMonitor) 시작 실측 — 녹취 파일 절대 원점(t=0)** | **`linkedId`, `channelId` (녹취 attach 된 leg), `tenantId`, `serverId`, `ts` (게이트웨이 AMI `MixMonitorStart` 수신 시각 unix ms ≈ 녹취 파일 첫 샘플 ±20ms). linkedid 당 1회(첫 recorder). 같은 값이 게이트웨이 CDR `recordingStartMs` 필드로도 영속(라이브 이벤트를 놓쳐도 `GET /api/v1/cdr` 로 사후 조회). 마커 위치 = 발화 절대시각 − 이 `ts`** |
 
 #### `channel:state` 이벤트 — B-leg 응답 감지 (click-to-call 핵심)
 
@@ -1044,11 +1045,12 @@ else:
 
 **왜 필요한가**: 기존 `tts:complete` 는 모든 terminal phase 에 발사되지만 `linkedId` 만 노출 — "정상 종료" / "선점됨" / "barge-in" / "channel_lost" 를 구분할 수 없었습니다. `tts:playback` 은 이 차이를 명시적으로 surface 합니다.
 
-**phase 계약** — 주입 1회당 정확히 **1개**의 terminal phase 발사:
+**phase 계약** — 주입 1회당 onset phase(`playout`) 최대 1개 + 정확히 **1개**의 terminal phase 발사:
 
 | phase | 의미 | 비고 |
 |-------|------|------|
-| `start` | PCM 프레임 송출 시작 직전 | `durationMs`=0, 선택적 |
+| `playout` *(게이트웨이 v1.4.14.17+)* | **첫 실오디오 프레임이 Asterisk 채널에 write 성공한 순간** — 실재생(가청) 시작 실측 | `durationMs`=0. media-ready 대기 + pre-roll 워밍업 **이후**라 inject 시점과 통화별 0~3s+ 차이 가능. **녹취 타임라인 마커 정렬 앵커는 반드시 이 phase 의 `ts`** (`recording:started` 의 `ts` 와 조합: 마커 위치 = playout ts − recording ts). terminal 전에 발사, 실프레임 0개(빈 스트림/즉시 선점)면 미발사 |
+| `start` | (예약) inject 시점 앵커 | **게이트웨이는 발사하지 않음** — 실측 onset 은 `playout` 사용 |
 | `complete` | 모든 PCM 프레임이 Asterisk 로 전송 완료 | `durationMs` = frames × 20ms (게이트웨이 ticker 정확 페이싱) |
 | `canceled` | 자연 EOF 이전에 중단 | `errorReason` 으로 사유 분류 |
 | `failed` | 재생 중 오류 | `errorReason` 으로 분류 |
