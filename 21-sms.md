@@ -2,7 +2,7 @@
 
 > Dynamic VoIP 게이트웨이로 **문자(SMS)를 발송·수신**합니다. 발신은 SDK 한 줄 또는 REST 한 번,
 > 설정·이력은 웹 대시보드 "📩 SMS" 탭에서. 통신사(KCT/Xener IP-SMSC) 단말연동규격을 그대로 구현.
-> **gateway 1.4.14.49+ / SDK 1.9.1+**
+> **gateway 1.4.14.51+ / SDK 1.9.1+**
 
 전화 통화(AI 음성)와 별개로, 같은 게이트웨이에서 **문자 메시지**도 보낼 수 있습니다.
 
@@ -66,6 +66,12 @@ const res = await gw.sendSMS({
 });
 console.log(res); // { id, messageId, status: 'delivered', recipients: [...] }
 ```
+
+> **사용자별 개인번호 발신** — `from` 에는 **내선번호**만 넣습니다. 게이트웨이가 그 내선의
+> 외부 CID(`external_cid` → 테넌트 대표번호)로 자동 변환해 보냅니다. 즉 사용자마다 자기 내선을
+> 넘기면 **각자의 개인 대표번호로 발신**됩니다. 모바일 앱(`api.accessToken`)은 **본인 내선만**
+> 발신 가능하며, 관리자가 그 seat 에 발신 권한을 켜야 합니다(기본 차단, `403 sms_not_allowed`).
+> 앱이 사용자 발신번호를 표시하려면 `GET /api/v1/sms/senders`(내선+외부 CID 목록)를 씁니다.
 
 ```python
 from dvgateway import DVGatewayClient
@@ -142,14 +148,29 @@ await gw.delete_sms(before="2026-01-01T00:00:00Z")
 
 ## 3. 수신 (inbound SMS)
 
-외부에서 온 SMS 는 두 경로로 받습니다:
+외부에서 온 SMS 는 세 경로로 받습니다:
 
 1. **실시간 이벤트** — callinfo WebSocket(`/api/v1/ws/callinfo`)로 `sms:received` 이벤트가 push.
    페이로드: `{ event: "sms:received", smsFrom, smsTo, smsText, smsMessageId, smsRecordId, tenantId }`.
 2. **이력** — `listSMS({ direction: 'in' })` 로 조회.
+3. **모바일 푸시(sms_received, gw 1.4.14.50+)** — 인바운드 SMS 의 **수신번호(To)를 수신 DID 로 가진
+   모바일 사용자(seat)** 에게 자동 푸시. 라우팅은 수신전화(incoming_call)와 동일(수신 DID + 정책
+   all/flagged). 관리자가 대시보드 `💬 문자 수신 푸시` 마스터 + 테넌트 "문자(SMS) 수신" subtype 을
+   켜야 발송됩니다. `data={sender, sender_number, body, msgid, record_id, receiver_number}`.
 
 > 수신은 PBX 다이얼플랜(`message_context` → `UserEvent`) 설정이 필요합니다(관리자).
-> 상세: [go-gateway/docs/sms-integration.md §4.2](../../go-gateway/docs/sms-integration.md).
+> 상세: [go-gateway/docs/sms-integration.md §4.2](../../go-gateway/docs/sms-integration.md),
+> 푸시 3단계 제어: [docs/push-notifications.md §10](../push-notifications.md).
+
+### 사용자별 발신 권한
+
+모바일 사용자(seat)의 SMS **발신**은 관리자가 사용자별로 허용/차단합니다(기본 차단, opt-in).
+
+- 대시보드 "📱 모바일 앱 사용자" → seat 표의 **SMS 발신** 토글, 또는
+  `POST /api/v1/tenants/{id}/seats/{seatId}/sms-enabled {enabled}`.
+- 테넌트 전체를 한 번에 허용: `PUT /api/v1/tenants/{id}/seats/sms-send-policy {policy:"allow"}`.
+- 발신 권한 없는 seat 이 발신을 시도하면 `403 sms_not_allowed`.
+- **수신 푸시와 발신 권한은 독립**입니다 — 수신 알림은 수신 DID/수신 정책으로, 발신은 이 토글로.
 
 ---
 
@@ -204,6 +225,7 @@ SMSC 도메인·realm·트렁크를 넣으면 됩니다. 코드는 통신사 무
 | `412 sms_disabled` | 테넌트에 SMS 미활성 | 관리자에게 SMS 활성화 요청 |
 | `412 sms_unprovisioned` (`missing` 배열) | SMSC 도메인/트렁크 미설정 | 관리자에게 라우팅 설정 요청(누락 항목은 `missing`) |
 | `403 not_owner` | 모바일이 본인 아닌 내선으로 발신 | 본인 내선으로 |
+| `403 sms_not_allowed` | 이 사용자(seat)에 SMS 발신 권한 없음 | 관리자: seat "SMS 발신" 토글 또는 테넌트 발신 정책 허용 |
 | `400 bad_from`/`bad_to` | 번호 형식 오류(숫자 아님) | 숫자만(예 `01012345678`) |
 | `502 ami_message_permission` | 게이트웨이 AMI `message` 권한 없음 | 관리자: `manager.conf` 에 `write=…,message` + 재시작 |
 | `502` 기타 | 통신사(SSW)가 거부 | 발신번호가 통신사에 등록됐는지, 트렁크 라우팅 확인 |
