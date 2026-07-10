@@ -26,7 +26,7 @@ SMS 는 **관리자가 테넌트별 라우팅을 먼저 설정**해야 동작합
 | SMSC 도메인 | Request-URI 도메인(통신사 SMSC) | `smsc.catvphone.com` |
 | 발신 realm | To/From 도메인(가입자 도메인) | `xic001.catvphone.com` |
 | 트렁크 endpoint | 통신사 SSW 로 도달하는 PJSIP endpoint **이름** | `DKCT` |
-| 기본 회신번호 | 회신번호 미지정 시 사용(선택) | (비움 가능) |
+| 기본 회신번호 | 회신번호 폴백(선택) — 미지정 시 **발신 내선의 외부번호(external_cid)가 먼저** 쓰이고, 그것도 없을 때 이 값 사용 | (비움 가능) |
 | 인코딩 | 본문 인코딩 | `euc-kr`(기본) / `utf-8` |
 
 > PBX 트렁크(`outbound_proxy` 등) 설정과 AMI `message` 권한이 함께 필요합니다.
