@@ -74,6 +74,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | 19 | [큐(대기열) 관리 + 에이전트 런타임](19-queues.md) | 콜센터 큐 조회·생성·수정·삭제 + 상담원 실시간 로그인/이석/복귀/로그아웃. `listQueues`/`createQueue`/`queueAgentLogin`/`queueAgentPause` |
 | 20 | [네이버웍스(NAVER WORKS) 연동](20-naverworks-integration.md) | **SDK 아님 · 게이트웨이 내장.** ① 봇 알림(통화·팩스 → WORKS 메시지) ② WOFF 미니앱(WORKS 안 클릭투콜·팩스·이력·프레즌스). 대시보드 "네이버웍스" 탭 / `…/config/lineworks`·`…/config/woff` |
 | 21 | [SMS 발송·수신 (SIP MESSAGE)](21-sms.md) | 문자 발신(동보 최대 10)·수신·이력·테넌트 라우팅 설정. 내선→실번호 자동 변환, 실패 시 관리자 문의 안내. `sendSMS`/`listSMS`/`getSMS`/`deleteSMS`/`setSMSConfig` |
+| 22 | [SMS 알림 게이트웨이 활용](22-sms-alert-gateway.md) | **SDK 불필요 · 복붙 레시피.** 모니터링(Zabbix)·cron·systemd·n8n·사내 시스템에서 DVG SMS API 로 알림 문자 발송 — 건당 과금 없는 사내 문자 게이트웨이. 공용 발송 스크립트 포함 |
 
 ---
 
@@ -93,6 +94,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | [06-text-input-tts.ts](examples/typescript/06-text-input-tts.ts) | 터미널 텍스트 → TTS 재생 | [어댑터 설정](04-adapter-reference.md) |
 | [07-pipeline-hooks-rag.ts](examples/typescript/07-pipeline-hooks-rag.ts) | RAG + CRM API + DB 저장 (훅) | [훅 + Webhook](09-hooks-webhook.md) |
 | [08-webhook-n8n-integration.ts](examples/typescript/08-webhook-n8n-integration.ts) | n8n Webhook 연동 + Fallback | [훅 + Webhook](09-hooks-webhook.md) |
+| [09-ai-sms-confirmation.ts](examples/typescript/09-ai-sms-confirmation.ts) | 영업시간 외 AI 예약 접수 + 확인 문자(SMS) 자동 발송 | [SMS](21-sms.md) · [훅 + Webhook](09-hooks-webhook.md) |
 
 ### Python 예제
 
@@ -105,6 +107,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | [05_happycall_bot.py](examples/python/05_happycall_bot.py) | 해피콜 자동 발신 봇 | [파이프라인 패턴](03-pipeline-patterns.md) |
 | [06_pipeline_hooks_rag.py](examples/python/06_pipeline_hooks_rag.py) | RAG + CRM API + DB 저장 (훅) | [훅 + Webhook](09-hooks-webhook.md) |
 | [07_webhook_integration.py](examples/python/07_webhook_integration.py) | Webhook 연동 + Fallback | [훅 + Webhook](09-hooks-webhook.md) |
+| [08_ai_sms_confirmation.py](examples/python/08_ai_sms_confirmation.py) | 영업시간 외 AI 예약 접수 + 확인 문자(SMS) 자동 발송 | [SMS](21-sms.md) · [훅 + Webhook](09-hooks-webhook.md) |
 
 ### 빠른 시작
 

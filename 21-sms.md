@@ -246,5 +246,7 @@ try {
 
 ## 참고
 
+- **AI 콤보 예제** — 영업시간 외 AI 예약 접수 + 확인 문자 자동 발송: [TS 09](examples/typescript/09-ai-sms-confirmation.ts) · [PY 08](examples/python/08_ai_sms_confirmation.py)
+- **활용 레시피** — 모니터링·cron·n8n 에서 알림 문자 보내기(사내 문자 게이트웨이): [22-sms-alert-gateway.md](22-sms-alert-gateway.md)
 - 게이트웨이/PBX 설정·다이얼플랜·트러블슈팅: [go-gateway/docs/sms-integration.md](../../go-gateway/docs/sms-integration.md)
 - 규격: KCT/Xener IP-SMSC 단말연동규격(SIP MESSAGE). 본문 인코딩 EUC-KR(실측 검증).
