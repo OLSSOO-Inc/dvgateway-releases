@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.9.0** | 업데이트: 2026-05-18
+> **최신 버전: 1.9.1** | 업데이트: 2026-05-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -73,6 +73,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | 18 | [앱 푸시 / 알림 (모바일 FCM)](18-app-push-notifications.md) | 연동된 모바일 앱 사용자에게 푸시 — 통화 종료 후 요약/녹취 링크, 부재중, 범용 `dvg_event`. `pushToExtension`/`notifyCallSummary`/`notifyMissedCall` |
 | 19 | [큐(대기열) 관리 + 에이전트 런타임](19-queues.md) | 콜센터 큐 조회·생성·수정·삭제 + 상담원 실시간 로그인/이석/복귀/로그아웃. `listQueues`/`createQueue`/`queueAgentLogin`/`queueAgentPause` |
 | 20 | [네이버웍스(NAVER WORKS) 연동](20-naverworks-integration.md) | **SDK 아님 · 게이트웨이 내장.** ① 봇 알림(통화·팩스 → WORKS 메시지) ② WOFF 미니앱(WORKS 안 클릭투콜·팩스·이력·프레즌스). 대시보드 "네이버웍스" 탭 / `…/config/lineworks`·`…/config/woff` |
+| 21 | [SMS 발송·수신 (SIP MESSAGE)](21-sms.md) | 문자 발신(동보 최대 10)·수신·이력·테넌트 라우팅 설정. 내선→실번호 자동 변환, 실패 시 관리자 문의 안내. `sendSMS`/`listSMS`/`getSMS`/`deleteSMS`/`setSMSConfig` |
 
 ---
 

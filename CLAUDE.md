@@ -357,6 +357,18 @@ const s = await gw.getAudioStatus(linkedId);
 
 > REST: `GET/POST /api/v1/queues`, `GET/PUT/DELETE /api/v1/queues/{id}`, `GET /api/v1/queues/agent/{deviceId}`, `POST /api/v1/queues/agent/{deviceId}/{login|logout|pause|unpause}`. tenantId 는 JWT 강제(=PBX path), admin 토큰만 `tenantId` 로 대상 지정. **PBX 동기화(`PBX_TENANT_SYNC_ENABLED`) 필요 — 미설정 시 503.** `Queue` 필드는 Dynamic VoIP 큐 모델 그대로(snake_case)이며, PBX 가 엔드포인트별로 bool/`"yes"`·`"no"` 를 혼용하므로 플래그 필드는 느슨히 타이핑. 상세·설계는 [docs/queue-api-analysis.md](../go-gateway/docs/queue-api-analysis.md).
 
+### SMS 발송·수신 (SIP MESSAGE, gateway 1.4.14.43+ / SDK 1.8.9+)
+| TypeScript | Python | 설명 |
+|------------|--------|------|
+| `sendSMS({from,to[],text,callback?,priority?,subject?,displayName?,reservedTime?,tenantId?})` | `send_sms(*, from_, to, text, callback?, priority?, subject?, display_name?, reserved_time?, tenant_id?)` | SMS 발신. `from`=발신 **내선**(게이트웨이가 실제 발신번호로 자동 변환 — external CID→테넌트 CID). `to`=수신번호 최대 10(동보). `priority`=`0`긴급/`1`빠름/`2`보통. 반환 `{id,messageId,status,recipients}` |
+| `listSMS({direction?,from?,to?,limit?,offset?,tenantId?})` | `list_sms(*, direction?, from_time?, to_time?, limit?, offset?, tenant_id?)` | 이력(최신순). `direction`=`in`/`out`, 기간 ISO, 페이징. 반환 `{total,records}` |
+| `getSMS(id, tenantId?)` | `get_sms(id, *, tenant_id?)` | 단건 상태(`submitted`/`delivered`/`failed`/`received`) |
+| `deleteSMS({before?,tenantId?})` | `delete_sms(*, before?, tenant_id?)` | 이력 삭제(테넌트 스코프, admin=`tenantId`/전체, `before`=RFC3339 이전). 반환 `{deleted}` |
+| `getSMSConfig(tenantId?)` | `get_sms_config(*, tenant_id?)` | 라우팅 설정 조회(글로벌+테넌트 병합) |
+| `setSMSConfig({enabled?,smscDomain?,senderRealm?,trunkEndpoint?,defaultCallback?,charset?}, tenantId?)` | `set_sms_config(config, *, tenant_id?)` | 라우팅 설정 저장(admin=글로벌/`tenantId`, 테넌트=자기것) |
+
+> REST: `POST /api/v1/sms/send`, `GET/DELETE /api/v1/sms`, `GET /api/v1/sms/{id}`, `GET/PUT /api/v1/config/sms`. tenantId 는 JWT 강제, 모바일(`api.accessToken`)은 본인 내선만 발신. **미설정 시 발송이 `412`(`sms_disabled`/`sms_unprovisioned`+`missing[]`) 로 "관리자에게 문의" 안내를 한국어로 반환** — SDK 예외 메시지를 그대로 사용자에게 노출하면 된다. 수신은 callinfo `sms:received` 이벤트 + `listSMS({direction:'in'})`. 본문 인코딩 EUC-KR(테넌트 charset). 설계·다이얼플랜: [docs/sms-integration.md](../go-gateway/docs/sms-integration.md), 사용 가이드: [docs/sdk-guide/21-sms.md](../docs/sdk-guide/21-sms.md).
+
 ### 착신전환 / 방해금지 / 개인비서 (Diversions)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
