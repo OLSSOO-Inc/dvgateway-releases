@@ -64,6 +64,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/...
 | `GET /api/v1/callerid/{ext}` (조회 전용) | ✅ (v1.4.8.47+) | ✅ (병행, GET+PUT) |
 | `GET /api/v1/pbx/cdr` (통화기록) | ✅ (v1.4.8.52+, 본인 통화만) | ✅ (병행, 테넌트 전체) |
 | `POST /api/v1/pbx/click-to-call` | ✅ (v1.4.8.53+, caller=본인 내선) | ✅ (병행) |
+| `POST /api/v1/pbx/click-to-call/cancel` | ✅ (v1.4.14.134+, caller=본인 내선) | ✅ (병행) |
 
 ```bash
 # Firebase ID 토큰만으로 호출 (dvgw 키 불필요)
@@ -1534,6 +1535,50 @@ curl -X POST -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" -H "Content-Type: ap
   "http://localhost:8080/api/v1/pbx/click-to-call?tenantId=7be69580e27641df" \
   -d '{"caller":"1010","callee":"01012345678"}'
 ```
+
+### 6.3 클릭투콜 발신 취소 (v1.4.14.134+)
+
+클릭투콜 발신 **직후**(내 단말이 울리는 중 / 착신이 아직 응답하기 전) 통화를 취소하고
+양 leg(1-leg 콜백 + 2-leg 착신)를 종료합니다. 앱의 "발신 취소" 버튼용
+(앱 PR [ringneck/makecall#432](https://github.com/ringneck/makecall/pull/432)).
+
+```bash
+POST /api/v1/pbx/click-to-call/cancel
+```
+
+```bash
+curl -X POST -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" -H "Content-Type: application/json" \
+  "http://localhost:8080/api/v1/pbx/click-to-call/cancel?tenantId=7be69580e27641df" \
+  -d '{"caller":"1010","callee":"01012345678"}'
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|:----:|:----:|------|
+| `caller` | string | O | 발신 단말번호(모바일=본인 내선) |
+| `callee` | string | O | 수신 전화번호 |
+
+**인증**: 클릭투콜과 동일(게이트웨이 JWT/API 키 + `?tenantId=`, 또는 모바일 access token).
+모바일은 `caller == 본인 내선` 강제.
+
+**동작**: 게이트웨이는 originate 시점엔 채널/linkedid 를 모르므로(PBX click_to_call REST 는
+ActionID 만 반환), ① registry 상관관계로 "이 테넌트가 방금 이 `caller`→`callee` 로 발신했다"를
+확인한 뒤 ② AMI `CoreShowChannels` 로 라이브 레그를 찾아 Hangup 합니다. 매칭은 발신 내선 seat
+레그(테넌트 스코프)로 한정하고, `callee` 번호를 함께 실은 통화(linkedid) 그룹을 우선 선택해 같은
+내선의 무관한 동시통화는 끊지 않습니다.
+
+**응답 코드** (앱 매핑과 정합 — 중요):
+
+| 코드 | 의미 | 앱 처리 |
+|:----:|------|---------|
+| `200` | 취소 성공(양 leg 종료) → `{ok, cancelled, hungUp, linkedids}` | 취소됨 |
+| `400` | `caller`/`callee` 누락 | — |
+| `403` | 권한(`not_owner` / `no_extension`) | — |
+| `409` | 진행 중 originate 없음(이미 응답/종료·미발신) — `no_active_originate` | "이미 연결됐을 수 있어요" (⚠️ **404 아님** — 404 면 앱이 "미지원"으로 오인) |
+| `501` | AMI 미구성 / 채널 열거 미지원 — `not_implemented` | "미지원" |
+| `502` | AMI 채널 열거 실패 — `ami_error` | 일시 오류 |
+
+> **한계**: 취소는 발신 후 짧은 상관 TTL(현재 60초) 이내, 채널이 아직 라이브일 때만 동작합니다.
+> 착신이 응답을 완료한 통화는 일반 통화이므로 취소 대신 통상 종료(hangup) 흐름을 사용하세요.
 
 ---
 
