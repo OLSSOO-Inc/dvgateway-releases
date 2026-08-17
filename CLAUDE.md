@@ -319,20 +319,34 @@ const s = await gw.getAudioStatus(linkedId);
 | `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함. provision 시 앱이 단말 메타데이터를 보냈으면 각 seat 에 **`device:{platform?, model?, vendor?, firmware?, appVersion?, deviceName?, label?, deviceId?, updatedAt?}`**(표시 전용, gateway 1.4.8.24+ · `deviceName` 1.4.11.70+ · `label` 1.4.11.70+ 운영자 지정 별명) 포함. 다단말 seat 는 `devices[]` 배열로도 노출 |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/device-label` | admin | 운영자가 단말에 **별명(label)** 지정 `{deviceId, label}`(gateway 1.4.11.70+). 앱 `deviceName` 과 별개·우선이며 provision 이 덮어쓰지 않는다(운영자 의도 보존). 빈 label=제거(자동 표시 폴백). 같은 모델 여러 대를 사람이 식별하는 용도. 대시보드 단말 셀 ✏️ 로 호출 |
 | `GET /api/v1/tenants/{id}/seats/devices?protocol=wss` | admin · 본인 | **내선 후보** — PBX 단말 중 `protocol=wss` 만 `{extension, deviceName, mobileClient}`. seat 의 내선은 이 목록에서만 선택(임의 입력 금지) |
-| `POST /api/v1/tenants/{id}/seats` | admin | seat 생성 `{email, extension?, admin?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded` |
+| `POST /api/v1/tenants/{id}/seats` | admin · **본인 테넌트** | seat 생성 `{email, extension?, admin?, did?, receivesIncoming?, mobileNumber?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded`. **`mobileNumber`**(gw 1.4.15.164)=개인 휴대폰 번호 — 착신전환 목적지의 **초기값** 출처(선택). 저장 시 숫자만 남기고, **이미 목적지가 있으면 덮지 않는다**(해석 체인의 맨 끝) |
 | `POST /api/v1/tenants/{id}/seats/self-enroll` | 본인 테넌트 · admin | **앱 자동 등록**(policy=auto 일 때만). `{email, extension?}` → seat + enrollment. email 기준 **멱등**(재설치/재로그인이 seat 안 늘림). manual 이면 **403** `self_enroll_disabled`, 정원 초과 **409**. `admin:true` 는 무시(권한 상승 방지) |
-| `POST /api/v1/tenants/{id}/seats/import` | admin | CSV/JSON 일괄 등록(부분 성공 `created/skipped/errors`). CSV 헤더 `email,extension,admin` |
+| `POST /api/v1/tenants/{id}/seats/import` | admin | CSV/JSON 일괄 **등록·갱신**(부분 성공 `created/updated/skipped/errors`). CSV 헤더 `email,extension,admin,mvoip,sms,did,receives,maxDevices,mobile`(gw 1.4.15.161·164). **기존 사용자는 email 로 매칭해 갱신**하고 **빈 칸은 그대로 둔다**(재-임포트가 배정을 날리지 않게). 1회 **5,000행** 상한(초과분은 `errors` 보고, 응답 `maxRows`) |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/{suspend\|resume\|archive\|restore}` | admin | 보류/재개/보관/복원. archive=정원 슬롯 반환, **restore=보관(archived)→활성(active), 복원 시 정원 재확인(초과 409 `seat_limit_exceeded`)** |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/admin` | admin | `{admin:bool}` 관리계정 토글(테넌트 관리 알림/푸시 구분 라벨) |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/enroll` | admin · **본인 테넌트** | enrollToken 재발급(QR 재전송). 본인 테넌트 토큰도 자기 seat 의 QR 발급 허용(대시보드 "내 테넌트" self-view 🔗 QR). softphone 미구성 시 **503**(seat 은 유지) |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/extension` | admin · **본인 테넌트** | seat 내선(WSS 단말) 선택/변경/저장. body `{extension}`(빈 값=미배정). PBX WSS 단말 목록(`/seats/devices`)에 있는 내선만 허용 — 임의 입력 시 **400** `ext_not_wss`, 다른 seat 가 쓰는 내선이면 **409** `extension_taken`. 후보 조회는 `GET …/seats/devices?protocol=wss`(본인 테넌트 허용) |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/mobile-number` | admin · **본인 테넌트** | 개인 휴대폰 번호 설정 `{mobileNumber}`(빈 값=지움, gw 1.4.15.164). 앱은 이 번호를 알아낼 수 없다(iOS 공개 API 부재 · Android 는 SIM 기록 필요) — 온보딩 시점이 운영자가 아는 유일한 시점이다. **seat `archive` 시 함께 지워진다**(개인정보), `suspend` 는 유지(복귀 전제) |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/email` | admin · **본인 테넌트** | enrollToken 재발급 후 **seat 의 라벨 이메일로** **QR(인라인 PNG)+딥링크+토큰** 발송(대시보드 admin 모달 + "내 테넌트" self-view 의 "✉" 버튼). 수신자는 seat 이메일로 고정(임의 지정 불가) → 본인 테넌트도 자기 seat 사용자에게 전송 가능. dvg SMTP(`GW_SMTP_HOST`+`GW_SMTP_FROM`) 필요 — 미설정 시 **503** `mailer_disabled`; softphone 미구성 시 503; seat 이메일 없으면 400 |
 | `GET\|PUT /api/v1/tenants/{id}/seats/limit` | admin(PUT) | seat 정원 조회/설정(동시통화 한도와 독립) |
 | `GET\|PUT /api/v1/tenants/{id}/seats/policy` | admin(PUT) | 등록 정책 `{policy: "manual"\|"auto"}` |
 
 > **등록 정책**: `manual`(기본)=관리자 사전등록만 / `auto`=앱 self-enroll 허용(정원 내 즉시 active). **자동 등록 흐름**: 앱 → makecall 서버(Firebase 로그인 검증) → dvg `self-enroll` 대행 호출. dvg 는 자신이 발급한 인증(SDK 키→JWT, 본인 테넌트)만 신뢰하고 email 은 라벨로 저장한다. **앱은 dvg 에 직결하지 않는다.** 정원이 무단 가입의 게이트.
 >
-> SDK 메서드(TS `SeatManager` / Python `seats`)는 후속 SDK 릴리즈에서 추가 예정 — 현재는 REST 직접 호출(makecall 서버). 통합 흐름·필드 상세는 [docs/mobile-app-sdk-guide.md](../docs/mobile-app-sdk-guide.md), 경계·라이프사이클은 [docs/mobile-seats-contract.md](../docs/mobile-seats-contract.md) 참조.
+> ⚠️ **seat 관리는 SDK 에 넣지 않는다 — REST 직접 호출이 정식 경로다**(2026-08-16 결정,
+> 종전 표기 "후속 SDK 릴리즈에서 추가 예정"을 철회).
+>
+> **거버넌스 이유**: 이 SDK 는 **통화 AI 통합용**(오디오 스트림·STT/TTS·callinfo)이고 통합사에
+> 배포된다. seat 생성·정원·관리계정은 **admin/테넌트 권한 영역**이라, 같은 클라이언트에 섞으면
+> **권한 경계가 흐려진다** — SDK 키를 받은 통합사가 조직의 사용자 계정을 만들 수 있는 것처럼
+> 보인다(실제 권한은 서버가 막지만, 표면이 그렇게 보이는 것 자체가 문제다).
+>
+> 온보딩 자동화(HR 연동·사내 스크립트)는 REST 로 충분하고 이미 전부 열려 있다 — 위 표 참조.
+> **다시 열 조건**: 통합사(SDK 사용자)에게 온보딩 자동화를 제품으로 제공하기로 하면 그때
+> **별도 admin 클라이언트**로 만든다(이 SDK 에 합치지 않는다).
+>
+> 통합 흐름·필드 상세는 [docs/mobile-app-sdk-guide.md](../docs/mobile-app-sdk-guide.md),
+> 경계·라이프사이클은 [docs/mobile-seats-contract.md](../docs/mobile-seats-contract.md) 참조.
 
 ### PBX 관리
 | TypeScript | Python | 설명 |
