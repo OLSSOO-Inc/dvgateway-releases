@@ -2546,7 +2546,7 @@ LLM API 키는 STT/TTS/S2S와 동일하게 **프로바이더 API 키** 탭에서
 |------|-----------|------|
 | LLM API 키 (claude, openai, gemini) | `apiKeysConfig.LLM` (`/api/v1/config/apikeys`) | 테넌트별 JSON. `enabled`, `role` (`primary`/`backup`), `apiKey` |
 | LLM 선택자 | `pipelineconf.Config` (`/api/v1/config/pipeline`) | `llmProvider`, `llmRole`, `llmModel`, `fallbackProvider`, `fallbackRole`, `fallbackModel` |
-| LLM 자격증명 해석 | `GET /api/v1/llm/resolve?role=primary\|backup[&provider=claude]` | 파이프라인 선택자를 apiKeysConfig.LLM에 매핑해 `{provider, role, model, apiKey}` 반환 |
+| LLM 자격증명 해석 | `GET /api/v1/llm/resolve?role=primary\|backup[&provider=claude]` | 파이프라인 선택자를 apiKeysConfig.LLM에 매핑해 `{provider, role, model, apiKey, **baseUrl**}` 반환 |
 
 우선순위 (서버의 `resolveLLMProvider`와 동일):
 1. `provider` 쿼리 파라미터가 `apiKeysConfig.LLM`에 enabled+keyed로 존재하면 그 항목
@@ -2561,8 +2561,13 @@ SDK 권장 사용 패턴:
 const res = await fetch(`${gateway}/api/v1/llm/resolve?role=primary`, {
   headers: { Authorization: `Bearer ${jwt}` },
 });
-const { provider, model, apiKey } = await res.json();
-// provider/model/apiKey 로 Anthropic/OpenAI SDK 초기화
+const { provider, model, apiKey, baseUrl } = await res.json();
+
+// baseUrl 을 그대로 어댑터에 넘긴다 (SDK 1.9.2+).
+// 값이 비어 있으면 어댑터가 미설정과 같게 다루므로 분기할 필요가 없다.
+const llm = new AnthropicAdapter({ apiKey, model, baseUrl });
+// OpenAI 호환 로컬 LLM(vLLM · Ollama 등)이면:
+// const llm = new OpenAILlmAdapter({ apiKey, model, baseUrl });
 ```
 
 ```python
@@ -2570,7 +2575,19 @@ const { provider, model, apiKey } = await res.json();
 r = httpx.get(f"{gateway}/api/v1/llm/resolve", params={"role": "primary"}, headers={"Authorization": f"Bearer {jwt}"})
 data = r.json()
 provider, model, api_key = data["provider"], data["model"], data["apiKey"]
+base_url = data.get("baseUrl", "")
+
+llm = AnthropicAdapter(api_key=api_key, model=model, base_url=base_url)
+# OpenAI 호환 로컬 LLM 이면: OpenAILlmAdapter(api_key=..., model=..., base_url=base_url)
 ```
+
+⚠️ **`baseUrl` 은 온프렘·폐쇄망의 핵심 스위치다.** 대시보드 "프로바이더 API 키" 탭에서
+LLM 프로바이더에 `baseUrl` 을 넣으면 공식 API 대신 그 주소로 나간다(로컬 LLM·사내 프록시).
+게이트웨이는 이 값을 **gw 1.4.14.114 부터 저장·제공**했지만 **어댑터가 받는 자리가 없어**
+SDK 파이프라인에서는 반영되지 않았다 — **SDK 1.9.2 에서 연결**됐다. 그 이전 버전을 쓰면
+게이트웨이 설정과 무관하게 **공식 엔드포인트로 나간다**(폐쇄망에서는 그대로 실패).
+값이 비면 어댑터는 벤더 SDK 에 키를 **넘기지 않는다**(공식 엔드포인트 유지) —
+resolve 응답을 조건 없이 펼쳐 넣어도 안전하다.
 
 Primary/Backup 페일오버가 필요한 경우:
 1. API Keys 탭에서 Claude(role=primary)와 OpenAI(role=backup) 모두 enabled+키 입력
