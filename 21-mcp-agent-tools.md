@@ -22,7 +22,7 @@ MCP(Model Context Protocol)는 AI 에이전트가 외부 시스템의 기능을 
 ```bash
 # 게이트웨이 서버에서
 echo 'GW_MCP_ENABLED=true' | sudo tee -a /etc/dvgateway/dvgateway.env
-sudo systemctl restart dynamic-voip-gateway
+sudo systemctl restart dvgateway
 # 부팅 로그 확인: [MCP] server enabled — POST /mcp ...
 ```
 
