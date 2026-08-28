@@ -28,6 +28,8 @@
 | `1.7.0+` | ✅ 신규 | `call:rejected` 이벤트 추가 — 라이선스 전역 한도 또는 테넌트 동시통화 한도(`TENANT_LIMITS`) 도달 시 SDK가 거부 사실을 명시 신호로 수신. `reason`(`license_global`/`tenant_limit`), `currentActive`, `limit` 포함. **게이트웨이 v1.4.4.0+ 필요** (`PublishCallRejected` + `/api/v1/config/tenant-limits` hot-reload API 지원) |
 | `1.9.0+` | ✅ 신규 | **녹취 타임라인 실측 정렬** — ① `tts:playback` 에 `phase="playout"` 추가(첫 실오디오 프레임의 Asterisk write 순간 = 실재생 시작 실측 앵커), ② `recording:started` 이벤트 추가(`gw.onRecordingStarted` / `gw.on_recording_started` — PBX 녹취 파일 절대 원점 t=0, AMI MixMonitorStart 실측). 이벤트 `timestamp` 가 클라이언트 수신 시각이 아닌 **게이트웨이 스탬프 `ts`** 로 매핑되도록 개선(모든 callinfo 이벤트, WS 전달 지터 제거). 마커 위치 = playout ts − recording ts. **게이트웨이 v1.4.14.17+ 필요** (구버전 게이트웨이에서는 두 이벤트가 발사되지 않을 뿐 오류 없음) |
 
+| `1.9.3+` | ✅ 신규 | **STT 보정 전 원문 병행 출력** — `TranscriptResult.rawText`(문장) · `TranscriptWord.rawWord`(단어, Python 은 `raw_text`/`raw_word`) 추가. `text`/`word` 는 **표시용 보정본 그대로 유지**(필드를 더하기만 함 → 기존 코드 회귀 0). Deepgram 이 같은 응답에 원문·보정본을 함께 주므로 **추가 호출·추가 과금 0** → **기본 켜짐**. **스위치 3층**(모두 기본 켜짐, 서로 독립): SDK 어댑터 `rawTranscript:false`(Python `raw_transcript=False`) · 게이트웨이 env `GW_STT_RAW_TEXT=false` · 테넌트별 apikeys `{"rawText":false}`(**tri-state** — 미지정=글로벌 상속, false=그 테넌트만 끔, true=글로벌이 꺼져도 켬). 끄면 재구성 자체를 **건너뛴다**(만들고 버리지 않음). ⚠️ **`text` 대체 금지** — 단어 공백 join 근사라 띄어쓰기·숫자 표기가 다름(한국어는 띄어쓰기가 보정 대상). 진단용(오인식 vs 보정기 개입 구분). ⚠️ **켜져 있어도 보정이 없었으면 필드 자체가 없음**(`smartFormat:false`+`punctuate:false` → 원문==보정본) — 부재는 오류가 아니므로 `if (result.rawText)` 로 확인할 것. ⚠️ **배치(통화요약) 경로 미적용**(`utterances[]` 에 `words[]` 가 없음 — 실시간 스트리밍 전용). 게이트웨이는 `stt:result` 에 `rawText`(omitempty) 동봉(**v1.4.15.223+**, 구버전은 키가 없을 뿐 오류 없음) |
+
 **v1.3.7 버그 상세:**
 - `OpenAIRealtimeAdapter._pipe_audio_in()`이 `chunk.samples` (AudioChunk)를 기대하지만, 실제로는 `bytes`가 전달되는 경우가 있어 `AttributeError`로 background task가 사일런트 종료됨
 - `on_error` 콜백으로 예외가 전파되지 않아 진단이 어려움
@@ -1579,6 +1581,7 @@ const stt = new DeepgramAdapter({
   keywords: ['DVGateway'],    // 키워드 부스팅
   profanityFilter: false,     // 비속어 필터
   sentiment: false,           // 감정 분석 (Nova-3)
+  rawTranscript: true,        // 보정 전 원문 동봉 (기본 true · 추가 과금 0)
 });
 ```
 
@@ -1598,6 +1601,7 @@ stt = DeepgramAdapter(
     punctuate=True,
     profanity_filter=False,
     sentiment=False,
+    raw_transcript=True,   # 보정 전 원문 동봉 (기본 True · 추가 과금 0)
 )
 ```
 

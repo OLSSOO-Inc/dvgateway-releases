@@ -45,6 +45,88 @@ const stt = new DeepgramAdapter({
 | 일반 전화 통화 | `nova-3-phonecall` |
 | 비용 절감이 필요한 경우 | `base` |
 
+#### 보정 전 원문 확인 (`rawText` · SDK 1.9.3+ · 게이트웨이 1.4.15.223+)
+
+**무엇을 해결하나** — 사용자가 *"내가 말한 것과 다르게 인식됐다"* 고 할 때, 종전에는
+**STT 가 잘못 들은 것**인지 **보정기(smart format)가 바꿔 놓은 것**인지 구분할 방법이
+없었습니다. 보정본만 남아 있었기 때문입니다.
+
+`smartFormat`/`punctuate` 가 켜져 있으면 `result.text` 는 **보정본**입니다. 보정 전 원문은
+`result.rawText`(단어 단위는 `words[].rawWord`)로 **같은 이벤트에 함께** 옵니다.
+
+⭐ **추가 호출·추가 과금이 0입니다.** Deepgram 이 원문(`words[].word`)과
+보정본(`words[].punctuated_word`)을 **원래부터 한 응답에 함께** 보내는데, SDK 가 그중 원문을
+버리고 있었을 뿐입니다. 그래서 **기본값이 켜짐**입니다.
+
+```ts
+pipeline.on('transcript', (result) => {
+  if (!result.isFinal) return;
+  console.log('보정본:', result.text);
+  if (result.rawText) console.log('원문  :', result.rawText);  // 다를 때만 옵니다
+});
+```
+
+```
+보정본: 네, 삼백원입니다.
+원문  : 네 삼백원입니다
+```
+
+**끄는 방법 (3개 층 · 기본은 모두 켜짐)**
+
+발화 내용이 늘 민감한 도메인이거나 페이로드를 줄이고 싶으면 끌 수 있습니다. **끄면 원문을
+만들지도 않습니다**(만들고 버리는 것이 아니라 재구성 자체를 건너뜁니다).
+
+| 층 | 방법 | 적용 범위 | 반영 |
+|---|---|---|---|
+| 게이트웨이 env | `GW_STT_RAW_TEXT=false` | 배포 전체 | 재시작 |
+| 테넌트별 | `POST /api/v1/config/apikeys` → 해당 provider `{"rawText": false}` | 그 테넌트 | hot-reload |
+| SDK 어댑터 | `new DeepgramAdapter({ rawTranscript: false })` | 그 앱 | 즉시 |
+
+```ts
+// SDK 에서 끄기
+const stt = new DeepgramAdapter({
+  apiKey: process.env.DEEPGRAM_API_KEY!,
+  model: 'nova-3',
+  language: 'ko',
+  rawTranscript: false,   // 기본 true — 원문을 만들지 않습니다
+});
+```
+
+```python
+# Python
+stt = DeepgramAdapter(
+    api_key=os.environ["DEEPGRAM_API_KEY"],
+    model="nova-3",
+    language="ko",
+    raw_transcript=False,   # 기본 True
+)
+```
+
+⚠️ **테넌트 설정은 tri-state 입니다** — `rawText` 를 **보내지 않으면**(미지정) 글로벌
+`GW_STT_RAW_TEXT` 를 따르고, `false` 를 **명시하면** 글로벌이 켜져 있어도 그 테넌트만
+꺼집니다. 반대로 글로벌이 꺼져 있어도 `true` 로 특정 테넌트만 켤 수 있습니다.
+
+⚠️ **SDK 옵션과 게이트웨이 설정은 서로 독립입니다.** SDK 어댑터를 직접 쓰는 경로는
+`rawTranscript` 가, 게이트웨이 `stt:result` 구독 경로는 env/테넌트 설정이 각각 결정합니다 —
+한쪽을 껐다고 다른 쪽이 꺼지지 않습니다.
+
+**주의사항**
+
+⚠️ **`rawText` 로 `text` 를 대체하지 마세요.** 단어를 공백으로 이어 붙인 **근사값**이라
+띄어쓰기·숫자 표기가 다릅니다(한국어는 **띄어쓰기 자체가 보정 대상**입니다 — Deepgram 이
+2026-05-28 에 Nova-3 한국어 띄어쓰기 버그를 고친 바로 그 지점). 표시·요약·저장은 계속
+`text` 를 쓰고, `rawText` 는 *"STT 가 실제로 무엇을 들었는가"* 를 봐야 하는 **진단**에
+씁니다.
+
+⚠️ **켜져 있어도 안 오는 것이 정상입니다.** 보정이 없었으면
+(`smartFormat:false`+`punctuate:false`) 원문과 보정본이 같으므로 필드를 **보내지 않습니다**
+— 같은 값을 한 벌 더 보내면 낭비이고, *"원문이 따로 있다"* 는 잘못된 신호가 됩니다. 부재는
+오류가 아니므로 항상 `if (result.rawText)` 로 확인하세요.
+
+⚠️ **통화 요약(배치) 경로에는 아직 없습니다.** 게이트웨이의 온디맨드 통화 요약은 Deepgram
+사전녹음 API 의 `utterances[]` 를 쓰는데 거기에는 `words[]` 가 없어 원문을 얻을 수 없습니다.
+**실시간 스트리밍에서만** 제공됩니다.
+
 ---
 
 ### ElevenLabs TTS (음성 합성)
