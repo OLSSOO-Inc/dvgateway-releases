@@ -351,6 +351,24 @@ const s = await gw.getAudioStatus(linkedId);
 > 경계·라이프사이클은 [docs/mobile-seats-contract.md](../docs/mobile-seats-contract.md) 참조.
 
 ### PBX 관리
+> ⚠️ **수신 설정·번호 원장·가시성은 SDK 에 넣지 않는다 — REST 직접 호출이 정식 경로다**
+> (gw 1.4.15.249 결정, 위 seat 관리와 **같은 근거**).
+>
+> gw 1.4.15.243~.249 에서 열린 표면 — `GET|PUT /api/v1/inbound-routes*`(DID 를 앱 내선 ↔
+> SDK/AI 플로우로 전환) · `/api/v1/numbers*`(번호 인벤토리 + 다축 대조) ·
+> `POST /api/v1/seats/group-ids`(가시성 그룹) — 은 **admin/테넌트 권한 영역**이다.
+>
+> **거버넌스 이유**: 이 SDK 는 **통화 AI 통합용**이고 **통합사에 배포**된다. 수신 라우팅을
+> 메서드로 노출하면 **SDK 키를 받은 통합사가 조직의 전화를 어디로 보낼지 바꿀 수 있는 것처럼
+> 보인다**(서버가 막더라도 표면이 그렇게 보이는 것 자체가 문제). 그리고 이 쓰기는 잘못되면
+> **전화가 안 울린다** — 게이트웨이에서 파급이 가장 큰 쓰기라 조회/쓰기를 env 로 2단 게이트한다.
+>
+> 계약 전문: [docs/inbound-routing-and-numbers-api.md](../docs/inbound-routing-and-numbers-api.md)
+>
+> ⭐ 다만 **요약 응답의 `usage`**(`POST /api/v1/calls/{linkedid}/summary`)는 기존 REST 응답에
+> **필드가 추가**된 것이라 SDK 표면 변화가 없다 — `cached:true` 면 `sttSeconds` 를 싣지 않는다
+> (STT 소비 0). 자세한 것은 위 문서 §4.
+
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `applyChanges()` | `apply_changes()` | PBX 설정 재적용 |
