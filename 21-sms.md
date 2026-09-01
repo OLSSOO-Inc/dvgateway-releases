@@ -107,6 +107,64 @@ curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
 # → {"id":"…","messageId":"1001…","status":"delivered","recipients":["01012345678"]}
 ```
 
+### 1-1. 요청 필드 전체 (`POST /api/v1/sms/send`)
+
+| 필드 | 필수 | 뜻 |
+|---|:--:|---|
+| `from` | ✅ | 발신 내선(또는 번호). ⚠️ 모바일 토큰은 **자기 내선만** |
+| `to[]` | ✅ | 수신 번호 배열 — **최대 10** |
+| `text` | ✅ | 본문(UTF-8 로 보내고 전송 시 EUC-KR 로 인코딩) |
+| `callback` |  | 회신번호. 생략 시 **① 발신 내선 실번호(external_cid) → ② 테넌트 기본 회신번호 → ③ 대표번호** 순. ⚠️ 미해석 원시 내선은 **쓰지 않습니다**(외부에서 걸 수 없는 번호) |
+| `priority` |  | `"0"` \| `"1"` \| `"2"` |
+| `subject` |  | 제목 |
+| `displayName` |  | 표시 이름 |
+| `reservedTime` |  | **예약전송** 시각 |
+| **`clientMsgId`** |  | ⭐ **멱등 키**(아래 1-2) — `Idempotency-Key` 헤더로 보내도 같은 뜻 |
+
+📌 본문의 `{repName}` · `{repNumber}` 는 **서버가 치환**합니다(테넌트 `cid_name`/`cid_number`).
+⚠️ **길이 검사는 치환 *뒤*** 에 합니다 — 템플릿은 짧아도 치환하면 넘칠 수 있습니다.
+
+### 1-2. ⭐ 재시도 안전 — 멱등 키
+
+🔴 **타임아웃으로 응답을 잃으면 "보냈는지 알 수 없습니다."** 그냥 재시도하면
+**중복 발송 + 중복 과금**입니다. `clientMsgId`(또는 `Idempotency-Key` 헤더, ≤64자)를
+붙이면 같은 키의 재요청은 **재발송 없이 최초 결과를 그대로** 돌려줍니다.
+
+```bash
+curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
+  -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: order-8842-confirm' \
+  -d '{"from":"1001","to":["01012345678"],"text":"주문이 접수되었습니다"}'
+# 재요청 → 같은 응답 + "idempotentReplay": true   (문자는 한 번만 나갔습니다)
+```
+
+| 응답 | 뜻 |
+|---|---|
+| `idempotentReplay: true` | **재발송 안 함** — 최초 결과 재생 |
+| `409 idempotency_in_progress` | 같은 키가 **처리 중** — 잠시 뒤 재시도 |
+| `409 idempotency_key_reused` | 같은 키인데 **내용이 다름**(수신자·본문·발신) — 키를 새로 |
+| `400 bad_idempotency_key` | 키 형식 오류(≤64자) |
+
+⚠️ 보존 **24시간** · **디스크 영속**(재시작 창의 이중 과금 방지) · 지문은 해시라 본문은 저장하지 않습니다.
+⚠️ 키를 **생략하면 종전 동작**(멱등 없음)입니다 — 구버전 클라이언트 호환.
+
+### 1-3. 오류 코드
+
+| HTTP | `code` | 뜻 · 대응 |
+|:--:|---|---|
+| 400 | `bad_from` / `bad_to` | 번호 형식 |
+| 400 | — | `from, to, text` 누락 · **수신자 10명 초과** |
+| 400 | **`sms_body_too_long`** | 치환 후 **80바이트** 초과. 응답의 `bytes`/`maxBytes` 참조 |
+| 400 | **`sms_unsupported_char`** | **EUC-KR 로 못 보내는 문자**(이모지 등) |
+| 403 | **`no_extension`** | 이 계정에 내선이 없음(모바일) |
+| 403 | `not_owner` | 자기 내선이 아님(모바일) |
+| 403 | **`sms_not_allowed`** | 그 seat 에 **발신 권한 없음** — 관리자가 켜야 함 |
+| 502 | — | 전송 실패(SMSC/AMI) |
+| 502 | **`ami_message_permission`** | 🔴 **1회성 PBX 설정 누락** — `manager.conf` 의 게이트웨이 AMI 사용자에 `message` write 권한 추가 후 `manager reload`. 개별 문자 문제가 아닙니다 |
+| 503 | — | **SMS 미구성** 또는 **AMI 미연결** |
+
+⚠️ **80바이트는 EUC-KR 기준**이라 한글 1자 = 2바이트입니다(한글 40자 안팎).
+
 ---
 
 ## 2. 이력 조회
@@ -131,6 +189,17 @@ one = await gw.get_sms(page["records"][0]["id"])
 
 각 레코드 필드: `id, direction(out|in), messageId, from, to[], text, status, createdAt`.
 상태값: `submitted`(전송 중) · `delivered`(전송) · `failed`(실패) · `received`(수신).
+
+> 🔴 **`delivered` 는 "상대가 받았다"가 아닙니다**(gw `1.4.15.116` 정정).
+>
+> Asterisk `res_pjsip_messaging` 은 MESSAGE 를 **내보낸 시점에** 성공을 돌려주고,
+> SMSC 의 최종 응답(200 / 4xx / **무응답**)은 그 값에 담기지 않습니다. 실측
+> (2026-08-10 온프렘)에서 SBC 가 MESSAGE 를 **한 번도 받아주지 않고 10회 재전송되도록
+> 침묵**했는데 화면은 `✓ 전송` 이었습니다 — *"보냈다는데 안 온다"* 의 직접 원인입니다.
+>
+> ⭐ 그래서 발송 응답에 **`deliveryConfirmed: false`** 를 함께 싣습니다. 지금
+> 게이트웨이가 관측할 수 있는 범위가 **"내보냈다"까지**라는 뜻이고, `status` 문자열은
+> 호환 때문에 그대로 둡니다. **배달 확인이 필요한 업무라면 이 값을 보고 판단하십시오.**
 
 ### 이력 비우기 (관리자/테스트 정리)
 
