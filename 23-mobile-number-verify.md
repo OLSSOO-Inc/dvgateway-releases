@@ -395,7 +395,8 @@ OTP 는 **요청 하나가 곧 돈**이고, 그게 그대로 공격 표면입니
 내선도 없어, 별도 표면을 씁니다.
 
 ```
-POST /api/v1/subscription/verify/start     (HMAC)  → {ref, to, body, expiresAt, ttlSeconds}
+POST /api/v1/subscription/verify/start     (HMAC)  → {ref, to, body, expiresAt, ttlSeconds,
+                                                      inboundReady, inboundStatus}
 GET  /api/v1/subscription/verify/status    (HMAC)  → {ref, state, mobileNumber?}
 ```
 
@@ -414,10 +415,23 @@ GET  /api/v1/subscription/verify/status    (HMAC)  → {ref, state, mobileNumber
 없으면 **토큰을 발급하지 않습니다.** 발급해 두면 사용자는 문자를 보낸 뒤 영영 `pending`
 이고 **서버 로그에도 안 남습니다.**
 
-**서명**: `X-DVG-Signature` = `hex(HMAC-SHA256(secret, rawBody))` + `issuedAt` ±300초 +
-`requestId` 재생 거부. ⚠️ **조회도 서명이 필요합니다** — `ref` 만으로 열면 그 불투명
-식별자를 아는 누구나 관측된 번호를 읽습니다(GET 은 본문이 없어 **서명 대상이 `ref`
-문자열**입니다).
+**서명**
+
+| | 서명 대상 | 신선도 | 재생 거부 |
+|---|---|---|---|
+| `start`(POST) | `rawBody` | `issuedAt` ±300초 | `requestId` |
+| `status`(GET) | **정규화된 쿼리 문자열** | `issuedAt` **±60초** | — (창으로 대체) |
+
+정규화 = 쿼리 키를 정렬해 `k=v` 를 `&` 로 이음(값은 디코드된 원문, 같은 키가 여럿이면
+값도 정렬).
+
+🔴 **`ref` 만 서명하면 안 됩니다** — `ref` 는 초안당 **고정값**이라 서명도 고정이 되어
+**한 번 새면 영구 조회**가 됩니다(`.303` 의 실제 결함, `.304` 에서 수정).
+
+⚠️ GET 창을 60초로 좁힌 이유: 조회는 폴링이라 서명이 훨씬 자주 만들어져 캡처 기회가
+많습니다. `requestId` 재생 거부를 두지 않은 이유: 3초 폴링이면 분당 20건씩 멱등 항목이
+쌓이는데 얻는 것은 "60초 안 재생"뿐이라 **대가가 맞지 않습니다.** 더 필요하면 **창을 더
+좁히는 것**이 같은 목적의 싼 도구입니다.
 
 ⚠️ 토큰 형식과 본문은 seat 축과 **공유**합니다 — 갈리면 인입 파서가 두 벌이 되고,
 **관대한 파서는 오탐을 만듭니다.** 인입 매칭은 **seat 축이 먼저** 시도됩니다.
