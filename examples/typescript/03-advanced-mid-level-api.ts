@@ -127,12 +127,10 @@ gw.onCallEvent(async (event) => {
     // STT 스트림 시작 (비동기)
     void stt.startStream(session.linkedId, vadStream as AsyncIterable<import('dvgateway-sdk').AudioChunk>);
 
-    // 세션 메타데이터 업데이트 (CRM 연동 등)
-    await gw.updateSessionMeta(session.linkedId, {
-      botType: 'cs-agent',
-      language: 'ko',
-      startedAt: new Date().toISOString(),
-    });
+    // 세션 메타데이터: 게이트웨이에는 세션 메타데이터를 갱신하는 API 가 없다
+    // (updateSessionMeta() 는 DVGatewayUnsupportedError 를 던진다 — 호출하지 말 것).
+    // CRM 연동 값은 다이얼플랜 Stasis 인자 custom_value_01~03 으로 넘기면
+    // session.customValue1~3 으로 들어온다.
   }
 
   // ── 콜 종료 ────────────────────────────────────────────────────────────

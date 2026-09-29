@@ -14,7 +14,7 @@ DVGateway ports:
   :8088 — Dynamic VoIP ARI (DVGateway connects to Dynamic VoIP here)
 
 Prerequisites:
-  pip install dvgateway-python python-dotenv
+  pip install dvgateway python-dotenv
 
 Environment variables (set in .env or export):
   DV_BASE_URL=http://<gateway-host>:8080

@@ -185,7 +185,7 @@ stt_adapter.on_transcript(on_transcript)
 **Raw WebSocket (프레임워크 없이 직접 연동):**
 
 ```
-오디오 스트림 연결: ws://gateway:8080/api/v1/ws/stream?linkedid=XXX
+오디오 스트림 연결: ws://gateway:8080/api/v1/ws/stream?linkedid=XXX&token=<JWT>
 
 // 게이트웨이 → AI 서비스: Binary frames (640 bytes slin16 PCM)
 // AI 서비스 → 게이트웨이: Text frames (JSON 시그널)

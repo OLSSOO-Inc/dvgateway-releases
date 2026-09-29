@@ -30,6 +30,16 @@ A: DVGateway 서버 자체는 온프레미스로 설치 가능합니다. 단, AI
 
 ## 20. 문제 해결
 
+> 💡 **게이트웨이를 올린 직후에 생긴 문제라면** 먼저 [업그레이드 안내](../upgrade-notes.md) 를 보세요 — 버전별로 바뀐 기본값(예: 1.4.16.234 부터 오디오 스트림 토큰 필수)을 모아 두었습니다.
+
+### 오디오 스트림 연결이 401 로 거절된다 (gw 1.4.16.234+)
+
+오디오 스트림 `/api/v1/ws/stream` 은 토큰이 필수입니다. callinfo 이벤트의 `streamUrl`·`streams` 와 warm transfer 의 `mixedStreamUrl` 에는 **토큰이 들어 있지 않으므로** 그대로 열면 401 입니다.
+
+- SDK 를 쓴다면 `gw.streamAudio(linkedId)` / `gw.stream_audio(linked_id)` 로 여세요(토큰을 자동으로 붙입니다).
+- 직접 연다면 주소에 `&token=<JWT>` 를 덧붙이거나 `Authorization: Bearer <JWT>` 헤더를 주세요. JWT 는 `POST /api/v1/auth/token` 으로 받습니다.
+- 401 응답 헤더 `X-DVG-Auth-Code` 가 이유를 알려 줍니다(`token_missing` · `token_expired` · `signature_invalid` · `token_rejected`).
+
 ### 연결 오류: `ECONNREFUSED http://localhost:8080`
 
 DVGateway 서버가 실행 중인지 확인하세요:
@@ -1048,7 +1058,7 @@ main().catch(console.error);
 #   ANTHROPIC_API_KEY=...
 #   ELEVENLABS_API_KEY=...
 #
-# 설치: pip install dvgateway-python python-dotenv
+# 설치: pip install dvgateway python-dotenv
 # 실행: python examples/python/05_happycall_bot.py
 import os
 import asyncio

@@ -83,10 +83,9 @@ await gw.pipeline()
       });
     }
 
-    // 1. DVGateway 회의록에 자동 저장 (감정 메타데이터 포함)
-    if (session.confId) {
-      await gw.submitTranscript(session.confId, result);
-    }
+    // 1. 회의록: 게이트웨이가 자체 STT(POST /api/v1/stt/conf/{confId})로 직접 만든다.
+    //    SDK 가 전사를 제출하는 API 는 없다(submitTranscript() 는 DVGatewayUnsupportedError).
+    //    회의록은 gw.downloadMinutes(confId) 로 읽는다(진행 중=실시간, 종료 후=저장본 · 게이트웨이 1.4.16.285+).
 
     // 2. YouTube 스트리밍 자막 업데이트 (옵션)
     // await updateYouTubeCaption(session.confId!, result.text);
@@ -116,9 +115,11 @@ process.on('SIGTERM', () => {
   }
 });
 
-// ─── 회의 종료 후 회의록 다운로드 (별도 트리거) ────────────────────────────
+// ─── 회의록 다운로드 (GET /api/v1/conferences/{confId}) ─────────────────────
 
-// 예: 특정 컨퍼런스 ID의 회의록 다운로드 (감정 메타데이터 포함)
+// 회의 진행 중에는 실시간 회의록, 끝난 뒤에는 게이트웨이 1.4.16.285+ 가 저장한 사본을 돌려준다.
+// ⚠️ 저장된 것이 없거나(발화 0건 · GW_MINUTES_PERSIST 미설정 — 기본 꺼짐) 구버전 게이트웨이면 404 로 실패한다.
+// 'txt' 는 게이트웨이 JSON 을 SDK 가 텍스트로 렌더링한 것이다.
 // const minutes = await gw.downloadMinutes('7001', 'txt');
 // console.log(minutes);
 

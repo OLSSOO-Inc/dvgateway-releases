@@ -80,7 +80,9 @@ gw.pipeline()
 | `customValue2` / `custom_value_2` | `string?` | 사용자 정의 변수 2 (다이얼플랜 `CUSTOM_VALUE_02`) |
 | `customValue3` / `custom_value_3` | `string?` | 사용자 정의 변수 3 (다이얼플랜 `CUSTOM_VALUE_03`) |
 | `startedAt` / `started_at` | `Date` / `datetime` | 통화 시작 시각 |
-| `streamUrl` / `stream_url` | `string` | 오디오 WebSocket URL |
+| `streamUrl` / `stream_url` | `string` | 오디오 WebSocket URL. ⚠️ **토큰이 없는 주소** — 그대로 열면 401(gw 1.4.16.234+). `streamAudio(linkedId)` 를 쓰세요 |
+| `callDirection` / `call_direction` | `string?` | `inbound` / `outbound`. 발신·수신은 이 값으로 가르세요(`dir` 은 스트림 방향). SDK 1.9.4+ |
+| `orgId` / `org_id` | `string \| null` | 주문 회사 귀속(gw 1.4.15.209+). `null`=미매핑. SDK 1.9.4+ |
 | `metadata` | `object` / `dict` | 커스텀 키-값 메타데이터 |
 
 > 💡 `caller_name`, `did`, `callee`, `call_id`, `agent_number`는 Dynamic VoIP ARI에서 전달되는 값이며,
@@ -357,6 +359,46 @@ gw.onTtsComplete((ev) => {
 | `conf:ended` | 회의 종료 | `confId` |
 | **`tts:complete`** | **TTS 재생 완료 (v1.4+)** | **`linkedId`, `tenantId`, `serverId`, `timestamp`** |
 | **`call:dtmf`** | **DTMF 키 입력** | **`linkedId`, `digit`, `phase`, `durationMs`, `direction`, `tenantId`, `serverId`, `ts`** |
+| `call:ringing` *(SDK 1.9.4+)* | 피호출 내선이 울리기 시작(Stasis 를 안 거치는 통화 포함) | `linkedId`, `caller`, `callerName`, `callee` |
+| `call:rejected` *(SDK 1.9.4+)* | 동시통화 한도로 통화 수용 거부 | `linkedId`, `reason`(`license_global`/`tenant_limit`), `currentActive`, `limit` |
+| `stt:result` *(SDK 1.9.4+)* | 게이트웨이 클라우드 STT 결과 | `linkedId`, `speaker`, `text`, `rawText`(보정 전 원문, 다를 때만), `isFinal` |
+| `sms:received` *(SDK 1.9.4+)* | 인입 SMS | `from`, `to`, `text`, `messageId` |
+| `warm_transfer:bridged` *(SDK 1.9.4+)* | warm transfer 브릿지 성립 | `linkedId`, `holdStartMs`, `timestamp` |
+
+> ⚠️ `call:rejected` 는 예전 문서에 «SDK 1.7.0+» 로 적혀 있었지만 **1.9.3 까지는 SDK 가 받지 못하고 버렸습니다.** 받으려면 SDK 1.9.4 이상을 쓰세요.
+> `conf:join`·`conf:leave`·`conf:ended` 는 현재 게이트웨이에서 callinfo 가 아니라 대시보드 쪽 이벤트라, SDK 로 오지 않을 수 있습니다.
+
+### 실패 응답 다루기 (SDK 1.9.4+)
+
+SDK 메서드는 기본적으로 게이트웨이의 **실패 응답(400·403·429 등)을 결과처럼 돌려줍니다**(종전 동작 유지 — 경고 로그는 남깁니다).
+새 코드는 예외로 받는 것을 권합니다.
+
+```typescript
+import { DVGatewayClient, DVGatewayHttpError } from 'dvgateway-sdk';
+
+const gw = new DVGatewayClient({ baseUrl, auth, throwOnHttpError: true });
+try {
+  await gw.sendSMS({ from: '1001', to: ['01012345678'], text: '안녕하세요' });
+} catch (e) {
+  if (e instanceof DVGatewayHttpError && e.code === 'cost_rate_limited') {
+    // e.retryAfterMs 뒤에 다시 — SDK 가 중복 방지 키를 붙이므로 같은 호출을 다시 보내도 두 번 나가지 않는다
+  }
+}
+```
+
+```python
+from dvgateway import DVGatewayClient, DVGatewayHttpError
+
+gw = DVGatewayClient(base_url=base_url, auth=auth, throw_on_http_error=True)
+try:
+    await gw.send_sms(from_="1001", to=["01012345678"], text="안녕하세요")
+except DVGatewayHttpError as e:
+    if e.code == "cost_rate_limited":
+        ...  # e.retry_after_ms 뒤에 다시
+```
+
+- `status` · `code`(예: `cost_rate_limited`, `sms_disabled`, `token_expired`) · `action`(401 의 `refresh`/`reprovision`) · `retryAfterMs` 를 싣습니다.
+- 401 은 SDK 가 먼저 토큰을 새로 받아 **1회** 다시 보내 봅니다. 그래도 401 이면 그때 예외입니다.
 
 ---
 

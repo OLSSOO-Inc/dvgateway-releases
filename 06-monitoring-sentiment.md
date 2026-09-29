@@ -128,10 +128,8 @@ await gw.pipeline()
       );
     }
 
-    // 회의록에 저장
-    if (session.confId) {
-      await gw.submitTranscript(session.confId, result);
-    }
+    // 회의록: SDK 가 제출하지 않는다 — 게이트웨이가 자체 STT 로 만든다
+    // (submitTranscript() 는 DVGatewayUnsupportedError 를 던진다 · 아래 「회의록 감정 메타데이터」 참고)
   })
   .start();
 
@@ -174,8 +172,8 @@ async def on_transcript(result, session):
             f"({result.sentiment.sentiment}, {result.sentiment.sentiment_score:.0%})"
         )
 
-    if session.conf_id:
-        await gw.submit_transcript(session.conf_id, result)
+    # 회의록: SDK 가 제출하지 않는다 — 게이트웨이가 자체 STT 로 만든다
+    # (submit_transcript() 는 DVGatewayUnsupportedError 를 던진다)
 
 await (
     gw.pipeline()
@@ -196,8 +194,19 @@ await (
 
 ### 회의록 감정 메타데이터
 
-회의 종료 후 다운로드하는 회의록(JSON/TXT)에 **발화별 감정 데이터**가 포함됩니다.
-`sentiment: true`로 STT를 실행하면 `submitTranscript()` 시 감정 메타데이터가 자동으로 함께 저장됩니다.
+> ⚠️ **정정(SDK 1.9.7)** — 이 절은 종전에 *"`submitTranscript()` 로 감정 메타데이터가 회의록에 함께 저장된다"* 고
+> 적었지만 **그 경로는 처음부터 동작하지 않았다**: 게이트웨이에 `/api/v1/minutes/{confId}/transcript` 가 **등록돼 있지 않아**
+> 언제나 404 였다(`go-gateway/internal/api` grep 0건). SDK 1.9.7 부터 `submitTranscript()`·`autoSubmitTranscripts()` 는
+> 요청을 보내지 않고 `DVGatewayUnsupportedError` 를 던진다(자동 제출기는 아무것도 하지 않는 콜백 + 경고 1회).
+>
+> - 회의록은 **게이트웨이가 자체 STT**(`POST /api/v1/stt/conf/{confId}`)로 만든다.
+> - 읽기는 `downloadMinutes(confId, 'json'|'txt')` → `GET /api/v1/conferences/{confId}` — 회의 **진행 중에는 실시간 회의록**,
+>   **끝난 뒤에는 게이트웨이 1.4.16.285+ 가 저장한 사본**을 돌려준다(같은 JSON 모양 · 응답 헤더 `X-DVG-Minutes-Source: live|stored`).
+>   저장본은 운영자가 `GW_MINUTES_PERSIST=true` 로 켰을 때(gw 1.4.16.286 부터 **기본 꺼짐**) 이고 발화가 1건 이상 있었을 때만 생긴다 — **저장된 것이 없거나 구버전 게이트웨이면 404**
+>   (구버전에서 테넌트 토큰은 403). 테넌트 토큰은 **자기 테넌트 회의록만** 받는다. `'txt'` 는 게이트웨이 JSON 을 SDK 가 렌더링한 것이다.
+> - ⚠️ **발화별 `sentiment` 는 현재 채워지지 않는다** — 게이트웨이 STT 경로가 회의록에 감정 없이 기록한다
+>   (`AddTranscriptWithSentiment` 의 외부 호출부 0건). 아래 예시는 **형식 참고**이며 SDK 쪽 감정 분석 결과는
+>   `onTranscript` 의 `result.sentiment` 로만 받을 수 있다.
 
 **JSON 회의록 예시:**
 

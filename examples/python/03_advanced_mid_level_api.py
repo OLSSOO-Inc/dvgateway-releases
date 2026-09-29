@@ -78,11 +78,10 @@ async def main() -> None:
             # STT 스트림 시작
             asyncio.ensure_future(stt.start_stream(session.linked_id, audio_stream))
 
-            # 세션 메타데이터 업데이트
-            await gw.update_session_meta(session.linked_id, {
-                "bot_type": "cs-agent",
-                "language": "ko",
-            })
+            # 세션 메타데이터: 게이트웨이에는 세션 메타데이터를 갱신하는 API 가 없다
+            # (update_session_meta() 는 DVGatewayUnsupportedError 를 던진다 — 호출하지 말 것).
+            # CRM 연동 값은 다이얼플랜 Stasis 인자 custom_value_01~03 으로 넘기면
+            # session.custom_value_1~3 으로 들어온다.
 
         # ── 콜 종료 ──────────────────────────────────────────────────────
         elif isinstance(event, CallEndedEvent):

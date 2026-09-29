@@ -27,7 +27,7 @@ Environment variables (.env):
   ELEVENLABS_API_KEY=...
 
 Run:
-  pip install dvgateway-python python-dotenv
+  pip install dvgateway python-dotenv
   python examples/python/05_happycall_bot.py
 """
 

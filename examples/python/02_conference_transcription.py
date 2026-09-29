@@ -54,9 +54,10 @@ async def main() -> None:
         # 예: 화자 이름 매핑에 custom_value_1 (고객명) 활용
         print(f"\n[{session.linked_id}] {result.speaker or '알 수 없음'}: \"{result.text}\"")
 
-        # DVGateway 회의록에 자동 저장
-        if session.conf_id:
-            await gw.submit_transcript(session.conf_id, result)
+        # 회의록: 게이트웨이가 자체 STT(POST /api/v1/stt/conf/{confId})로 직접 만든다.
+        # SDK 가 전사를 제출하는 API 는 없다(submit_transcript() 는 DVGatewayUnsupportedError).
+        # 회의록은 await gw.download_minutes(session.conf_id) 로 읽는다
+        # (진행 중=실시간, 종료 후=저장본 · 게이트웨이 1.4.16.285+).
 
     await (
         gw.pipeline()

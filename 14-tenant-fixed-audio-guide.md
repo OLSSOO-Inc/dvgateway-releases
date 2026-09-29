@@ -135,6 +135,7 @@ ws://gw.example.com:8080/api/v1/ws/callinfo?token=<JWT>
 - `linkedId` — 이 통화의 고유 ID. TTS 주입 등 후속 API 호출에 이 값을 사용합니다.
 - `did` — 어떤 번호로 걸려왔는지. 여러 DID를 받고 있다면 시나리오 분기에 사용.
 - `caller` — 발신자 번호.
+- `streams` / `streamUrl` — 이 통화의 오디오 WebSocket 주소. ⚠️ **토큰이 없는 주소입니다.** gw 1.4.16.234 부터 오디오 스트림은 토큰이 필수(`GW_STREAM_AUTH=enforce` 기본)라 **그대로 열면 401** 입니다. SDK 를 쓰면 `gw.streamAudio(linkedId)` / `gw.stream_audio(linked_id)` 가 토큰을 붙여 줍니다. 직접 열 때는 `?token=<JWT>` 를 덧붙이거나 `Authorization: Bearer <JWT>` 헤더를 주세요(JWT = `POST /api/v1/auth/token` 으로 받은 값).
 
 ### channel:state 이벤트 예시
 

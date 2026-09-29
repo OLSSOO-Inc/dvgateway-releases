@@ -11,7 +11,7 @@
 | 언어 | 패키지 | 설치 |
 |------|--------|------|
 | TypeScript | `dvgateway-sdk` + `dvgateway-adapters` | `npm install dvgateway-sdk dvgateway-adapters` |
-| Python | `dvgateway-python` | `pip install dvgateway-python` |
+| Python | `dvgateway` (PyPI 이름 · 저장소 폴더는 `packages/dvgateway-python`) | `pip install dvgateway` |
 
 ### 버전 호환성 및 알려진 이슈
 
@@ -25,10 +25,13 @@
 | `1.6.0+` | ✅ 신규 | `audio:playback` 이벤트 추가 — `play_audio()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `play_audio()`/`playAudio()` 가 `playback_id`/`playbackId` 반환. **게이트웨이 v1.3.9.2+ 필요** (`PublishAudioPlayback` publish 지원) |
 | `1.6.1+` | ✅ 신규 | `tts:playback` 이벤트 추가 — `inject_tts()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `phase="canceled"` 의 `error_reason` 으로 선점 (`preempted`) / barge-in (`barge_in`) / 통화 종료 (`hangup`) / 사용자 요청 (`user_request`) 구분 가능. `inject_tts()` / `injectTts()` / `say()` 가 `InjectTtsResult { inject_id }` 반환. **게이트웨이 v1.3.9.3+ 필요** (`PublishTTSPlayback` publish 지원) |
 | `1.6.2+` | ✅ 신규 | **VoiceFlow + 온디맨드 오디오** — `gw.flow()` 빌더 (stage 그래프 기반 IVR 런타임), `attachAudio()`/`detachAudio()`/`getAudioStatus()` 신규 메서드 추가. 다이얼플랜에서 `Stasis(dvgateway, flow=true, ...)`로 진입한 통화는 ExternalMedia/Bridge가 자동 생성되지 않고 holding 상태로 시작 → SDK가 stage onEnter/onExit 시점에 명시적으로 attach/detach. DTMF 메뉴 단계에서 STT/TTS 비용 0, 통화 중 단계별로 Asterisk 채널 수 동적 변동 가능. `flow=true` 미지정 통화는 기존 동작 그대로(회귀 영향 0). **게이트웨이 v1.3.9.4+ 필요** (`flow` Stasis arg + `/api/v1/audio/{linkedId}` 엔드포인트 + `audio:attached`/`audio:detached` 대시보드 이벤트 지원). 자세한 내용은 [VoiceFlow 섹션](#voiceflow--stage-그래프-ivr-자동화-gateway-1394) 참조 |
-| `1.7.0+` | ✅ 신규 | `call:rejected` 이벤트 추가 — 라이선스 전역 한도 또는 테넌트 동시통화 한도(`TENANT_LIMITS`) 도달 시 SDK가 거부 사실을 명시 신호로 수신. `reason`(`license_global`/`tenant_limit`), `currentActive`, `limit` 포함. **게이트웨이 v1.4.4.0+ 필요** (`PublishCallRejected` + `/api/v1/config/tenant-limits` hot-reload API 지원) |
+| `1.7.0+` | ⚠️ **실제로는 1.9.4 부터** | `call:rejected` 이벤트 — ⚠️ **1.7.0~1.9.3 은 이 이벤트를 파싱하지 않고 버렸다**(문서만 있고 구현이 없었다 · 2026-09-29 확인). 받으려면 **SDK 1.9.4+**. 라이선스 전역 한도 또는 테넌트 동시통화 한도(`TENANT_LIMITS`) 도달 시 SDK가 거부 사실을 명시 신호로 수신. `reason`(`license_global`/`tenant_limit`), `currentActive`, `limit` 포함. **게이트웨이 v1.4.4.0+ 필요** (`PublishCallRejected` + `/api/v1/config/tenant-limits` hot-reload API 지원) |
 | `1.9.0+` | ✅ 신규 | **녹취 타임라인 실측 정렬** — ① `tts:playback` 에 `phase="playout"` 추가(첫 실오디오 프레임의 Asterisk write 순간 = 실재생 시작 실측 앵커), ② `recording:started` 이벤트 추가(`gw.onRecordingStarted` / `gw.on_recording_started` — PBX 녹취 파일 절대 원점 t=0, AMI MixMonitorStart 실측). 이벤트 `timestamp` 가 클라이언트 수신 시각이 아닌 **게이트웨이 스탬프 `ts`** 로 매핑되도록 개선(모든 callinfo 이벤트, WS 전달 지터 제거). 마커 위치 = playout ts − recording ts. **게이트웨이 v1.4.14.17+ 필요** (구버전 게이트웨이에서는 두 이벤트가 발사되지 않을 뿐 오류 없음) |
-
 | `1.9.3+` | ✅ 신규 | **STT 보정 전 원문 병행 출력** — `TranscriptResult.rawText`(문장) · `TranscriptWord.rawWord`(단어, Python 은 `raw_text`/`raw_word`) 추가. `text`/`word` 는 **표시용 보정본 그대로 유지**(필드를 더하기만 함 → 기존 코드 회귀 0). Deepgram 이 같은 응답에 원문·보정본을 함께 주므로 **추가 호출·추가 과금 0** → **기본 켜짐**. **스위치 3층**(모두 기본 켜짐, 서로 독립): SDK 어댑터 `rawTranscript:false`(Python `raw_transcript=False`) · 게이트웨이 env `GW_STT_RAW_TEXT=false` · 테넌트별 apikeys `{"rawText":false}`(**tri-state** — 미지정=글로벌 상속, false=그 테넌트만 끔, true=글로벌이 꺼져도 켬). 끄면 재구성 자체를 **건너뛴다**(만들고 버리지 않음). ⚠️ **`text` 대체 금지** — 단어 공백 join 근사라 띄어쓰기·숫자 표기가 다름(한국어는 띄어쓰기가 보정 대상). 진단용(오인식 vs 보정기 개입 구분). ⚠️ **켜져 있어도 보정이 없었으면 필드 자체가 없음**(`smartFormat:false`+`punctuate:false` → 원문==보정본) — 부재는 오류가 아니므로 `if (result.rawText)` 로 확인할 것. ⚠️ **배치(통화요약) 경로 미적용**(`utterances[]` 에 `words[]` 가 없음 — 실시간 스트리밍 전용). 게이트웨이는 `stt:result` 에 `rawText`(omitempty) 동봉(**v1.4.15.223+**, 구버전은 키가 없을 뿐 오류 없음) |
+| `1.9.4+` | ✅ 신규 | **안전성 보강** — ① **SMS·클릭투콜 중복 방지 키 자동 부착**(`clientMsgId`) — SDK 는 POST 도 502/503/504·타임아웃에서 재시도하는데 종전엔 키가 없어 **재시도가 중복 발송·중복 과금**이 될 수 있었다(같은 호출의 재시도는 같은 키 → 게이트웨이가 첫 응답을 돌려줌 · `idempotentReplay:true`) ② **401 → 토큰 폐기 후 1회 재시도**(HTTP·WebSocket 모두 — 게이트웨이 재시작으로 서명 키가 바뀌어도 스스로 복구) ③ **`Retry-After` 따르기**(16초 이하면 기다렸다 재시도, 그보다 길면 재시도하지 않고 돌려줌 — 분당 한도·비용 상한에 다시 부딪히지 않게) ④ **`throwOnHttpError` / `throw_on_http_error`**(기본 꺼짐) — 켜면 400·403·429 등을 `DVGatewayHttpError{status, code, action, retryAfterMs}` 로 던진다. 끈 상태(기본)는 종전처럼 오류 본문을 결과로 돌려주되 **경고 로그**를 남긴다 ⑤ **빠져 있던 이벤트 수신**: `call:rejected` · `call:ringing` · `stt:result`(`rawText` 포함) · `sms:received` · `warm_transfer:bridged` ⑥ `call:new` 세션에 `callDirection` · `orgId`/`orgSource`(3-상태) ⑦ warm transfer 결과에 `dualStreamIn`/`dualStreamOut`/`dualStreamSkipReason`/`dualStreamErrorDetail` ⑧ Python `@gw.on("call:new")` **데코레이터 형태 지원**(가이드 예제가 이 형태였는데 종전엔 `TypeError`). ⚠️ 동작 변화: 429 에 긴 `Retry-After` 가 오면 종전(1·2·4초 재시도)과 달리 **즉시 돌려준다** |
+| `1.9.5` | ✅ 배포 정정 | 코드 무변경. ① npm `dvgateway-adapters` 의 `peerDependencies` 가 저장소 안에서만 통하는 `file:../dvgateway-sdk` 로 배포되고 있었다(1.9.4 이하 전부) → **`^1.9.0`** 으로 정정(로컬 개발 연결은 `devDependencies` 로 옮김) ② Python 설치 이름 정정 — PyPI 패키지는 **`dvgateway`** 다(문서의 `pip install dvgateway-python` 은 PyPI 에 없는 이름이라 설치가 실패했다) |
+| `1.9.6` | ✅ 신규 | `deleteSMS({allTenants})` / `delete_sms(all_tenants=)` — 관리자가 **전 테넌트** SMS 이력을 지우려면 명시해야 한다(gw 1.4.16.282+ 는 `tenantId` 도 `all` 도 없으면 400). 테넌트 토큰은 영향 없음 |
+| `1.9.7` | ⚠️ 동작 정정 | **게이트웨이에 없는 경로를 부르던 메서드 정리** — ① `updateSessionMeta()`/`update_session_meta()` · `submitTranscript()`/`submit_transcript()` 는 게이트웨이가 **한 번도 등록한 적 없는** 경로(`PUT /api/v1/sessions/{id}/meta` · `POST /api/v1/minutes/{id}/transcript`)를 불러 **언제나 404** 였다 ⇒ 이제 **요청을 보내지 않고** `DVGatewayUnsupportedError`(`code:"not_supported_by_gateway"` · `sdkMethod`/`sdk_method` · `alternative`)를 던진다(`@deprecated` · Python 은 `DeprecationWarning` 도). `autoSubmitTranscripts()`/`auto_submit_transcripts()` 는 **no-op 콜백 + 경고 1회**(파이프라인 배선을 깨지 않게 던지지 않는다) ② `downloadMinutes()`/`download_minutes()` 는 실제 경로 **`GET /api/v1/conferences/{confId}`** 를 부른다 — 회의 **진행 중에는 실시간 회의록**, **끝난 뒤에는 게이트웨이 1.4.16.285+ 의 저장본**(저장된 것이 없거나 구버전이면 404 · 구버전 테넌트 토큰은 403) · 게이트웨이는 JSON 만 주므로 `'txt'` 는 **SDK 가 렌더링**한다 ③ `listSessions()`/`list_sessions()` 가 게이트웨이 응답(`{calls, conferences}`)을 읽는다 — 종전엔 없는 `sessions` 키를 읽어 **언제나 빈 목록**이었다(회의 참여자는 `confId` 가 붙은 세션으로 포함 · `sessions` 키도 계속 수용). ⚠️ **동작 변화**: 세 메서드를 `await` 하던 코드는 종전에도 404 로 실패했으므로 새로 깨지는 경로는 없지만 **예외 타입이 바뀐다**(`Error`/`RuntimeError` → `DVGatewayUnsupportedError`) |
 
 **v1.3.7 버그 상세:**
 - `OpenAIRealtimeAdapter._pipe_audio_in()`이 `chunk.samples` (AudioChunk)를 기대하지만, 실제로는 `bytes`가 전달되는 경우가 있어 `AttributeError`로 background task가 사일런트 종료됨
@@ -37,7 +40,7 @@
 **워크어라운드 (v1.3.8 릴리즈 전):**
 ```bash
 # Python: 이전 안정 버전 고정
-pip install dvgateway-python==1.3.5
+pip install dvgateway==1.3.5
 ```
 
 v1.3.8부터는 `_pipe_audio_in`이 `bytes` / `bytearray` / `memoryview` / `AudioChunk`를 모두 받아들이며, task 예외가 `on_error` 핸들러 또는 stderr로 표면화됩니다.
@@ -63,6 +66,10 @@ gw = DVGatewayClient(
     auth={"type": "apiKey", "api_key": "dvgw_xxx"},
 )
 ```
+
+> **오류 처리 (SDK 1.9.4+)**: 새 코드는 `throwOnHttpError: true`(TS) / `throw_on_http_error=True`(Python) 를 켜라.
+> 켜면 게이트웨이의 400·403·404·412·429·5xx 가 `DVGatewayHttpError` 로 던져지고 `status`·`code`(예: `cost_rate_limited`, `sms_disabled`)·`action`(401 의 `refresh`/`reprovision`)·`retryAfterMs` 를 싣는다.
+> 기본값(꺼짐)은 종전 동작 — **오류 본문이 성공 결과처럼 반환**되고 경고 로그만 남는다. 다음 마이너 버전에서 기본값을 켤 예정이다.
 
 ---
 
@@ -372,7 +379,7 @@ const s = await gw.getAudioStatus(linkedId);
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `applyChanges()` | `apply_changes()` | PBX 설정 재적용 |
-| `clickToCall({caller,callee,...})` | `click_to_call(caller,callee,...)` | 클릭투콜 |
+| `clickToCall({caller,callee,...,clientMsgId?})` | `click_to_call(caller,callee,...,client_msg_id=None)` | 클릭투콜. **SDK 1.9.4+ 는 중복 방지 키를 자동으로 붙인다**. 응답의 `actionID` 로 `POST /api/v1/pbx/click-to-call/cancel` 취소 |
 | `getPhonebook(tenantId?)` | `get_phonebook(tenant_id)` | 테넌트 내선 폰북(internal contacts) 조회 — 게이트웨이가 VitalPBX phonebooks→internal 첫 id→contacts 를 조인. 반환 `{phonebookId, contacts[]}`. tenant 토큰은 자사, admin 은 tenantId 지정 |
 
 ### 큐(대기열) 관리 + 에이전트 런타임 (gateway 1.4.11.30+ / SDK 1.8.7+)
@@ -394,14 +401,14 @@ const s = await gw.getAudioStatus(linkedId);
 ### SMS 발송·수신 (SIP MESSAGE, gateway 1.4.14.43+ / SDK 1.8.9+)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| `sendSMS({from,to[],text,callback?,priority?,subject?,displayName?,reservedTime?,tenantId?})` | `send_sms(*, from_, to, text, callback?, priority?, subject?, display_name?, reserved_time?, tenant_id?)` | SMS 발신. `from`=발신 **내선**(게이트웨이가 실제 발신번호로 자동 변환 — external CID→테넌트 CID). `to`=수신번호 최대 10(동보). `priority`=`0`긴급/`1`빠름/`2`보통. 반환 `{id,messageId,status,recipients}` |
+| `sendSMS({from,to[],text,callback?,priority?,subject?,displayName?,reservedTime?,tenantId?,clientMsgId?})` | `send_sms(*, from_, to, text, callback?, priority?, subject?, display_name?, reserved_time?, tenant_id?, client_msg_id?)` | SMS 발신. `from`=발신 **내선**(게이트웨이가 실제 발신번호로 자동 변환 — external CID→테넌트 CID). `to`=수신번호 최대 10(동보). `priority`=`0`긴급/`1`빠름/`2`보통. 반환 `{id,messageId,status,recipients,idempotentReplay?}`. **SDK 1.9.4+ 는 중복 방지 키(`clientMsgId`)를 자동으로 붙인다** — 재시작 너머까지 막으려면 직접 넘겨라 |
 | `listSMS({direction?,from?,to?,limit?,offset?,tenantId?})` | `list_sms(*, direction?, from_time?, to_time?, limit?, offset?, tenant_id?)` | 이력(최신순). `direction`=`in`/`out`, 기간 ISO, 페이징. 반환 `{total,records}` |
 | `getSMS(id, tenantId?)` | `get_sms(id, *, tenant_id?)` | 단건 상태(`submitted`/`delivered`/`failed`/`received`) |
-| `deleteSMS({before?,tenantId?})` | `delete_sms(*, before?, tenant_id?)` | 이력 삭제(테넌트 스코프, admin=`tenantId`/전체, `before`=RFC3339 이전). 반환 `{deleted}` |
+| `deleteSMS({before?,tenantId?,allTenants?})` | `delete_sms(*, before?, tenant_id?, all_tenants?)` | 이력 **일괄** 삭제(테넌트 스코프, `before`=RFC3339 이전). admin 은 `tenantId` 로 대상 지정 — ⚠️ **전 테넌트는 `allTenants:true`(REST `?all=1`) 명시 필수**이고 둘 다 없으면 400 `tenant_or_all_required`. **단건 삭제 없음**(`DELETE /api/v1/sms/{id}` → 405). 반환 `{deleted, allTenants}` |
 | `getSMSConfig(tenantId?)` | `get_sms_config(*, tenant_id?)` | 라우팅 설정 조회(글로벌+테넌트 병합) |
 | `setSMSConfig({enabled?,smscDomain?,senderRealm?,trunkEndpoint?,defaultCallback?,charset?}, tenantId?)` | `set_sms_config(config, *, tenant_id?)` | 라우팅 설정 저장(admin=글로벌/`tenantId`, 테넌트=자기것) |
 
-> REST: `POST /api/v1/sms/send`, `GET/DELETE /api/v1/sms`, `GET /api/v1/sms/{id}`, `GET/PUT /api/v1/config/sms`. tenantId 는 JWT 강제, 모바일(`api.accessToken`)은 본인 내선만 발신. **미설정 시 발송이 `412`(`sms_disabled`/`sms_unprovisioned`+`missing[]`) 로 "관리자에게 문의" 안내를 한국어로 반환** — SDK 예외 메시지를 그대로 사용자에게 노출하면 된다. 수신은 callinfo `sms:received` 이벤트 + `listSMS({direction:'in'})`. 본문 인코딩 EUC-KR(테넌트 charset). 설계·다이얼플랜: [docs/sms-integration.md](../go-gateway/docs/sms-integration.md), 사용 가이드: [docs/sdk-guide/21-sms.md](../docs/sdk-guide/21-sms.md).
+> REST: `POST /api/v1/sms/send`, `GET/DELETE /api/v1/sms`, `GET /api/v1/sms/{id}`, `GET/PUT /api/v1/config/sms`. tenantId 는 JWT 강제, 모바일(`api.accessToken`)은 본인 내선만 발신. **미설정 시 발송이 `412`(`sms_disabled`/`sms_unprovisioned`+`missing[]`) 로 "관리자에게 문의" 안내를 한국어로 반환** — SDK 예외 메시지를 그대로 사용자에게 노출하면 된다. 수신은 callinfo `sms:received` 이벤트 + `listSMS({direction:'in'})`. 본문 인코딩 EUC-KR(테넌트 charset). 설계·다이얼플랜: [docs/sms-integration.md](../docs/sms-integration.md), 사용 가이드: [docs/sdk-guide/21-sms.md](../docs/sdk-guide/21-sms.md).
 
 ### 착신전환 / 방해금지 / 개인비서 (Diversions)
 | TypeScript | Python | 설명 |
@@ -414,16 +421,20 @@ const s = await gw.getAudioStatus(linkedId);
 `DND` (방해금지), `PEA` (개인비서, Personal Assistant)
 
 - **CFI/CFB/CFN/CFU** — 착신전환. 활성화하려면 `enable: 'yes'` + `destination`(착신번호) 둘 다 필요.
-- **DND** — 방해금지. destination 없는 enable-only 토글 (`{ enable: 'yes' | 'no' }`).
-- **PEA** — 개인비서. enable-only 토글. **켜면 PBX 다이얼플랜이 착신전환보다 먼저 개인비서로
-  통화를 받는다**(우선순위는 다이얼플랜이 결정, SDK/게이트웨이는 플래그만 기록).
+- **DND** — 방해금지. `{ enable: 'yes' | 'no' }`. `destination` 은 무시되지만 **`timeGroup` 은 적용된다**
+  (gw 1.4.14.88+ — 예: 업무시간에만 방해금지).
+- **PEA** — 개인비서. DND 와 같은 모양(`timeGroup` 적용). **실측 우선순위는 CFI > PEA > 벨울림** —
+  즉시 착신전환(CFI)이 켜져 있으면 PEA 는 동작하지 않고, PEA 가 응대하는 동안 조건부 착신전환
+  (CFB/CFN/CFU)에는 도달하지 않는다(우선순위는 다이얼플랜이 결정, SDK/게이트웨이는 플래그만 기록).
+- ⚠️ **입력 검증(gw 1.4.16.235+)**: `enable` 은 `'yes'`/`'no'` 만, `destination` 은
+  `^[A-Za-z0-9_.,+*#-]{1,160}$`(공백 불가) — 그 밖은 **400**.
 
 ```typescript
 // DND 켜기 / 끄기
 await gw.setDiversion('1001', 'DND', { enable: 'yes' }, tenantId);
 await gw.setDiversion('1001', 'DND', { enable: 'no' }, tenantId);
 
-// 개인비서(PEA) 켜기 — 착신전환이 있어도 PEA가 먼저 수신
+// 개인비서(PEA) 켜기 — 조건부 착신전환(CFB/CFN/CFU)보다 먼저 수신. 즉시 착신전환(CFI)이 켜져 있으면 CFI 가 이긴다
 await gw.setDiversion('1001', 'PEA', { enable: 'yes' }, tenantId);
 ```
 
@@ -565,6 +576,10 @@ await gw.set_early_media(
 - `_default` extension은 예약어 — 실제 전화번호로는 사용 불가 (밑줄 접두사로 충돌 방지)
 
 ### 캠페인 (예약/동보/주기 발신)
+
+> 🔐 캠페인 API 는 **관리자 토큰 전용**이다(게이트웨이 마스터 API 키로 받은 토큰). 테넌트 API 키로
+> 받은 토큰은 `403 admin_required` — 실행기가 설치 전체 PBX 키로 발신하므로 테넌트 스코프가 없다.
+
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `createCampaign(campaign)` | `create_campaign(campaign)` | 캠페인 생성 |
@@ -829,9 +844,13 @@ asyncio.run(main())
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `onCallEvent(handler)` | `on_call_event(handler)` | 전체 통화 이벤트 구독 |
-| `on(type, handler)` | `on(event_type, handler)` | 특정 타입 이벤트만 구독 |
+| `on(type, handler)` | `on(event_type, handler)` · `@gw.on(event_type)` | 특정 타입 이벤트만 구독. Python 데코레이터 형태는 **SDK 1.9.4+**(종전엔 `TypeError`) |
 | `onTtsComplete(handler)` | `on_tts_complete(handler)` | **TTS 재생 완료 이벤트 구독 (v1.4+)** |
-| `listSessions()` | `list_sessions()` | 활성 세션 목록 |
+| `listSessions()` | `list_sessions()` | 활성 세션 목록 — 1:1 통화 + 회의 참여자(`confId` 설정). **1.9.7 전에는 언제나 빈 목록**(응답 키 불일치) |
+| `listSessionsByTenant(id)` | `list_sessions_by_tenant(id)` | 특정 테넌트 세션(관리자) |
+| ~~`updateSessionMeta()`~~ | ~~`update_session_meta()`~~ | ⚠️ **deprecated · 게이트웨이에 API 없음** — `DVGatewayUnsupportedError` 를 던진다(요청 없음). 통화에 값을 붙이려면 Stasis 인자 `custom_value_01~03` → `customValue1~3` |
+| `downloadMinutes(confId, 'json'\|'txt')` | `download_minutes(conf_id, format)` | 회의록 — `GET /api/v1/conferences/{confId}` · 진행 중=**실시간**, 종료 후=**저장본**(게이트웨이 1.4.16.285+ · `GW_MINUTES_PERSIST=true` 로 켰을 때만 — gw 1.4.16.286 부터 기본 꺼짐 · 발화 1건 이상일 때만 · 응답 헤더 `X-DVG-Minutes-Source: live\|stored`) · 저장본이 없거나 구버전이면 404 · `'txt'` 는 SDK 렌더링 · 회의록은 **게이트웨이 자체 STT**(`POST /api/v1/stt/conf/{confId}`)가 만든다 · ⚠️ 발화별 `sentiment` 는 현재 채워지지 않는다 |
+| ~~`submitTranscript()`~~ · ~~`autoSubmitTranscripts()`~~ | ~~`submit_transcript()`~~ · ~~`auto_submit_transcripts()`~~ | ⚠️ **deprecated · 게이트웨이에 API 없음** — 앞은 `DVGatewayUnsupportedError`, 뒤는 no-op 콜백 + 경고 1회 |
 
 #### 이벤트 타입 목록
 
@@ -839,7 +858,11 @@ asyncio.run(main())
 |--------|-----------|---------|
 | `call:new` | 새 통화 시작 | `session` (CallSession), `tenantId` |
 | `call:ended` | 통화 종료 | `linkedId`, `durationSec` |
-| **`call:rejected`** *(SDK 1.7.0+ · 게이트웨이 v1.4.4.0+)* | **통화 수용 거부 — 라이선스 전역 한도 또는 테넌트 동시통화 한도 도달** | **`linkedId`, `tenantId`, `reason` (`license_global`/`tenant_limit`), `currentActive` (거부 시점 활성 세션 수), `limit` (도달한 한도), `serverId`** |
+| `call:ringing` *(SDK 1.9.4+ · 게이트웨이 v1.4.9.13+)* | 피호출 seat 가 울리기 시작 (Stasis 미경유 통화 포함) | `linkedId`, `caller`(A-leg 발신자), `callerName`, `callee`(울리는 내선), `tenantId`, `serverId`, `ts` |
+| `stt:result` *(SDK 1.9.4+ · 게이트웨이 v1.4.6.24+)* | 게이트웨이 클라우드 STT 결과 (`POST /api/v1/stt/{linkedId}/start`) | `linkedId`, `speaker`, `text`(보정본), `rawText`(보정 전 원문 — 다를 때만, gw 1.4.15.223+), `isFinal`, `sentiment`, `sentimentScore` |
+| `sms:received` *(SDK 1.9.4+ · 게이트웨이 v1.4.14.40+)* | 인입 SMS | `from`, `to[]`, `text`, `messageId`, `recordId`, `tenantId` (와이어 키는 `smsFrom`/`smsTo`/`smsText`/`smsMessageId`/`smsRecordId`) |
+| `warm_transfer:bridged` *(SDK 1.9.4+ · 게이트웨이 v1.4.14.26+)* | warm transfer 브릿지 성립 | `linkedId`, `holdStartMs`(보류 시작 unix ms), `ts`(브릿지 시각) — 녹취·전사 타임라인 정렬용 |
+| **`call:rejected`** *(⚠️ 실제 수신은 SDK 1.9.4+ · 게이트웨이 v1.4.4.0+)* | **통화 수용 거부 — 라이선스 전역 한도 또는 테넌트 동시통화 한도 도달** | **`linkedId`, `tenantId`, `reason` (`license_global`/`tenant_limit`), `currentActive` (거부 시점 활성 세션 수), `limit` (도달한 한도), `serverId`** |
 | `conf:join` | 회의 참여 | `linkedId`, `confId`, `caller` |
 | `conf:leave` | 회의 퇴장 | `linkedId`, `confId` |
 | `conf:ended` | 회의 종료 | `confId` |
@@ -1476,6 +1499,7 @@ if (result.connected && !result.whisperPlayed) {
 **Mixed audio capture stream (SDK 1.6.6+ / Gateway 1.4.0.0+)**:
 - `stream_mixed_to_external_media=True` / `streamMixedToExternalMedia: true` 옵션 시 게이트웨이가 warm bridge 에 별도 ExternalMedia 채널을 부착하여 customer↔agent mixed audio 를 동일 customer linkedID 의 fanout 으로 송출.
 - 호출자는 응답 객체의 `mixed_stream_url` / `mixedStreamUrl` (보통 `ws://<gw>:8080/api/v1/ws/stream?linkedid=<lid>&dir=both`) 로 (재)연결하여 audio 수신.
+- ⚠️ **그 URL 에는 토큰이 없다 — 그대로 열면 401 이다**(gw 1.4.16.234+ `GW_STREAM_AUTH=enforce` 기본). 오디오는 **`gw.streamAudio(customerLinkedId)` / `gw.stream_audio(customer_linked_id)`** 로 받는다(SDK 가 `?token=` 을 붙인다). SDK 밖에서 직접 열어야 하면 `?token=<JWT>` 를 덧붙이거나 `Authorization: Bearer <JWT>` 헤더를 준다(JWT = `POST /api/v1/auth/token` 으로 받은 것).
 - 포맷: mono slin16 (16 kHz, 20 ms / 640 B 프레임). stereo split 미지원 — Deepgram nova-3 등의 mono diarization 으로 화자 분리.
 - 부착 실패 시 `mixed_stream_started=False` 로 graceful degrade. warm transfer 자체는 성공 유지.
 - 통화 종료 (warm bridge dissolve) 시 ExternalMedia 자동 정리.
@@ -1483,7 +1507,8 @@ if (result.connected && !result.whisperPlayed) {
 게이트웨이 REST:
 - `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, whisperPcm?, holdAudioUrl?, timeoutMs?, outbound?, cidNumber?, cidName?, accountCode?, streamMixedToExternalMedia?}`
 - `whisperPcm`: base64-encoded 16 kHz mono 16-bit signed-linear LE PCM. SDK 가 자동으로 채움 (사용자가 `whisper_tts` 지정 시).
-- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false,"whisperSkipReason":""|"...","mixedStreamStarted":true|false,"mixedStreamUrl":"ws://..."|""}`
+- 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false,"whisperSkipReason":""|"...","mixedStreamStarted":true|false,"mixedStreamUrl":"ws://..."|"","dualStreamIn":true|false,"dualStreamOut":true|false,"dualStreamSkipReason":""|"...","dualStreamErrorDetail":""|"..."}`
+- `dualStream*`(gw 1.4.16.40+ · SDK 1.9.4+ 가 `WarmTransferResult` 로 노출): 레그별(Snoop) 스트림 부착 결과. ⚠️ **한쪽 레그만 실패한 경우**가 핵심이다 — «오디오가 오는가» 만 보는 소비자는 알아채지 못하고 그 축만 조용히 빈다. `dualStreamErrorDetail` 은 **로그·운영 알림 전용**(사용자 화면 노출 금지). 필드 부재 = 구버전 게이트웨이
 - 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false,"whisperSkipReason":"...","mixedStreamStarted":false}`
 - 실패: `400` (잘못된 base64 / destination 누락) / `403` (테넌트 권한) / `413` (whisperPcm 크기 초과) / `503` (warm_transfer disabled) with `{"error":"..."}`
 
@@ -1550,7 +1575,9 @@ gw.on_tts_complete(on_done)
 | `tenantId` / `tenant_id` | 멀티테넌트 ID |
 | `serverId` / `server_id` | 게이트웨이 서버 ID |
 | `customValue1~3` / `custom_value_1~3` | 커스텀 변수 (다이얼플랜에서 전달) |
-| `streamUrl` / `stream_url` | 오디오 WebSocket URL |
+| `callDirection` / `call_direction` | `inbound` / `outbound` — 발신·수신 판별은 이 값으로(`dir` 은 스트림 방향이라 쓰면 틀린다). SDK 1.9.4+ |
+| `orgId` / `org_id` · `orgSource` / `org_source` | 주문 회사 귀속(gw 1.4.15.209+ · SDK 1.9.4+). **3-상태** — TS: `undefined`=구버전(키 없음) / `null`=미매핑 / 문자열. Python: `org_id_reported` 로 키 유무를 가른다 |
+| `streamUrl` / `stream_url` | 오디오 WebSocket URL. ⚠️ **토큰이 없는 주소**다 — 직접 열면 401(gw 1.4.16.234+). `streamAudio(linkedId)` 를 쓰거나 `?token=<JWT>` 를 덧붙인다 |
 
 ---
 
@@ -2814,10 +2841,10 @@ TTS_PROVIDER=gemini                  # gemini / elevenlabs / openai / cosyvoice
 | 문서 | 내용 |
 |------|------|
 | [SDK 가이드 (전체)](https://github.com/OLSSOO-Inc/dvgateway-releases) | 설치부터 고급 기능까지 |
-| [PBX 관리 API](docs/pbx-management-api.md) | 착신전환, 발신자표시, 클릭투콜, 캠페인 REST API |
-| [퀵 매뉴얼](docs/pbx-quick-reference.md) | curl 예제 복사해서 바로 사용 |
-| [어댑터 상세](docs/sdk-guide/04-adapter-reference.md) | STT/LLM/TTS 설정 |
-| [캠페인 가이드](docs/sdk-guide/11-pbx-management.md) | 캠페인 + 이벤트 모니터링 |
+| [PBX 관리 API](../docs/pbx-management-api.md) | 착신전환, 발신자표시, 클릭투콜, 캠페인 REST API |
+| [퀵 매뉴얼](../docs/pbx-quick-reference.md) | curl 예제 복사해서 바로 사용 |
+| [어댑터 상세](../docs/sdk-guide/04-adapter-reference.md) | STT/LLM/TTS 설정 |
+| [캠페인 가이드](../docs/sdk-guide/11-pbx-management.md) | 캠페인 + 이벤트 모니터링 |
 
 ---
 

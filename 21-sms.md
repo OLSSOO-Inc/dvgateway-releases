@@ -30,7 +30,7 @@ SMS 는 **관리자가 테넌트별 라우팅을 먼저 설정**해야 동작합
 | 인코딩 | 본문 인코딩 | `euc-kr`(기본) / `utf-8` |
 
 > PBX 트렁크(`outbound_proxy` 등) 설정과 AMI `message` 권한이 함께 필요합니다.
-> 상세: [go-gateway/docs/sms-integration.md](../../go-gateway/docs/sms-integration.md).
+> 상세: [docs/sms-integration.md](../sms-integration.md).
 
 발신자로 넣는 값은 **내선번호**(예 `1001`)입니다. 게이트웨이가 그 내선의 **실제 발신번호**(external
 CID → 테넌트 대표번호)로 자동 변환해 통신사에 보냅니다 — 내선번호 그대로는 통신사가 거부합니다.
@@ -204,14 +204,26 @@ one = await gw.get_sms(page["records"][0]["id"])
 ### 이력 비우기 (관리자/테스트 정리)
 
 ```typescript
-const { deleted } = await gw.deleteSMS();                     // 이 테넌트 전체
+const { deleted } = await gw.deleteSMS();                     // 이 테넌트 전체(테넌트 토큰)
 await gw.deleteSMS({ before: '2026-01-01T00:00:00Z' });        // 그 이전 것만
+await gw.deleteSMS({ tenantId: 'abc…' });                      // 관리자: 그 테넌트만
+await gw.deleteSMS({ allTenants: true });                      // 관리자: 전 테넌트(명시 필수)
 ```
 
 ```python
 await gw.delete_sms()
 await gw.delete_sms(before="2026-01-01T00:00:00Z")
+await gw.delete_sms(tenant_id="abc…")        # 관리자: 그 테넌트만
+await gw.delete_sms(all_tenants=True)        # 관리자: 전 테넌트(명시 필수)
 ```
+
+> ⚠️ **일괄 삭제뿐이다 — 단건 삭제는 없다.** `DELETE /api/v1/sms/{id}` 는 **405**
+> (`sms_single_delete_unsupported`)다. 종전에는 그 호출이 id 를 **무시하고 그 테넌트 이력
+> 전체**를(관리자 + `tenantId` 없음이면 **전 테넌트**를) 지웠다.
+>
+> ⚠️ **관리자 토큰으로 `tenantId` 없이 부르면 400**(`tenant_or_all_required`)이다 —
+> 전 테넌트 삭제는 `allTenants: true`(REST `?all=1`)로 **명시해야** 한다. 테넌트 토큰은
+> 종전과 같다(자기 테넌트만, `all` 은 무시). 모바일 토큰은 종전대로 403.
 
 ---
 
@@ -228,7 +240,7 @@ await gw.delete_sms(before="2026-01-01T00:00:00Z")
    켜야 발송됩니다. `data={sender, sender_number, body, msgid, record_id, receiver_number}`.
 
 > 수신은 PBX 다이얼플랜(`message_context` → `UserEvent`) 설정이 필요합니다(관리자).
-> 상세: [go-gateway/docs/sms-integration.md §4.2](../../go-gateway/docs/sms-integration.md),
+> 상세: [docs/sms-integration.md §4.2](../sms-integration.md),
 > 푸시 3단계 제어: [docs/push-notifications.md §10](../push-notifications.md).
 
 ### 사용자별 발신 권한
@@ -317,5 +329,5 @@ try {
 
 - **AI 콤보 예제** — 영업시간 외 AI 예약 접수 + 확인 문자 자동 발송: [TS 09](examples/typescript/09-ai-sms-confirmation.ts) · [PY 08](examples/python/08_ai_sms_confirmation.py)
 - **활용 레시피** — 모니터링·cron·n8n 에서 알림 문자 보내기(사내 문자 게이트웨이): [22-sms-alert-gateway.md](22-sms-alert-gateway.md)
-- 게이트웨이/PBX 설정·다이얼플랜·트러블슈팅: [go-gateway/docs/sms-integration.md](../../go-gateway/docs/sms-integration.md)
+- 게이트웨이/PBX 설정·다이얼플랜·트러블슈팅: [docs/sms-integration.md](../sms-integration.md)
 - 규격: KCT/Xener IP-SMSC 단말연동규격(SIP MESSAGE). 본문 인코딩 EUC-KR(실측 검증).

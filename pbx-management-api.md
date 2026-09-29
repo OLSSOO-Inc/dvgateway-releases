@@ -565,6 +565,13 @@ Dynamic VoIP PBX의 내선별 발신자표시(CID)를 관리합니다.
 | `GET` | `/api/v1/callerid/{단말번호}` | 내부/외부 발신자표시 조회 |
 | `PUT` | `/api/v1/callerid/{단말번호}` | 외부 발신자표시 변경 |
 
+> 🔐 **테넌트 스코프** — 내선번호는 테넌트마다 겹치므로 조회·변경은 `ombu_extensions.tenant_id`
+> 로 좁힌다. 테넌트·모바일 토큰은 **토큰 테넌트로 고정**되고, admin 은 `?tenantId=<path>` 로
+> 대상을 정한다. admin 이 `tenantId` 를 생략하면 그 내선이 **한 테넌트에만** 있을 때만 동작하고,
+> 여러 테넌트에 있으면 `409 ambiguous_extension` 이다(종전에는 임의 테넌트의 행을 읽고,
+> PUT 은 **모든 테넌트의 같은 번호 행**을 바꿨다). 테넌트를 PBX 로 해석하지 못하면
+> `403 tenant_unresolved`(부팅 직후 캐시가 비었으면 `503 tenant_cache_not_ready` + `Retry-After` · PBX 동기화가 꺼진 설치는 같은 내선 행이 정확히 하나일 때만 응답하고 둘 이상이면 `409 ambiguous_extension`), 해석 못 하는 `tenantId` 는 `400 unknown_tenant`.
+
 > `internal_cid`(내부발신자표시)는 **조회만** 가능합니다 (PBX 관리).
 > `external_cid`(외부발신자표시)는 **조회 + 변경** 가능합니다.
 
@@ -810,6 +817,9 @@ CREATE TABLE ombu_app_keys (
 | `PUT` | `/api/v1/appkeys/{DID}` | 활성화/비활성화, 키 재생성 |
 | `DELETE` | `/api/v1/appkeys/{DID}` | 키 삭제 |
 
+> 🔐 **관리자 JWT 전용** — `ombu_app_keys` 는 PBX REST 인증 키 표라 테넌트·모바일 토큰은
+> `403 admin_required` 다(종전에는 검사가 없어 테넌트 토큰으로 모든 테넌트의 키를 읽고 바꿀 수 있었다).
+
 ### 4.1 전체 키 목록 조회
 
 ```bash
@@ -876,15 +886,25 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 |------|:----:|:----:|------|
 | `did` | string | O* | DID 번호 (예: `07045144803`) |
 | `extension` | string | O* | 단말번호 (예: `45144803`, 자동으로 `070` 추가) |
+| `tenantId` | string | - | 키가 묶일 테넌트 — Dynamic VoIP 테넌트 path(16-hex) 또는 숫자 tenant_id. `?tenantId=` 쿼리도 받는다(본문 우선) |
 
 > `did` 또는 `extension` 중 하나 필수. 이미 존재하면 409 Conflict.
+>
+> ⚠️ **`tenant` 컬럼은 «이 키가 어느 테넌트의 키인가»다** — 게이트웨이가 테넌트별 PBX 키를 고를 때
+> `tenant = 숫자 tenant_id` 로 찾는다(`resolvePBXKey`). 종전 이 API 는 그 값을 **`1` 로 고정**해
+> 다른 테넌트 DID 의 키도 tenant 1 의 키로 기록했다. 이제 `tenantId` 를 주면 그 테넌트로 기록하고,
+> **생략하면 종전과 같이 `1`**(응답 `tenantDefaulted:true` · 그 DID 를 가진 seat 이 다른 테넌트에
+> 있으면 `[APPKEYS WARN]`). 해석할 수 없는 `tenantId` 는 **`1` 로 떨어뜨리지 않고** 400
+> `unknown_tenant`(캐시 미준비는 `tenant_cache_not_ready`). `tenant_id` 컬럼은 레거시라 계속 `1`.
 
 **응답:**
 ```json
 {
   "ok": true,
   "did": "07045144803",
-  "key": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+  "key": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+  "tenant": "1",
+  "tenantDefaulted": true
 }
 ```
 
@@ -1646,6 +1666,11 @@ ActionID 만 반환), ① registry 상관관계로 "이 테넌트가 방금 이 
 | `POST` | `/api/v1/pbx/campaigns/{id}/resume` | 재개 |
 | `POST` | `/api/v1/pbx/campaigns/{id}/cancel` | 취소 |
 | `GET` | `/api/v1/pbx/campaigns/{id}/results` | 발신 결과 |
+
+> 🔐 **관리자 JWT 전용** — 캠페인 실행기는 설치 전체 PBX 키와 고정 COS 로 발신하고
+> 발신 내선·CID 는 요청이 정하므로 테넌트 스코프가 성립하지 않는다. 테넌트 토큰은
+> `403 admin_required`. 액션 경로는 표의 메서드만 받는다(그 밖은 `405 method_not_allowed` —
+> 종전에는 GET 한 번으로 캠페인이 시작됐다).
 
 ### 7.1 예약 발신 (Scheduled)
 
