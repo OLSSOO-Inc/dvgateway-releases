@@ -1958,7 +1958,7 @@ tts = CachedTtsAdapter(inner, provider="elevenlabs", cache_dir="./tts-cache")
 
 | 항목 | OpenAI Realtime | Gemini Live |
 |------|----------------|-------------|
-| **모델** | `gpt-realtime-2`(신규, GPT-5급), `gpt-realtime-translate`(통역), `gpt-realtime-1.5`, `gpt-4o-realtime-preview`(현 SDK 기본) | `gemini-live-2.5-flash-preview`, `gemini-2.5-flash-native-audio` |
+| **모델** | `gpt-realtime-2`(신규, GPT-5급), `gpt-realtime-translate`(통역), `gpt-realtime-1.5`, `gpt-4o-realtime-preview`(현 SDK 기본) | `gemini-live-2.5-flash-preview`(SDK 기본), `gemini-2.5-flash-native-audio`, `gemini-live-2.5-flash-native-audio`(GA), **`gemini-3.8-live`**(GA 2026-09-24 · Vertex · **us-central1/us/eu 만** — 아래 참조) |
 | **음성** | 11종 (alloy, nova, shimmer 등) | 8종 (Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr) |
 | **입력 샘플레이트** | 24kHz (SDK 업샘플) | **16kHz (DVGateway 네이티브 — 리샘플 없음)** |
 | **출력 샘플레이트** | 24kHz (SDK 다운샘플) | 24kHz (SDK 다운샘플) |
@@ -2192,6 +2192,36 @@ import { mapThresholdToSensitivity, normalizeMaxOutputTokens } from 'dvgateway-a
 mapThresholdToSensitivity(0.9)         // → 'LOW'
 normalizeMaxOutputTokens(undefined, 'inf')   // → null
 ```
+
+##### Gemini 3.8 Live (`gemini-3.8-live`) — SDK 1.9.8+
+
+Google 이 2026-09-24 GA 로 낸 Live 모델이다([모델 문서](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-live)). 오디오는 2.5 와 같이 **16kHz PCM 입력 · 24kHz 출력**이라 배선은 그대로이고 **모델 ID 만 바꾸면 된다.**
+
+```typescript
+const realtime = new GeminiLiveAdapter({
+  endpoint: 'vertex',
+  accessToken: process.env['GCP_ACCESS_TOKEN']!,
+  project: 'my-gcp-project',
+  location: 'us-central1',            // ⚠️ us-central1 / us / eu 만 — 아시아 리전 없음
+  model: 'gemini-3.8-live',
+  customVocabulary: ['선불', '착불', '근조 화환'],   // 입력 전사 힌트 (3.8 전용)
+});
+```
+
+```python
+realtime = GeminiLiveAdapter(
+    endpoint="vertex", access_token=os.environ["GCP_ACCESS_TOKEN"], project="my-gcp-project",
+    location="us-central1", model="gemini-3.8-live",
+    custom_vocabulary=["선불", "착불", "근조 화환"],
+)
+```
+
+- ⚠️ **리전이 `us-central1`·`us`·`eu` 뿐이다** — 한국 통화의 음성이 **미국·유럽에서 처리**된다(지연 + 데이터 국외 이전). 그래서 **SDK 기본 모델은 바꾸지 않았다** — 배포만으로 처리 국가가 바뀌면 안 된다. 다른 location 을 주면 어댑터가 경고를 낸다(`geminiLiveConfigWarnings`).
+- ⚠️ **AI Studio(`endpoint: 'ai-studio'`) 제공 여부는 문서에 없다** — 경고를 내고 그대로 시도한다.
+- `customVocabulary` / `custom_vocabulary` → `input_audio_transcription.custom_vocabulary`. **3.8 전용**이라 비어 있으면 필드를 보내지 않는다(모르는 setup 필드는 소켓을 닫는다). 다른 모델에 주면 경고.
+- 2.5 의 `enable_affective_dialog`·`proactivity` 는 3.8 에서 **제거**됐다 — 이 어댑터는 원래 보내지 않으므로 할 일 없음. thinking 미지원.
+- 헬퍼: `GEMINI_38_LIVE_LOCATIONS` · `buildInputAudioTranscription` · `geminiLiveConfigWarnings` (Python: `build_input_audio_transcription` · `gemini_live_config_warnings`).
+- 🔴 **실제 키로 검증하지 않았다** — setup 형태는 문서 기준이다.
 
 ##### Vertex AI 리전 엔드포인트 사용 (GCP 네이티브 배포)
 
