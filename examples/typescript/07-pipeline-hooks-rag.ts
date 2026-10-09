@@ -255,10 +255,13 @@ await gw.pipeline()
         (customer?.openTickets ? `진행 중 문의: ${customer.openTickets}건` : ''),
     };
 
-    // 시스템 프롬프트 바로 뒤에 컨텍스트 삽입
+    // 시스템 프롬프트에 컨텍스트를 이어 붙이기.
+    // ⚠️ 내장 LLM 어댑터는 **첫 번째 system 메시지만** 사용합니다 — 두 번째 system
+    //    메시지를 끼워 넣으면 그 내용은 LLM 에 전달되지 않습니다.
     const systemIdx = messages.findIndex((m) => m.role === 'system');
+    if (systemIdx < 0) return [contextMessage, ...messages];
     const result = [...messages];
-    result.splice(systemIdx + 1, 0, contextMessage);
+    result[systemIdx] = { role: 'system', content: `${messages[systemIdx]!.content}\n\n${contextMessage.content}` };
     return result;
   })
 

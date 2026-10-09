@@ -509,275 +509,24 @@ const realtime = new OpenAIRealtimeAdapter({
 
 ---
 
-### 로컬 STT — whisper.cpp (오프라인 무료)
+### 로컬(오프라인) LLM — Ollama · vLLM · LM Studio
 
-**whisper.cpp**는 OpenAI Whisper 모델을 C++로 재구현한 초고속 로컬 STT 엔진입니다.
-인터넷 없이 완전 오프라인 운영이 가능하며, CPU만으로도 실시간에 가까운 속도를 냅니다.
+SDK 에는 로컬 LLM 전용 어댑터가 따로 없습니다. 대신 **`OpenAILlmAdapter` 의 `baseUrl` / `base_url`**(SDK 1.9.2+)로 **OpenAI 호환 API** 를 제공하는 로컬 서버를 가리키면 됩니다. Ollama · vLLM · LM Studio · SGLang · llama.cpp server 가 모두 이 방식으로 연결됩니다.
 
-#### 1단계 — whisper.cpp 서버 설치 및 실행
-
-```bash
-# 소스 빌드 (Ubuntu/Debian)
-sudo apt update && sudo apt install -y build-essential libopenblas-dev cmake git
-git clone https://github.com/ggerganov/whisper.cpp
-cd whisper.cpp
-
-# GPU 지원 빌드 (CUDA — NVIDIA GPU가 있는 경우)
-cmake -B build -DGGML_CUDA=ON
-# CPU 전용 빌드
-cmake -B build
-
-cmake --build build --config Release -j$(nproc)
-
-# 모델 다운로드 (large-v3-turbo 권장 — 속도·정확도 균형)
-bash ./models/download-ggml-model.sh large-v3-turbo
-# 또는 한국어 정확도 최고
-bash ./models/download-ggml-model.sh large-v3
-
-# HTTP 스트리밍 서버 실행 (포트 8178)
-./build/bin/whisper-server \
-  --model models/ggml-large-v3-turbo.bin \
-  --host 0.0.0.0 \
-  --port 8178 \
-  --language ko \
-  --threads 4 \
-  --beam-size 1 \
-  --no-timestamps
-```
-
-> **모델 용량**: `tiny`(75MB) ~ `large-v3`(3.1GB). 실시간 통화에는 `large-v3-turbo`(809MB) 권장.
-
-#### 2단계 — Node.js 어댑터 설정
-
-```typescript
-import { WhisperCppAdapter } from 'dvgateway-adapters/stt';
-
-const stt = new WhisperCppAdapter({
-  // whisper.cpp HTTP 서버 주소 (같은 서버라면 localhost)
-  serverUrl: 'http://localhost:8178',
-
-  // ── 언어 설정 ───────────────────────────────────────────
-  language: 'ko',       // 'ko' | 'en' | 'ja' | 'zh' | 'auto'
-
-  // ── 발화 감지 ────────────────────────────────────────────
-  // whisper.cpp는 VAD(Voice Activity Detection)를 내장 지원
-  vadEnabled:      true,    // 자동 발화 감지 활성화
-  vadThreshold:    0.6,     // 발화 감지 민감도 (0.0–1.0)
-  silenceDurationMs: 600,   // 발화 종료 판단 침묵 시간
-
-  // ── 추론 품질 ────────────────────────────────────────────
-  beamSize:       1,        // 1=빠름, 5=정확 (실시간에는 1 권장)
-  temperature:    0.0,      // 0.0=결정론적 (가장 안정적)
-  noSpeechThreshold: 0.6,   // 무음 구간 필터링 임계값
-});
-```
-
-#### 2단계 — Python 어댑터 설정
-
-```python
-from dvgateway.adapters.stt import WhisperCppAdapter
-
-stt = WhisperCppAdapter(
-    server_url="http://localhost:8178",  # whisper.cpp 서버 주소
-    language="ko",
-    vad_enabled=True,
-    vad_threshold=0.6,
-    silence_duration_ms=600,
-    beam_size=1,
-    temperature=0.0,
-)
-```
-
-**모델별 성능 비교 (CPU 4코어 기준):**
-
-| 모델 | 크기 | 실시간 배율 | 한국어 정확도 |
-|------|------|------------|-------------|
-| `tiny` | 75MB | ~32x | 낮음 |
-| `base` | 142MB | ~16x | 보통 |
-| `medium` | 769MB | ~6x | 좋음 |
-| `large-v3-turbo` ★ | 809MB | ~8x | 매우 좋음 |
-| `large-v3` | 3.1GB | ~2x | 최고 |
-
----
-
-### 로컬 STT — Faster-Whisper (Python 고속 추론)
-
-**Faster-Whisper**는 CTranslate2 엔진으로 OpenAI Whisper를 4–8배 빠르게 실행합니다.
-SDK 앱과 같은 머신(또는 가까운 GPU 서버)에서 Python 프로세스로 실행합니다.
-
-#### 1단계 — Faster-Whisper 서비스 설치
+#### 1단계 — 로컬 LLM 서버 실행
 
 ```bash
-# 가상환경 설정
-python3 -m venv /opt/faster-whisper-svc
-source /opt/faster-whisper-svc/bin/activate
-
-# 패키지 설치
-pip install faster-whisper
-
-# GPU 사용 시 (NVIDIA CUDA 12.x)
-pip install faster-whisper nvidia-cublas-cu12 nvidia-cudnn-cu12
-
-# 간단한 스트리밍 서버 실행 (dvgateway-whisper-server 유틸리티)
-pip install dvgateway-whisper-server
-dvgateway-whisper-server \
-  --model large-v3 \
-  --device cuda \        # CPU 사용 시: --device cpu
-  --compute-type float16 \  # CPU 사용 시: int8
-  --port 8179 \
-  --language ko
-```
-
-> `dvgateway-whisper-server`는 DVGateway 생태계에서 제공하는 Faster-Whisper 래퍼 서버입니다.
-> 독립 실행 스크립트로도 사용 가능합니다:
-
-```python
-# whisper_server.py — 독립 실행 가능
-from faster_whisper import WhisperModel
-from fastapi import FastAPI, WebSocket
-import asyncio, numpy as np, struct
-
-app = FastAPI()
-model = WhisperModel("large-v3", device="cpu", compute_type="int8")
-
-@app.websocket("/ws/transcribe")
-async def transcribe_ws(ws: WebSocket):
-    await ws.accept()
-    audio_buffer = bytearray()
-
-    while True:
-        data = await ws.receive_bytes()
-        audio_buffer.extend(data)
-
-        # 640바이트(20ms) 청크가 쌓이면 추론
-        if len(audio_buffer) >= 16000 * 2:   # 1초 분량
-            pcm = np.frombuffer(audio_buffer, dtype=np.int16).astype(np.float32) / 32768.0
-            audio_buffer.clear()
-
-            segments, info = model.transcribe(
-                pcm,
-                language="ko",
-                beam_size=1,
-                vad_filter=True,
-                vad_parameters={"threshold": 0.5, "min_silence_duration_ms": 500},
-            )
-            for seg in segments:
-                await ws.send_json({"text": seg.text, "is_final": True})
-
-# 실행: uvicorn whisper_server:app --host 0.0.0.0 --port 8179
-```
-
-#### 어댑터 설정
-
-**Node.js:**
-
-```typescript
-import { FasterWhisperAdapter } from 'dvgateway-adapters/stt';
-
-const stt = new FasterWhisperAdapter({
-  serverUrl:         'ws://localhost:8179/ws/transcribe',
-  language:          'ko',
-  vadEnabled:        true,
-  vadThreshold:      0.5,
-  silenceDurationMs: 500,
-});
-```
-
-**Python:**
-
-```python
-from dvgateway.adapters.stt import FasterWhisperAdapter
-
-stt = FasterWhisperAdapter(
-    server_url="ws://localhost:8179/ws/transcribe",
-    language="ko",
-    vad_enabled=True,
-    vad_threshold=0.5,
-    silence_duration_ms=500,
-)
-```
-
-또는 **Python 인프로세스 모드** (같은 프로세스에서 직접 실행):
-
-```python
-from dvgateway.adapters.stt import FasterWhisperAdapter
-
-# server_url 없이 model 지정 → 인프로세스 실행 (추가 서버 불필요)
-stt = FasterWhisperAdapter(
-    model="large-v3",
-    device="cpu",           # "cuda" (GPU 사용 시)
-    compute_type="int8",    # CPU: "int8", GPU: "float16"
-    language="ko",
-    vad_enabled=True,
-    vad_threshold=0.5,
-    silence_duration_ms=500,
-    beam_size=1,
-    num_workers=2,          # 병렬 추론 워커 수
-)
-```
-
----
-
-### 로컬 STT — OpenAI Whisper (Python 공식)
-
-공식 OpenAI Whisper Python 라이브러리를 로컬에서 실행합니다.
-Faster-Whisper보다 느리지만 설치가 가장 간단합니다.
-
-```bash
-# 설치
-pip install openai-whisper
-
-# ffmpeg 필요 (오디오 포맷 변환)
-sudo apt install -y ffmpeg   # Ubuntu/Debian
-# brew install ffmpeg        # macOS
-```
-
-**Python 인프로세스 어댑터:**
-
-```python
-from dvgateway.adapters.stt import WhisperLocalAdapter
-
-stt = WhisperLocalAdapter(
-    model="large-v3",       # "tiny" | "base" | "small" | "medium" | "large-v3"
-    device="cpu",           # "cpu" | "cuda" | "mps" (Apple Silicon)
-    language="ko",
-
-    # 발화 감지 — silero-vad 사용 (pip install silero-vad)
-    vad_enabled=True,
-    vad_threshold=0.5,
-
-    # 추론 옵션
-    temperature=0.0,        # 0.0 = 결정론적 (가장 안정적)
-    beam_size=1,            # 실시간에는 1 권장
-    fp16=False,             # CPU에서는 False, GPU에서는 True
-)
-```
-
-> **주의**: OpenAI Whisper는 스트리밍이 아닌 파일 단위 추론이 기본입니다.
-> DVGateway 어댑터는 내부적으로 20ms 오디오 청크를 버퍼링하여 VAD 기반 세그먼트로 분할합니다.
-
----
-
-### 로컬 LLM — Qwen (Ollama 경유)
-
-**Qwen**은 Alibaba Cloud의 오픈소스 LLM으로, 한국어 성능이 우수합니다.
-**Ollama**를 통해 GPU 없이 CPU만으로도 실행 가능합니다.
-
-#### 1단계 — Ollama 설치 및 Qwen 모델 다운로드
-
-```bash
-# Ollama 설치 (Linux/macOS)
+# (A) Ollama — GPU 없이 CPU 로도 실행 가능
 curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3:8b
+# OpenAI 호환 주소: http://localhost:11434/v1
 
-# Qwen3.5 모델 다운로드 (2026-03 최신 — 멀티모달, 한국어 최고 성능)
-ollama pull qwen3.5:9b       # 9B 파라미터 (RAM 8GB 이상 권장) ★ 권장
-ollama pull qwen3.5:4b       # 4B 경량 (RAM 4GB 이상)
-ollama pull qwen3:8b         # 안정화된 Qwen3 이전 버전
-
-# 실행 확인
-ollama run qwen3:8b "안녕하세요, 잘 작동하나요?"
-
-# Ollama 서버는 기본적으로 http://localhost:11434 에서 실행됩니다
+# (B) vLLM — 고성능 GPU 서버
+pip install vllm
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen3-8B --served-model-name qwen3-8b --port 8000
+# OpenAI 호환 주소: http://localhost:8000/v1
+curl http://localhost:8000/v1/models   # 확인
 ```
 
 #### 2단계 — 어댑터 설정
@@ -785,168 +534,132 @@ ollama run qwen3:8b "안녕하세요, 잘 작동하나요?"
 **Node.js:**
 
 ```typescript
-import { OllamaAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
 
-const llm = new OllamaAdapter({
-  baseUrl: 'http://localhost:11434',  // Ollama 서버 주소
-
-  // ── 모델 선택 ────────────────────────────────────────────
-  model: 'qwen3.5:9b',
-  // 옵션:
-  //   'qwen3.5:9b'      — 멀티모달, 한국어 최고 품질 (2026-03 최신) ★
-  //   'qwen3.5:4b'      — RAM 4GB로 실행 가능한 경량형
-  //   'qwen3:8b'        — 안정성 검증된 이전 세대
-  //   'gemma3:12b'      — Google Gemma 3 대안
-  //   'llama3.3:8b'     — Meta Llama 3.3 대안
-
-  // ── 대화 설정 ────────────────────────────────────────────
-  systemPrompt: '당신은 친절한 한국어 AI 상담원입니다. 2–3문장으로 짧게 답변하세요.',
+const llm = new OpenAILlmAdapter({
+  baseUrl: 'http://localhost:11434/v1',  // Ollama (vLLM 이면 'http://localhost:8000/v1')
+  apiKey:  'local',                      // 로컬 서버는 키를 검사하지 않지만 빈 값은 넣지 마세요
+  model:   'qwen3:8b',                   // Ollama 모델 이름 / vLLM 은 --served-model-name 값
+  systemPrompt: '당신은 친절한 한국어 AI 상담원입니다. 2–3문장으로 짧게 답변하세요. /no_think',
   maxTokens:    512,
   temperature:  0.7,
-
-  // ── 스트리밍 ─────────────────────────────────────────────
-  stream: true,   // 토큰 스트리밍 활성화 (지연 최소화)
-
-  // ── Qwen3 특화 옵션 ──────────────────────────────────────
-  options: {
-    think: false,     // 사고 과정(thinking) 비활성화 → 빠른 응답
-    num_ctx: 4096,    // 컨텍스트 윈도우 크기
-    num_predict: 200, // 최대 생성 토큰 수
-    top_p: 0.9,
-    repeat_penalty: 1.1,
-  },
 });
 ```
 
 **Python:**
 
 ```python
-from dvgateway.adapters.llm import OllamaAdapter
+from dvgateway.adapters.llm import OpenAILlmAdapter
 
-llm = OllamaAdapter(
-    base_url="http://localhost:11434",
-    model="qwen3.5:9b",
-    system_prompt="당신은 친절한 한국어 AI 상담원입니다. 2–3문장으로 짧게 답변하세요.",
+llm = OpenAILlmAdapter(
+    base_url="http://localhost:11434/v1",   # vLLM 이면 "http://localhost:8000/v1"
+    api_key="local",
+    model="qwen3:8b",
+    system_prompt="당신은 친절한 한국어 AI 상담원입니다. 2–3문장으로 짧게 답변하세요. /no_think",
     max_tokens=512,
     temperature=0.7,
-    stream=True,
-    options={
-        "think": False,       # Qwen3 사고 과정 비활성화
-        "num_ctx": 4096,
-        "num_predict": 200,
-        "top_p": 0.9,
-        "repeat_penalty": 1.1,
-    },
 )
 ```
 
-**Qwen 모델 선택 가이드 (2026-03 기준):**
+> **Qwen3 사고 과정 끄기**: Qwen3 는 기본적으로 "사고 과정"을 먼저 생성해 응답이 늦어집니다. 어댑터에는 서버별 추가 옵션(Ollama `options`, vLLM `extra_body` 등)을 넘기는 자리가 없으므로, 위 예시처럼 시스템 프롬프트 끝에 `/no_think` 를 붙이거나 사고 과정이 없는 모델을 고르세요.
 
-| 모델 | RAM 요구 | 응답 속도 | 한국어 | 특징 |
-|------|---------|---------|--------|------|
-| `qwen3.5:4b` | 4GB | ★★★★★ | ★★★★ | 저사양 서버, 멀티모달 경량 (2026-03 최신) |
-| `qwen3.5:9b` ★ | 8GB | ★★★★ | ★★★★★ | **권장**, 멀티모달, 고품질 한국어 (2026-03 최신) |
-| `qwen3:8b` | 8GB | ★★★★ | ★★★★★ | 안정성 검증된 Qwen3 |
-| `qwen3:14b` | 16GB | ★★★ | ★★★★★ | 복잡한 추론 |
-
-> **Qwen3 `think` 옵션**: Qwen3는 기본적으로 "사고 과정"을 생성합니다. 실시간 음성 봇에서는 `think: false`로 비활성화하여 응답 속도를 높이세요.
+> `baseUrl` 이 비어 있으면 공식 OpenAI 엔드포인트로 갑니다. SDK 1.9.1 이하는 `baseUrl` 을 무시하므로 로컬 서버를 쓰려면 1.9.2 이상으로 올리세요.
 
 ---
 
-### 로컬 LLM — vLLM 서버 연동
+### 로컬(오프라인) STT — 직접 어댑터 구현
 
-**vLLM**은 고성능 GPU 서버에서 OpenAI 호환 API로 LLM을 서빙합니다.
-DVGateway의 `OpenAICompatAdapter`로 바로 연결됩니다.
+SDK 에는 **로컬 STT 어댑터(whisper.cpp · Faster-Whisper 등)가 내장되어 있지 않습니다.** 내장 STT 어댑터는 클라우드용(`DeepgramAdapter` · `GoogleChirp3Adapter` · `OpenAISttAdapter`)뿐입니다. 로컬 엔진을 쓰려면 `SttAdapter` 인터페이스를 직접 구현해 파이프라인에 넣습니다.
 
-#### 1단계 — vLLM 서버 설치 및 실행
+`SttAdapter` 가 구현할 것은 세 가지입니다:
 
-```bash
-# vLLM 설치 (CUDA 12.x + Python 3.10+)
-pip install vllm
+| 메서드 (TS / Python) | 하는 일 |
+|------|------|
+| `startStream(linkedId, audioStream)` / `start_stream(linked_id, audio_stream)` | 통화 오디오(`AudioChunk` — 16kHz, `samples` 는 -1.0~1.0 실수)를 읽어 인식 엔진에 보냅니다 |
+| `onTranscript(handler)` / `on_transcript(handler)` | 인식 결과(`TranscriptResult`)를 받을 핸들러를 등록합니다 |
+| `stop()` / `stop()` | 정리합니다 |
 
-# Qwen3-8B 모델 서버 실행 (Hugging Face에서 자동 다운로드)
-python -m vllm.entrypoints.openai.api_server \
-  --model Qwen/Qwen3-8B \
-  --port 8000 \
-  --served-model-name qwen3-8b \
-  --max-model-len 4096 \
-  --tensor-parallel-size 1 \   # GPU 수
-  --dtype auto \
-  --trust-remote-code
-
-# 확인
-curl http://localhost:8000/v1/models
-```
-
-#### 2단계 — 어댑터 설정
-
-**Node.js:**
+아래는 **골격 예시**입니다. 오디오를 일정 길이씩 모아 로컬 엔진에 넘기는 가장 단순한 형태이고, `transcribeLocally()` 는 여러분이 쓰는 엔진(예: whisper.cpp 서버의 HTTP 추론 API)에 맞게 구현해야 합니다. 실서비스에서는 고정 길이 대신 VAD(무음 감지)로 발화 단위를 끊는 것이 좋습니다.
 
 ```typescript
-import { OpenAICompatAdapter } from 'dvgateway-adapters/llm';
+import type { SttAdapter, AudioChunk, TranscriptResult } from 'dvgateway-sdk';
 
-const llm = new OpenAICompatAdapter({
-  // vLLM 서버는 OpenAI API와 완전 호환
-  baseUrl: 'http://localhost:8000/v1',
-  apiKey:  'not-needed',   // vLLM은 키 검증 없음 (로컬)
+// 여러분의 로컬 엔진 호출 — 16kHz 16-bit mono PCM 을 받아 텍스트를 돌려주도록 구현하세요
+declare function transcribeLocally(pcm16: Buffer): Promise<string>;
 
-  model: 'qwen3-8b',       // --served-model-name 으로 지정한 이름
-  systemPrompt: '친절한 한국어 AI 상담원입니다. 짧게 답변하세요.',
-  maxTokens:    512,
-  temperature:  0.7,
-  stream:       true,
+export class LocalWhisperAdapter implements SttAdapter {
+  private handler: ((r: TranscriptResult) => void) | null = null;
+  private stopped = false;
 
-  // Qwen3 사고 과정 비활성화 (extra_body)
-  extraBody: {
-    chat_template_kwargs: { enable_thinking: false },
-  },
-});
-```
+  onTranscript(handler: (r: TranscriptResult) => void): void {
+    this.handler = handler;
+  }
 
-**Python:**
+  async startStream(linkedId: string, audioStream: AsyncIterable<AudioChunk>): Promise<void> {
+    const SEGMENT_MS = 3000;          // 3초씩 모아 인식 (예시 값)
+    let frames: Buffer[] = [];
+    let ms = 0;
+    for await (const chunk of audioStream) {
+      if (this.stopped) break;
+      const pcm = Buffer.alloc(chunk.samples.length * 2);
+      chunk.samples.forEach((s, i) => pcm.writeInt16LE(Math.max(-1, Math.min(1, s)) * 32767, i * 2));
+      frames.push(pcm);
+      ms += chunk.durationMs;
+      if (ms >= SEGMENT_MS) {
+        const text = await transcribeLocally(Buffer.concat(frames));
+        frames = [];
+        ms = 0;
+        if (text.trim()) this.handler?.({ linkedId, text, isFinal: true, timestampMs: Date.now() });
+      }
+    }
+  }
 
-```python
-from dvgateway.adapters.llm import OpenAICompatAdapter
+  async stop(): Promise<void> {
+    this.stopped = true;
+  }
+}
 
-llm = OpenAICompatAdapter(
-    base_url="http://localhost:8000/v1",
-    api_key="not-needed",
-    model="qwen3-8b",
-    system_prompt="친절한 한국어 AI 상담원입니다. 짧게 답변하세요.",
-    max_tokens=512,
-    temperature=0.7,
-    stream=True,
-    extra_body={
-        "chat_template_kwargs": {"enable_thinking": False}
-    },
-)
-```
-
-> **vLLM 대안**: SGLang, LMDeploy, llama.cpp server 등도 OpenAI 호환 API를 제공하므로 `OpenAICompatAdapter`로 동일하게 연결됩니다.
-
-**완전 로컬(오프라인) 파이프라인 예시:**
-
-```typescript
-// 모든 컴포넌트를 로컬에서 실행 — 인터넷 불필요
+// 사용 — 내장 어댑터와 똑같이 파이프라인에 넣습니다
 await gw.pipeline()
-  .stt(new WhisperCppAdapter({
-    serverUrl: 'http://localhost:8178',
-    language:  'ko',
-    vadEnabled: true,
-  }))
-  .llm(new OllamaAdapter({
-    baseUrl:     'http://localhost:11434',
-    model:       'qwen3:8b',
-    systemPrompt: '친절한 한국어 AI 상담원입니다.',
-    options:     { think: false },
-  }))
-  .tts(new ElevenLabsAdapter({    // TTS는 현재 로컬 오픈소스 품질이 제한적이므로 유료 권장
-    apiKey:  process.env.ELEVENLABS_API_KEY!,
-    model:   'eleven_flash_v2_5',
-    voiceId: 'YOUR_VOICE_ID',
-  }))
+  .stt(new LocalWhisperAdapter())
+  .llm(llm)                // 위의 로컬 LLM
+  .tts(tts)
   .start();
 ```
+
+```python
+from dvgateway.types import SttAdapter, AudioChunk, TranscriptResult
+
+async def transcribe_locally(pcm16: bytes) -> str:
+    ...  # 여러분의 로컬 엔진 호출 (16kHz 16-bit mono PCM → 텍스트)
+
+class LocalWhisperAdapter(SttAdapter):
+    def __init__(self) -> None:
+        self._handler = None
+        self._stopped = False
+
+    def on_transcript(self, handler) -> None:
+        self._handler = handler
+
+    async def start_stream(self, linked_id: str, audio_stream) -> None:
+        segment_ms, frames, ms = 3000, bytearray(), 0.0
+        async for chunk in audio_stream:          # chunk: AudioChunk
+            if self._stopped:
+                break
+            for s in chunk.samples:
+                frames += int(max(-1.0, min(1.0, s)) * 32767).to_bytes(2, "little", signed=True)
+            ms += chunk.duration_ms
+            if ms >= segment_ms:
+                text = await transcribe_locally(bytes(frames))
+                frames, ms = bytearray(), 0.0
+                if text.strip() and self._handler:
+                    self._handler(TranscriptResult(linked_id=linked_id, text=text, is_final=True))
+
+    async def stop(self) -> None:
+        self._stopped = True
+```
+
+> TTS 는 로컬 오픈소스 품질이 아직 제한적이라, 완전 오프라인이 꼭 필요한 경우가 아니면 클라우드 TTS 어댑터를 권장합니다.
 
 ---
 

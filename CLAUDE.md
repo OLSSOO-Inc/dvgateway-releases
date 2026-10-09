@@ -30,6 +30,8 @@
 | `1.9.5` | ✅ 배포 정정 | 코드 무변경. npm `dvgateway-adapters` 의 `peerDependencies` 를 `^1.9.0` 으로 정정. Python 설치 이름은 **`dvgateway`** (`pip install dvgateway`) |
 | `1.9.6` | ✅ 신규 | `deleteSMS({allTenants})` / `delete_sms(all_tenants=)` — 관리자가 **전 테넌트** SMS 이력을 지우려면 명시해야 한다(`tenantId` 도 `all` 도 없으면 400). 테넌트 토큰은 영향 없음 |
 | `1.9.7` | ⚠️ 동작 정정 | ① `updateSessionMeta()`/`update_session_meta()` · `submitTranscript()`/`submit_transcript()` 는 게이트웨이에 해당 API 가 없어 **요청을 보내지 않고** `DVGatewayUnsupportedError`(`code:"not_supported_by_gateway"` · `sdkMethod`/`sdk_method` · `alternative`)를 던진다(`@deprecated` · Python 은 `DeprecationWarning` 도). `autoSubmitTranscripts()`/`auto_submit_transcripts()` 는 **no-op 콜백 + 경고 1회** ② `downloadMinutes()`/`download_minutes()` 는 **`GET /api/v1/conferences/{confId}`** 를 부른다 — 회의 진행 중에는 실시간 회의록, 끝난 뒤에는 저장본(게이트웨이 1.4.16.285+ · 저장본이 없거나 구버전이면 404). `'txt'` 는 SDK 가 렌더링한다 ③ `listSessions()`/`list_sessions()` 가 게이트웨이 응답(`{calls, conferences}`)을 읽는다(회의 참여자는 `confId` 가 붙은 세션으로 포함). ⚠️ 위 메서드를 쓰던 코드는 예외 타입이 `DVGatewayUnsupportedError` 로 바뀐다 |
+| `1.9.8` | ✅ 신규 | Gemini 3.8 Live 모델(`gemini-3.8-live`) 지원 · `customVocabulary` / `custom_vocabulary`(3.8 전용) · 설정 경고 `geminiLiveConfigWarnings` / `gemini_live_config_warnings`. 기본 모델은 그대로(`gemini-live-2.5-flash-preview`) — 자세한 내용은 아래 「Gemini 3.8 Live」 |
+| `1.9.9` | ✅ 문서 정정 | 코드 무변경. `playback()`/`liteTtsPlayback()`(Python `playback`/`lite_tts_playback`)와 결과 타입의 JSDoc·docstring 이 «`audio:playback` 완료 이벤트가 온다»고 잘못 적고 있던 것을 바로잡았다 — **이 두 메서드는 재생 시작·완료 이벤트를 보내지 않는다**(`audio:playback` 은 `playAudio()` 전용, `tts:playback` 은 `injectTts()` 전용). 대안: 안내 중 `collectDtmf()` 시작, 또는 `synthesizedBytes / 32000` 초(+약 0.5초) 기다리기(16kHz 16-bit 모노) |
 
 ---
 
@@ -557,7 +559,7 @@ await gw.set_early_media(
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| `playback({ linkedId, media })` | `playback(linked_id, media)` | 재생 시작. 즉시 반환되고 `playback_id`를 돌려줍니다. 완료는 `audio:playback` 이벤트(`lifecycle: done`)로 알 수 있습니다 |
+| `playback({ linkedId, media })` | `playback(linked_id, media)` | 재생 시작. 즉시 반환되고 `playback_id`를 돌려줍니다. ⚠️ **재생 완료 이벤트는 오지 않습니다** — `audio:playback` 은 `playAudio()` 전용입니다(아래 「이벤트」 참고) |
 | `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+)* | `lite_tts_playback(linked_id, text, provider=None, voice=None)` | 텍스트 → cloud TTS 합성 → 재생. 동일 (tenant, provider, voice, text) 재호출 시 게이트웨이가 캐시 적중으로 즉시 재생 (`cache_hit=True`). cloud 키 미설정 시 로컬 TTS(espeak-ng)로 폴백. **게이트웨이 1.4.5.8+ 필요** (1.4.5.7 이하는 404) |
 | `stopPlayback(linkedId, playbackId)` | `stop_playback(linked_id, playback_id)` | 진행 중인 playback 중단. 이미 끝난 경우도 안전 (no-op). `playback()` / `liteTtsPlayback()` 모두 동일 메서드로 중단 |
 
@@ -660,7 +662,9 @@ gw.on_call_event(on_call)
 - **캐시**: 같은 (tenant, provider, voice, text) 로 다시 호출하면 게이트웨이 캐시에서 바로 재생 — 합성 지연 없음, 응답 보통 50ms 이내. `cache_hit=true` 로 보고.
 - **provider/voice 결정**: 명시한 값 > 테넌트 primary 키 > 로컬 TTS(espeak-ng) 폴백. cloud provider 실패 시(예: 키 만료, 네트워크) 자동으로 로컬 TTS(영어 음성)로 폴백.
 - **중단**: 일반 playback 과 동일하게 `stopPlayback(linkedId, playbackId)` / `stop_playback(linked_id, playback_id)` 호출.
-- **이벤트**: `audio:playback` 이벤트가 발화됨 (`lifecycle: playing → done`). 별도 `tts:playback` 이벤트는 발화되지 않음 (그건 `inject_tts` 전용).
+- **이벤트**: ⚠️ `playback()` · `liteTtsPlayback()` 은 **재생 시작·완료 이벤트를 보내지 않습니다.** `audio:playback`(`phase`: `start`/`complete`/`canceled`/`failed`)은 `playAudio()`/`play_audio()` 전용이고, `tts:playback` 은 `injectTts()`/`inject_tts()` 전용입니다. lite 통화에서 다음 동작을 재생 뒤에 이어야 하면 다음 중 하나를 쓰세요.
+  - **DTMF 를 받을 거라면 기다릴 필요가 없습니다** — 안내가 나오는 동안 바로 `collectDtmf()` 를 시작하면 됩니다(위 IVR 예시처럼).
+  - **길이로 기다리기** — `liteTtsPlayback()` 은 `synthesizedBytes`/`synthesized_bytes` 를 돌려주고, 이 오디오는 16kHz 16-bit 모노라 **1초 = 32,000바이트**입니다. `synthesizedBytes / 32000` 초 + 여유(약 0.5초)만큼 기다린 뒤 다음 동작을 하세요. 사운드 파일(`sound:`)은 길이를 알려 주지 않으므로 파일 길이를 직접 알고 있어야 합니다.
 
 **lite 모드 연결**: 번호를 `mode=lite` 로 연결하는 것은 운영사(관리자)가 합니다. 운영사에 요청하세요.
 
@@ -786,7 +790,7 @@ asyncio.run(main())
 | `listSessions()` | `list_sessions()` | 활성 세션 목록 — 1:1 통화 + 회의 참여자(`confId` 설정). **SDK 1.9.7+ 필요**(이전 버전은 빈 목록을 돌려준다) |
 | `listSessionsByTenant(id)` | `list_sessions_by_tenant(id)` | 특정 테넌트 세션(관리자) |
 | ~~`updateSessionMeta()`~~ | ~~`update_session_meta()`~~ | ⚠️ **deprecated · 게이트웨이에 API 없음** — `DVGatewayUnsupportedError` 를 던진다(요청 없음). 통화에 붙은 사용자 값은 세션의 `customValue1~3` 으로 읽는다(값을 싣는 것은 운영사 설정) |
-| `downloadMinutes(confId, 'json'\|'txt')` | `download_minutes(conf_id, format)` | 회의록 — `GET /api/v1/conferences/{confId}` · 진행 중=**실시간**, 종료 후=**저장본**(게이트웨이 1.4.16.285+ · 운영사가 회의록 저장을 켰을 때만 · 발화 1건 이상일 때만 · 응답 헤더 `X-DVG-Minutes-Source: live\|stored`) · 저장본이 없거나 구버전이면 404 · `'txt'` 는 SDK 렌더링 · 회의록은 **게이트웨이 자체 STT**(`POST /api/v1/stt/conf/{confId}`)가 만든다 · ⚠️ 발화별 `sentiment` 는 현재 채워지지 않는다 |
+| `downloadMinutes(confId, 'json'\|'txt')` | `download_minutes(conf_id, format)` | 회의록 — `GET /api/v1/conferences/{confId}` · 진행 중=**실시간**, 종료 후=**저장본**(게이트웨이 1.4.16.285+ · 운영사가 회의록 저장을 켰을 때만 · 발화 1건 이상일 때만 · 응답 헤더 `X-DVG-Minutes-Source: live\|stored`) · 저장본이 없거나 구버전이면 404 · `'txt'` 는 SDK 렌더링 · 회의록은 **게이트웨이 자체 STT**(`POST /api/v1/stt/conf/{confId}/start`)가 만든다 · ⚠️ 발화별 `sentiment` 는 현재 채워지지 않는다 |
 | ~~`submitTranscript()`~~ · ~~`autoSubmitTranscripts()`~~ | ~~`submit_transcript()`~~ · ~~`auto_submit_transcripts()`~~ | ⚠️ **deprecated · 게이트웨이에 API 없음** — 앞은 `DVGatewayUnsupportedError`, 뒤는 no-op 콜백 + 경고 1회 |
 
 #### 이벤트 타입 목록
@@ -882,8 +886,10 @@ gw.onChannelState(async (event) => {
 **마이그레이션 (RTP-first-chunk 휴리스틱 제거)**:
 
 ```python
-# Before — 부정확 (ringback 중 발화)
-gw.on_audio(lambda chunk: start_greeting() if first_chunk else None)
+# Before — 부정확 (ringback 중 발화): 첫 오디오 청크가 오면 '받았다'고 추정
+async for chunk in gw.stream_audio(linked_id, dir="in"):
+    await start_greeting()
+    break
 
 # After — B-leg up 시점에 정확히 발화
 gw.on_channel_state(lambda e: start_greeting() if e.leg == "b" and e.state == "up" else None)
@@ -1638,7 +1644,7 @@ stt = OpenAISttAdapter(
 |--------|--------|------|
 | `AnthropicAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` | Anthropic Claude |
 | `OpenAILlmAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` | OpenAI GPT |
-| `WebhookAdapter` | `dvgateway-adapters/llm` / `dvgateway.adapters.llm` | n8n/Flowise/사내 API Webhook |
+| `WebhookAdapter` | `dvgateway-adapters` (TS 는 최상위에서 import — `/llm` 하위 경로에는 없음) / `dvgateway.adapters.llm` | n8n/Flowise/사내 API Webhook |
 
 #### AnthropicAdapter 옵션
 
@@ -1702,7 +1708,7 @@ llm = OpenAILlmAdapter(
 
 ```typescript
 // TypeScript
-import { WebhookAdapter } from 'dvgateway-adapters/llm';
+import { WebhookAdapter } from 'dvgateway-adapters';   // TS 는 최상위 경로 ('/llm' 에는 없음)
 const llm = new WebhookAdapter({
   url: 'https://n8n.example.com/webhook/voice-bot',  // 필수
   timeout: 5000,                                       // 타임아웃 (ms)
@@ -1935,13 +1941,14 @@ realtime.onSpeechActivity(({ linkedId, side, speaking }) => {
   gw.postVad(linkedId, side, speaking).catch(() => {});
 });
 
-gw.onCallInfo(async (event) => {
+gw.onCallEvent(async (event) => {
   if (event.type === 'call:new') {
-    const stream = gw.streamAudio(event.linkedId, {
+    const linkedId = event.session.linkedId;   // call:new 는 session 안에 linkedId 가 있습니다
+    const stream = gw.streamAudio(linkedId, {
       dir: 'both',
       pipelineType: 's2s',               // ★ 동일하게 's2s' — 대시보드가 AI 세션으로 렌더
     });
-    await realtime.startSession(event.linkedId, stream);
+    await realtime.startSession(linkedId, stream);
   }
   if (event.type === 'call:ended') {
     await realtime.stop(event.linkedId);
@@ -2326,8 +2333,9 @@ const realtime = new OpenAIRealtimeAdapter({
 });
 
 // AI 응답 오디오 → 통화 채널에 주입
+// injectTts 는 오디오 청크의 AsyncIterable 을 받습니다 — 청크 하나도 제너레이터로 감싸 넘깁니다.
 realtime.onAudioOutput(async (pcm16k, linkedId) => {
-  await gw.injectTTS(linkedId, pcm16k);
+  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
 });
 
 // 전사 결과 수신 (speaker: 'customer' | 'agent')
@@ -2339,18 +2347,17 @@ realtime.onError((err, linkedId) => {
   console.error(`[S2S ERROR] ${linkedId}: ${err.message}`);
 });
 
-// 통화 이벤트 구독
-gw.onCallInfo(async (event) => {
+// 통화 이벤트 구독 — 첫 구독 때 SDK 가 알아서 연결합니다(별도 connect() 없음)
+gw.onCallEvent(async (event) => {
   if (event.type === 'call:new') {
-    const stream = gw.streamAudio(event.linkedId, { dir: 'both' });
-    await realtime.startSession(event.linkedId, stream);
+    const linkedId = event.session.linkedId;   // call:new 는 session 안에 linkedId 가 있습니다
+    const stream = gw.streamAudio(linkedId, { dir: 'both', pipelineType: 's2s' });
+    await realtime.startSession(linkedId, stream);
   }
   if (event.type === 'call:ended') {
-    await realtime.stop(event.linkedId);
+    await realtime.stop(event.linkedId);       // call:ended 는 이벤트에 바로 linkedId 가 있습니다
   }
 });
-
-await gw.connect();
 ```
 
 ```python
@@ -2374,21 +2381,29 @@ realtime = OpenAIRealtimeAdapter(
 )
 
 def on_audio(pcm16k: bytes, linked_id: str):
-    asyncio.ensure_future(gw.inject_tts(linked_id, pcm16k))
+    # inject_tts 는 오디오 청크의 async iterable 을 받습니다 — 청크 하나도 제너레이터로 감쌉니다.
+    async def _gen():
+        yield pcm16k
+    asyncio.ensure_future(gw.inject_tts(linked_id, _gen()))
 
 realtime.on_audio_output(on_audio)
 realtime.on_transcript(lambda r: print(f"[{r.speaker}] {r.text}"))
 realtime.on_error(lambda err, lid: print(f"[S2S ERROR] {lid}: {err}"))
 
+# 이벤트는 dict 가 아니라 객체입니다 — event.type, event.session.linked_id 처럼 속성으로 읽습니다.
 async def on_call(event):
-    if event["type"] == "call:new":
-        stream = gw.stream_audio(event["linkedId"], dir="both")
-        await realtime.start_session(event["linkedId"], stream)
-    elif event["type"] == "call:ended":
-        await realtime.stop(event["linkedId"])
+    if event.type == "call:new":
+        linked_id = event.session.linked_id
+        stream = gw.stream_audio(linked_id, dir="both", pipeline_type="s2s")
+        await realtime.start_session(linked_id, stream)
+    elif event.type == "call:ended":
+        await realtime.stop(event.linked_id)
 
-gw.on_call_info(on_call)
-asyncio.run(gw.connect())
+async def main():
+    gw.on_call_event(on_call)      # 첫 구독 때 SDK 가 알아서 연결합니다(별도 connect() 없음)
+    await asyncio.Event().wait()   # 프로세스가 끝나지 않게 대기
+
+asyncio.run(main())
 ```
 
 #### S2S 채널에 별도 TTS 삽입
@@ -2401,14 +2416,17 @@ S2S 진행 중 별도 TTS 오디오(공지, 안내음 등)를 삽입할 수 있�
 // response.cancel이 필요한 경우 어댑터를 확장하거나
 // S2S가 응답하지 않는 타이밍에 삽입하세요.
 
+// 미리 만든 PCM(16kHz 16-bit mono)을 injectTts 가 받는 AsyncIterable 로 감쌉니다.
+const once = (pcm: Buffer) => (async function* () { yield pcm; })();
+
 // 방법 1: S2S 미응답 구간에 삽입 (안전)
-await gw.injectTTS(linkedId, announcementPcm);
+await gw.injectTts(linkedId, once(announcementPcm));
 
 // 방법 2: S2S 세션 일시 정지 후 삽입
-await realtime.stop(linkedId);          // S2S 세션 종료
-await gw.injectTTS(linkedId, announcePcm); // TTS 삽입
+await realtime.stop(linkedId);                       // S2S 세션 종료
+await gw.injectTts(linkedId, once(announcementPcm)); // TTS 삽입
 // 필요 시 S2S 세션 재시작
-const stream = gw.streamAudio(linkedId, { dir: 'both' });
+const stream = gw.streamAudio(linkedId, { dir: 'both', pipelineType: 's2s' });
 await realtime.startSession(linkedId, stream);
 ```
 
@@ -2447,21 +2465,20 @@ realtime.onSpeechActivity(({ linkedId, side, speaking }) => {
   gw.postVad(linkedId, side, speaking).catch(() => {});
 });
 
-gw.onCallInfo(async (event) => {
+gw.onCallEvent(async (event) => {
   if (event.type === 'call:new') {
+    const linkedId = event.session.linkedId;
     // ★ 필수: pipelineType: 's2s' 선언 → 대시보드가 callee VU를 AI 스타일로 렌더
-    const stream = gw.streamAudio(event.linkedId, {
+    const stream = gw.streamAudio(linkedId, {
       dir: 'both',
       pipelineType: 's2s',
     });
-    await realtime.startSession(event.linkedId, stream);
+    await realtime.startSession(linkedId, stream);
   }
   if (event.type === 'call:ended') {
     await realtime.stop(event.linkedId);
   }
 });
-
-await gw.connect();
 ```
 
 ```python
@@ -2502,19 +2519,23 @@ def on_vad(ev: RealtimeSpeechActivityEvent) -> None:
 realtime.on_speech_activity(on_vad)
 
 async def on_call(event):
-    if event["type"] == "call:new":
+    if event.type == "call:new":
+        linked_id = event.session.linked_id
         # ★ 필수: pipeline_type="s2s" 선언
         stream = gw.stream_audio(
-            event["linkedId"],
+            linked_id,
             dir="both",
             pipeline_type="s2s",
         )
-        await realtime.start_session(event["linkedId"], stream)
-    elif event["type"] == "call:ended":
-        await realtime.stop(event["linkedId"])
+        await realtime.start_session(linked_id, stream)
+    elif event.type == "call:ended":
+        await realtime.stop(event.linked_id)
 
-gw.on_call_info(on_call)
-asyncio.run(gw.connect())
+async def main():
+    gw.on_call_event(on_call)
+    await asyncio.Event().wait()
+
+asyncio.run(main())
 ```
 
 ##### 대시보드에서 관찰되는 동작

@@ -51,7 +51,8 @@ const interpreter = new OpenAIRealtimeAdapter({
 // ─── Wire transcripts to the dashboard for live debugging ──────────────
 
 interpreter.onTranscript((t) => {
-  const tag = t.role === 'assistant' ? 'EN' : 'KO';
+  // speaker: 'customer' = caller (Korean), 'agent' = AI (English)
+  const tag = t.speaker === 'agent' ? 'EN' : 'KO';
   console.log(`[${tag}] ${t.text}`);
 });
 
@@ -65,30 +66,36 @@ console.log('🎙️  Korean → English live interpreter ready');
 console.log('📡  Gateway:', process.env['DV_BASE_URL']);
 console.log('🌐  Translate: ko → en (swap inputLanguage/outputLanguage to invert)\n');
 
-gw.onCall(async (call) => {
-  console.log(`[call ${call.linkedId}] connected — starting interpreter session`);
-
-  const audioStream = gw.openAudioStream(call.linkedId, {
-    pipelineType: 's2s',           // same wiring as S2S — translate is a flavor of S2S
-    direction:    'in',            // capture caller audio only
+// Route the AI's translated audio back into the call. The adapter passes the
+// linkedId of the session that produced the audio, so one handler serves every
+// call. injectTts takes an AsyncIterable of PCM chunks — wrap the single chunk.
+interpreter.onAudioOutput((chunk, linkedId) => {
+  gw.injectTts(linkedId, (async function* () { yield chunk; })()).catch((e: Error) => {
+    console.error(`[call ${linkedId}] inject failed:`, e.message);
   });
+});
 
-  // Route the AI's translated audio back into the call.
-  interpreter.onAudioOutput((chunk) => {
-    gw.injectTts(call.linkedId, chunk).catch((e) => {
-      console.error(`[call ${call.linkedId}] inject failed:`, e.message);
+// The SDK opens the call-event socket on the first subscription (no connect()).
+gw.onCallEvent(async (event) => {
+  if (event.type === 'call:new') {
+    const linkedId = event.session.linkedId;
+    console.log(`[call ${linkedId}] connected — starting interpreter session`);
+
+    const audioStream = gw.streamAudio(linkedId, {
+      dir:          'in',            // capture caller audio only
+      pipelineType: 's2s',           // same wiring as S2S — translate is a flavor of S2S
     });
-  });
-
-  try {
-    await interpreter.startSession(call.linkedId, audioStream);
-  } finally {
-    console.log(`[call ${call.linkedId}] interpreter session ended`);
+    await interpreter.startSession(linkedId, audioStream);
+  }
+  if (event.type === 'call:ended') {
+    await interpreter.stop(event.linkedId);
+    console.log(`[call ${event.linkedId}] interpreter session ended`);
   }
 });
 
 process.on('SIGINT', async () => {
   console.log('\nShutting down interpreter…');
-  await interpreter.stop();
+  await interpreter.stop();        // no argument = stop every session
+  gw.close();
   process.exit(0);
 });

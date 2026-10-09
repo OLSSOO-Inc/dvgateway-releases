@@ -98,7 +98,7 @@ ws.onmessage = (msg) => {
 };
 ```
 
-`audio:playback` 도 같은 형태로 `errorReason=preempted` 가 발행됩니다.
+`errorReason=preempted` 는 `tts:playback`(`injectTts()`) 에만 있습니다. `audio:playback`(`playAudio()`) 에는 이 사유가 없으므로, 다른 구독자의 재생을 알아차리려면 아래처럼 **내가 시작하지 않은 `phase=start`** 를 보세요.
 
 ### 15.3.3 외부 구독자가 시작한 inject 감지
 

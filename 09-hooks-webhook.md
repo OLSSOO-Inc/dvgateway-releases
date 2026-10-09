@@ -41,10 +41,11 @@ await gw.pipeline()
         `[고객 정보] ${customer.name} (${customer.tier}등급)`,
     };
 
-    // 시스템 프롬프트 바로 뒤에 삽입
-    const result = [...messages];
-    result.splice(1, 0, context);
-    return result;
+    // 시스템 프롬프트(첫 번째 system 메시지)에 이어 붙이기
+    // ⚠️ 내장 LLM 어댑터는 첫 번째 system 메시지만 씁니다 — 새 system 메시지를 끼워 넣으면 전달되지 않습니다.
+    const [first, ...rest] = messages;
+    if (first?.role !== 'system') return [context, ...messages];
+    return [{ role: 'system', content: `${first.content}\n\n${context.content}` }, ...rest];
   })
 
   .start();
@@ -65,9 +66,11 @@ async def before_chat(messages: list[Message], ctx: HookContext) -> list[Message
         content=f"[참고 문서]\n{chr(10).join(docs)}\n\n[고객 정보] {customer.name}",
     )
 
-    result = list(messages)
-    result.insert(1, context)
-    return result
+    # 시스템 프롬프트(첫 번째 system 메시지)에 이어 붙이기 — 내장 LLM 어댑터는 첫 번째 것만 씁니다
+    first, *rest = messages
+    if first.role != "system":
+        return [context, *messages]
+    return [Message(role="system", content=f"{first.content}\n\n{context.content}"), *rest]
 
 await (
     gw.pipeline()

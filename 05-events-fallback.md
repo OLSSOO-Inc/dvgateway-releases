@@ -110,8 +110,8 @@ SDK  session.customValue1~3 (TypeScript) / session.custom_value_1~3 (Python)
 
 | 활용 패턴 | 코드 예시 |
 |---|---|
-| TTS 인사말에 고객명 | `` gw.say(id, `${cv1}님 안녕하세요`) `` |
-| LLM 프롬프트 주입 | `` llm.setSystemPrompt(`고객: ${cv1}`) `` |
+| TTS 인사말에 고객명 | `` gw.say(id, `${cv1}님 안녕하세요`, tts) `` |
+| LLM 프롬프트 주입 | `onBeforeChat` 훅에서 `ctx.session.customValue1` 로 시스템 메시지 추가 (아래 예시) |
 | 통화 목적별 분기 | `if (cv3 === 'happycall') { ... }` |
 | 외부 API 조회 키 | `crm.lookup(cv2) // 주문번호로 조회` |
 
@@ -121,15 +121,19 @@ SDK  session.customValue1~3 (TypeScript) / session.custom_value_1~3 (Python)
 gw.pipeline()
   .stt(stt).llm(llm).tts(tts)
   .onNewCall(async (session) => {
-    const grade = session.customValue1;     // "vip"
     const campaign = session.customValue2;  // "campaign-2026Q1"
     const extId = session.customValue3;     // 외부 시스템 고유 ID
-
-    // 고객 등급에 따라 LLM 프롬프트를 다르게 설정
-    if (grade === 'vip') {
-      llm.setSystemPrompt('VIP 고객입니다. 최우선으로 응대해 주세요.');
-    }
     console.log(`캠페인: ${campaign}, 외부 ID: ${extId}`);
+  })
+  // 고객 등급에 따라 LLM 프롬프트를 다르게 — 어댑터 하나를 여러 통화가 함께 쓰므로
+  // 어댑터 설정을 바꾸지 말고, 통화마다 훅에서 시스템 프롬프트에 이어 붙입니다.
+  // (내장 LLM 어댑터는 첫 번째 system 메시지만 씁니다 — 새 system 메시지를 끼우면 전달되지 않습니다.)
+  .onBeforeChat(async (messages, ctx) => {
+    if (ctx.session.customValue1 !== 'vip') return messages;   // "vip"
+    const [first, ...rest] = messages;
+    const extra = 'VIP 고객입니다. 최우선으로 응대해 주세요.';
+    if (first?.role !== 'system') return [{ role: 'system', content: extra }, ...messages];
+    return [{ role: 'system', content: `${first.content}\n${extra}` }, ...rest];
   })
   .start();
 ```
@@ -137,16 +141,26 @@ gw.pipeline()
 **SDK에서 활용 — Python:**
 
 ```python
+from dvgateway.types import HookContext, Message
+
 @gw.on("call:new")
 async def on_new_call(event):
-    session = event["session"]
-    grade    = session.custom_value_1    # "vip"
-    campaign = session.custom_value_2    # "campaign-2026Q1"
-    ext_id   = session.custom_value_3    # 외부 시스템 고유 ID
-
-    if grade == "vip":
-        llm.set_system_prompt("VIP 고객입니다. 최우선으로 응대해 주세요.")
+    session = event.session                # 이벤트는 dict 가 아니라 객체입니다
+    campaign = session.custom_value_2      # "campaign-2026Q1"
+    ext_id   = session.custom_value_3      # 외부 시스템 고유 ID
     print(f"캠페인: {campaign}, 외부 ID: {ext_id}")
+
+# 고객 등급별 LLM 프롬프트 — 통화마다 훅에서 시스템 메시지를 덧붙입니다
+async def before_chat(messages: list[Message], ctx: HookContext) -> list[Message]:
+    if ctx.session.custom_value_1 != "vip":   # "vip"
+        return messages
+    extra = "VIP 고객입니다. 최우선으로 응대해 주세요."
+    first, *rest = messages
+    if first.role != "system":                 # 내장 LLM 어댑터는 첫 번째 system 메시지만 씁니다
+        return [Message(role="system", content=extra), *messages]
+    return [Message(role="system", content=f"{first.content}\n{extra}"), *rest]
+
+await gw.pipeline().stt(stt).llm(llm).tts(tts).on_before_chat(before_chat).start()
 ```
 
 **CDR (통화 기록)에도 저장:** 커스텀 변수는 CDR에 자동 기록되며, CSV/JSON 내보내기와 REST API 조회 시 `customValue1`, `customValue2`, `customValue3` 필드로 포함됩니다.
@@ -276,8 +290,7 @@ gw.onCallEvent(async (event) => {
     await playNext();
   });
 });
-
-await gw.connect();
+// 첫 onCallEvent 구독 때 SDK 가 알아서 연결합니다 — 별도 connect() 호출은 없습니다.
 ```
 
 ### S2S (OpenAI Realtime / Gemini Live) 와의 연동
@@ -394,9 +407,9 @@ gw.on("call:dtmf", (event) => {
 ```python
 @gw.on("call:dtmf")
 async def on_dtmf(event):
-    if event["linkedId"] != my_linked_id:
+    if event.linked_id != my_linked_id:   # 이벤트는 dict 가 아니라 객체입니다
         return
-    print(f"DTMF: {event['digit']} ({event.get('durationMs')}ms)")
+    print(f"DTMF: {event.digit} ({event.duration_ms}ms)")
 ```
 
 > 여러 자리를 순서대로 수집할 때는 `call:dtmf` 를 직접 구독하는 것보다 [`collect_dtmf` / `collectDtmf`](13-voice-flow-controls.md) 고수준 유틸을 사용하는 것을 권장합니다 (타임아웃, 종료 키, STT 뮤트 자동 처리).

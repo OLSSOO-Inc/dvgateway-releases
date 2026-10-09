@@ -154,9 +154,9 @@ if __name__ == "__main__":
 | `characters:<s>` | `characters:abc` | "에이 비 시" |
 | `tone:<name>` | `tone:dial`, `tone:busy` | 내장 신호음 |
 
-**반환값**: `{ linkedId, playbackId, state }`. `playbackId`는 중단/이벤트 매칭에 사용.
+**반환값**: `{ linkedId, playbackId, state }`. `playbackId`는 `stopPlayback()` 으로 중단할 때 씁니다.
 
-**비동기**: 메서드는 재생 **시작 직후** 즉시 반환합니다. 끝까지 기다리려면 `audio:playback` 이벤트(`lifecycle: done`)를 구독하거나 — 간단한 IVR에서는 다음 단계로 바로 넘어가도 무방합니다 (재생은 순서대로 이어집니다).
+**비동기**: 메서드는 재생 **시작 직후** 즉시 반환합니다. ⚠️ **재생 완료 이벤트는 오지 않습니다** — `audio:playback` 은 `playAudio()` 전용이라 lite 통화의 `playback()` 에는 발생하지 않습니다. 간단한 IVR에서는 다음 단계로 바로 넘어가도 무방합니다(재생은 순서대로 이어지고, 안내가 나오는 동안 `collectDtmf()` 로 입력을 받을 수 있습니다). 정말 끝까지 기다려야 하면 아래 `liteTtsPlayback()` 의 `synthesizedBytes` 로 길이를 계산하세요.
 
 ### 4.2 `collectDtmf` / `collect_dtmf`
 
@@ -224,7 +224,19 @@ print(result.playback_id, result.cache_hit)
 
 **중단**: 일반 playback과 동일 — `stopPlayback(linkedId, playbackId)` / `stop_playback(linked_id, playback_id)`.
 
-**이벤트**: `audio:playback` 이벤트 (`lifecycle: playing` → `done`) 가 발화됨. `tts:playback` 이벤트(`inject_tts` 라이프사이클) 는 발화되지 **않음** — 그건 PCM 스트림 주입 전용입니다.
+**이벤트**: ⚠️ 재생 시작·완료 이벤트는 **오지 않습니다.** `audio:playback`(`playAudio()` 전용)도, `tts:playback`(`injectTts()` 전용)도 발생하지 않습니다. 재생이 끝난 뒤 이어서 할 일이 있으면 길이로 기다리세요 — 합성 오디오는 16kHz 16-bit 모노라 **1초 = 32,000바이트**이므로 `synthesizedBytes / 32000` 초 + 여유(약 0.5초)입니다.
+
+```typescript
+const r = await gw.liteTtsPlayback({ linkedId, text: '상담원을 연결합니다.' });
+await new Promise((ok) => setTimeout(ok, (r.synthesizedBytes / 32000) * 1000 + 500));
+await gw.redirect(linkedId, '1000');
+```
+
+```python
+r = await gw.lite_tts_playback(linked_id, "상담원을 연결합니다.")
+await asyncio.sleep(r.synthesized_bytes / 32000 + 0.5)
+await gw.redirect(linked_id, "1000")
+```
 
 ---
 

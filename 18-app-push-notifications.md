@@ -61,7 +61,7 @@ const client = new DVGatewayClient({
 });
 
 client.on("call:ended", async (event) => {
-  const linkedId = event.session.linkedId;
+  const linkedId = event.linkedId;   // call:ended 는 이벤트에 바로 linkedId 가 있습니다
   // (앱/백엔드에서) 요약·전사·녹취를 만들고 서명된 단기 URL을 발급했다고 가정
   const links = await buildSignedLinks(linkedId); // 직접 구현
 
@@ -84,7 +84,7 @@ client = DVGatewayClient(base_url="https://gw.example.com:8080",
 
 @client.on("call:ended")
 async def on_ended(event):
-    linked_id = event["session"].linked_id
+    linked_id = event.linked_id   # call:ended 는 이벤트에 바로 linked_id 가 있습니다
     links = await build_signed_links(linked_id)  # 직접 구현
     await client.notify_call_summary(
         linked_id,
@@ -118,7 +118,7 @@ await client.notify_missed_call(
     extension="1001",
     caller_number="01012345678",
     caller_name="홍길동",
-    linked_id=ev["linkedId"],
+    linked_id=ev.linked_id,   # 선택 — 앱에서 통화이력과 연결
 )
 ```
 

@@ -60,7 +60,6 @@ DTMF 수집은 게이트웨이에서 기본으로 켜져 있어 별도 설정 �
 ```python
 import asyncio
 from dvgateway import DVGatewayClient
-from dvgateway.auth.manager import ApiKeyAuth
 
 gw = DVGatewayClient(
     base_url="https://gateway.example.com",

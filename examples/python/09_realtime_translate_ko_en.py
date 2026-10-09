@@ -33,7 +33,7 @@ load_dotenv()
 async def main() -> None:
     gw = DVGatewayClient(
         base_url=os.getenv("DV_BASE_URL", "http://localhost:8080"),
-        api_key=os.getenv("DV_API_KEY", "dev-no-auth"),
+        auth={"type": "apiKey", "api_key": os.getenv("DV_API_KEY", "dev-no-auth")},
     )
 
     # `input_language` + `output_language` + `gpt-realtime-translate` is
@@ -55,7 +55,8 @@ async def main() -> None:
     )
 
     def on_transcript(t):  # type: ignore[no-untyped-def]
-        tag = "EN" if getattr(t, "role", None) == "assistant" else "KO"
+        # speaker: "customer" = caller (Korean), "agent" = AI (English)
+        tag = "EN" if t.speaker == "agent" else "KO"
         print(f"[{tag}] {t.text}")
 
     def on_error(err, linked_id):  # type: ignore[no-untyped-def]
@@ -68,30 +69,40 @@ async def main() -> None:
     print(f"📡  Gateway: {os.getenv('DV_BASE_URL')}")
     print("🌐  Translate: ko → en (swap input_language/output_language to invert)\n")
 
-    async def handle_call(call):  # type: ignore[no-untyped-def]
-        print(f"[call {call.linked_id}] connected — starting interpreter session")
+    # Route the AI's translated audio back into the call. The adapter passes
+    # the linked_id of the session that produced the audio, so one handler
+    # serves every call. inject_tts takes an async iterable of PCM chunks.
+    def on_audio(chunk: bytes, linked_id: str) -> None:
+        async def once():  # type: ignore[no-untyped-def]
+            yield chunk
 
-        audio_stream = gw.open_audio_stream(
-            call.linked_id,
-            pipeline_type="s2s",
-            direction="in",
-        )
+        asyncio.ensure_future(gw.inject_tts(linked_id, once()))
 
-        def on_audio(chunk: bytes, linked_id: str) -> None:
-            asyncio.ensure_future(gw.inject_tts(linked_id, chunk))
+    interpreter.on_audio_output(on_audio)
 
-        interpreter.on_audio_output(on_audio)
+    # Events are objects (event.type / event.session.linked_id), not dicts.
+    async def on_call(event):  # type: ignore[no-untyped-def]
+        if event.type == "call:new":
+            linked_id = event.session.linked_id
+            print(f"[call {linked_id}] connected — starting interpreter session")
+            audio_stream = gw.stream_audio(
+                linked_id,
+                dir="in",            # capture caller audio only
+                pipeline_type="s2s",
+            )
+            await interpreter.start_session(linked_id, audio_stream)
+        elif event.type == "call:ended":
+            await interpreter.stop(event.linked_id)
+            print(f"[call {event.linked_id}] interpreter session ended")
 
-        try:
-            await interpreter.start_session(call.linked_id, audio_stream)
-        finally:
-            print(f"[call {call.linked_id}] interpreter session ended")
-
+    # The SDK opens the call-event socket on the first subscription (no connect()).
+    gw.on_call_event(on_call)
     try:
-        await gw.on_call(handle_call)
-    except KeyboardInterrupt:
+        await asyncio.Event().wait()   # run until Ctrl+C
+    finally:
         print("\nShutting down interpreter…")
-        await interpreter.stop()
+        await interpreter.stop()       # no argument = stop every session
+        gw.close()
 
 
 if __name__ == "__main__":

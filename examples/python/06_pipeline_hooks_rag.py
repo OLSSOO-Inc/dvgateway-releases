@@ -156,10 +156,14 @@ async def before_chat_hook(messages: list[Message], ctx: HookContext) -> list[Me
 
     context_msg = Message(role="system", content=context_text)
 
-    # 시스템 프롬프트 바로 뒤에 삽입
+    # 시스템 프롬프트에 이어 붙이기.
+    # ⚠️ 내장 LLM 어댑터는 **첫 번째 system 메시지만** 사용합니다 — 두 번째 system
+    #    메시지를 끼워 넣으면 그 내용은 LLM 에 전달되지 않습니다.
     result = list(messages)
     sys_idx = next((i for i, m in enumerate(result) if m.role == "system"), -1)
-    result.insert(sys_idx + 1, context_msg)
+    if sys_idx < 0:
+        return [context_msg, *result]
+    result[sys_idx] = Message(role="system", content=f"{result[sys_idx].content}\n\n{context_msg.content}")
     return result
 
 

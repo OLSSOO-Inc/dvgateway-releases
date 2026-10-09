@@ -83,7 +83,7 @@ await gw.pipeline()
       });
     }
 
-    // 1. 회의록: 게이트웨이가 자체 STT(POST /api/v1/stt/conf/{confId})로 직접 만든다.
+    // 1. 회의록: 게이트웨이가 자체 STT(POST /api/v1/stt/conf/{confId}/start)로 직접 만든다.
     //    SDK 가 전사를 제출하는 API 는 없다(submitTranscript() 는 DVGatewayUnsupportedError).
     //    회의록은 gw.downloadMinutes(confId) 로 읽는다(진행 중=실시간, 종료 후=저장본 · 게이트웨이 1.4.16.285+).
 

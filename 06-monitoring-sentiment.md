@@ -198,7 +198,7 @@ await (
 > `submitTranscript()`·`autoSubmitTranscripts()` 는 SDK 1.9.7 부터 요청을 보내지 않고 `DVGatewayUnsupportedError` 를 던집니다
 > (자동 제출기는 아무것도 하지 않는 콜백 + 경고 1회).
 >
-> - 회의록은 **게이트웨이가 자체 STT**(`POST /api/v1/stt/conf/{confId}`)로 만듭니다.
+> - 회의록은 **게이트웨이가 자체 STT**(`POST /api/v1/stt/conf/{confId}/start`)로 만듭니다.
 > - 읽기는 `downloadMinutes(confId, 'json'|'txt')` → `GET /api/v1/conferences/{confId}` — 회의 **진행 중에는 실시간 회의록**,
 >   **끝난 뒤에는 게이트웨이가 저장한 사본**을 돌려줍니다(같은 JSON 모양 · 응답 헤더 `X-DVG-Minutes-Source: live|stored`).
 >   종료 후 저장은 **운영사가 회의록 저장을 켠 경우에만** 이루어지고(기본 꺼짐) 발화가 1건 이상 있었을 때만 생깁니다 — **저장된 것이 없으면 404**

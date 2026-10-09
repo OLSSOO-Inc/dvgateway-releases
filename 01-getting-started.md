@@ -195,15 +195,15 @@ async def main():
 
     @gw.on("call:new")
     async def on_new_call(event):
-        session = event["session"]
+        session = event.session   # 이벤트는 dict 가 아니라 객체입니다
         print(f"📞 리얼타임 세션 시작: {session.linked_id}")
         audio_stream = gw.stream_audio(session.linked_id, dir="in")
         await realtime.start_session(session.linked_id, audio_stream)
 
     @gw.on("call:ended")
     async def on_call_ended(event):
-        print(f"📴 리얼타임 세션 종료: {event['linked_id']}")
-        await realtime.stop(event["linked_id"])
+        print(f"📴 리얼타임 세션 종료: {event.linked_id}")
+        await realtime.stop(event.linked_id)
 
     # 이벤트 루프 유지 (pipeline이 아닌 이벤트 기반 패턴에서는 프로세스 종료 방지)
     print("🎙️ OpenAI Realtime 봇이 준비되었습니다.")

@@ -42,7 +42,8 @@
 import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
 import { DeepgramAdapter } from 'dvgateway-adapters/stt';
-import { OpenAILlmAdapter, WebhookAdapter } from 'dvgateway-adapters/llm';
+import { OpenAILlmAdapter } from 'dvgateway-adapters/llm';
+import { WebhookAdapter } from 'dvgateway-adapters'; // '/llm' 하위 경로에는 없고 최상위에서만 export 됩니다
 import { ElevenLabsAdapter, GeminiTtsAdapter } from 'dvgateway-adapters/tts';
 
 // ─── 1. 클라이언트 초기화 ───────────────────────────────────────────────────

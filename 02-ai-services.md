@@ -7,10 +7,9 @@
 | 서비스 | 어댑터 클래스 | 추천 모델 | 특징 |
 |--------|------------|---------|------|
 | **Deepgram** | `DeepgramAdapter` | `nova-3` | 최고 정확도, 한국어 지원, 가장 빠른 스트리밍 |
-| **whisper.cpp** ⭐로컬 | `WhisperCppAdapter` | `large-v3-turbo` | 완전 오프라인, 무료, GPU/CPU 모두 지원 |
-| **Faster-Whisper** ⭐로컬 | `FasterWhisperAdapter` | `large-v3` | Python 고속 추론 (CTranslate2), 배치 지원 |
-| **OpenAI Whisper** 로컬 | `WhisperLocalAdapter` | `large-v3` | Python 공식 라이브러리, 설치 간단 |
-| **Qwen3-ASR** 로컬 | `QwenAudioAdapter` | `Qwen3-ASR-1.7B` | 52개 언어, 오픈소스 최고 성능 ASR (2026-01 출시) |
+| **Google Chirp 3** | `GoogleChirp3Adapter` | `chirp_3` | Google Cloud STT, 한국어 지원 |
+| **OpenAI** | `OpenAISttAdapter` | `gpt-4o-transcribe` | 다국어 정확도 우수 |
+| **로컬 엔진** (whisper.cpp · Faster-Whisper 등) | 직접 구현 (`SttAdapter`) | — | 내장 어댑터 없음 — [로컬 STT 직접 구현](04-adapter-reference.md#로컬오프라인-stt--직접-어댑터-구현) 참고 |
 
 ### 음성 합성 (TTS — Text to Speech)
 
@@ -26,8 +25,7 @@
 |--------|------------|---------|------|
 | **Anthropic Claude** | `AnthropicAdapter` | `claude-haiku-4-5-20251001` | 초저지연, 한국어 우수 |
 | **OpenAI GPT** | `OpenAILlmAdapter` | `gpt-4o-mini` | 저렴, 빠름 |
-| **Qwen (Ollama)** ⭐로컬 | `OllamaAdapter` | `qwen3.5:9b` | 완전 무료, GPU 불필요 (CPU 가능), 멀티모달 |
-| **vLLM 서버** 로컬 | `OpenAICompatAdapter` | `Qwen/Qwen3-8B` 등 | OpenAI 호환 API, 고성능 GPU 서버 |
+| **로컬 LLM** (Ollama · vLLM · LM Studio 등) | `OpenAILlmAdapter` + `baseUrl` | `qwen3:8b` 등 | OpenAI 호환 API 로 연결 (SDK 1.9.2+) — [로컬 LLM](04-adapter-reference.md#로컬오프라인-llm--ollama--vllm--lm-studio) 참고 |
 
 ### 실시간 음성-음성 직통 (Realtime Speech-to-Speech)
 
