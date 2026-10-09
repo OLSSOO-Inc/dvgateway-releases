@@ -2,7 +2,7 @@
 
 ## 13. 모니터링 대시보드
 
-서버 설치 후 웹 브라우저에서 `http://your-server:8081` 에 접속하면
+운영사가 알려준 대시보드 주소에 테넌트 계정으로 로그인하면
 실시간 모니터링 대시보드를 볼 수 있습니다.
 
 **대시보드에서 확인 가능한 항목:**
@@ -194,19 +194,17 @@ await (
 
 ### 회의록 감정 메타데이터
 
-> ⚠️ **정정(SDK 1.9.7)** — 이 절은 종전에 *"`submitTranscript()` 로 감정 메타데이터가 회의록에 함께 저장된다"* 고
-> 적었지만 **그 경로는 처음부터 동작하지 않았다**: 게이트웨이에 `/api/v1/minutes/{confId}/transcript` 가 **등록돼 있지 않아**
-> 언제나 404 였다(`go-gateway/internal/api` grep 0건). SDK 1.9.7 부터 `submitTranscript()`·`autoSubmitTranscripts()` 는
-> 요청을 보내지 않고 `DVGatewayUnsupportedError` 를 던진다(자동 제출기는 아무것도 하지 않는 콜백 + 경고 1회).
+> ⚠️ **SDK 에서 회의록에 감정 메타데이터를 제출하는 기능은 지원되지 않습니다.**
+> `submitTranscript()`·`autoSubmitTranscripts()` 는 SDK 1.9.7 부터 요청을 보내지 않고 `DVGatewayUnsupportedError` 를 던집니다
+> (자동 제출기는 아무것도 하지 않는 콜백 + 경고 1회).
 >
-> - 회의록은 **게이트웨이가 자체 STT**(`POST /api/v1/stt/conf/{confId}`)로 만든다.
+> - 회의록은 **게이트웨이가 자체 STT**(`POST /api/v1/stt/conf/{confId}`)로 만듭니다.
 > - 읽기는 `downloadMinutes(confId, 'json'|'txt')` → `GET /api/v1/conferences/{confId}` — 회의 **진행 중에는 실시간 회의록**,
->   **끝난 뒤에는 게이트웨이 1.4.16.285+ 가 저장한 사본**을 돌려준다(같은 JSON 모양 · 응답 헤더 `X-DVG-Minutes-Source: live|stored`).
->   저장본은 운영자가 `GW_MINUTES_PERSIST=true` 로 켰을 때(gw 1.4.16.286 부터 **기본 꺼짐**) 이고 발화가 1건 이상 있었을 때만 생긴다 — **저장된 것이 없거나 구버전 게이트웨이면 404**
->   (구버전에서 테넌트 토큰은 403). 테넌트 토큰은 **자기 테넌트 회의록만** 받는다. `'txt'` 는 게이트웨이 JSON 을 SDK 가 렌더링한 것이다.
-> - ⚠️ **발화별 `sentiment` 는 현재 채워지지 않는다** — 게이트웨이 STT 경로가 회의록에 감정 없이 기록한다
->   (`AddTranscriptWithSentiment` 의 외부 호출부 0건). 아래 예시는 **형식 참고**이며 SDK 쪽 감정 분석 결과는
->   `onTranscript` 의 `result.sentiment` 로만 받을 수 있다.
+>   **끝난 뒤에는 게이트웨이가 저장한 사본**을 돌려줍니다(같은 JSON 모양 · 응답 헤더 `X-DVG-Minutes-Source: live|stored`).
+>   종료 후 저장은 **운영사가 회의록 저장을 켠 경우에만** 이루어지고(기본 꺼짐) 발화가 1건 이상 있었을 때만 생깁니다 — **저장된 것이 없으면 404**
+>   (게이트웨이 1.4.16.285 미만에서 테넌트 토큰은 403). 테넌트 토큰은 **자기 테넌트 회의록만** 받습니다. `'txt'` 는 게이트웨이 JSON 을 SDK 가 렌더링한 것입니다.
+> - ⚠️ **발화별 `sentiment` 는 현재 채워지지 않습니다.** 아래 예시는 **형식 참고**이며 SDK 쪽 감정 분석 결과는
+>   `onTranscript` 의 `result.sentiment` 로만 받을 수 있습니다.
 
 **JSON 회의록 예시:**
 

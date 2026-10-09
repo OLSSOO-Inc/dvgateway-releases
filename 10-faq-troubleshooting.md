@@ -9,7 +9,7 @@ A: Deepgram의 `language: 'multi'` 또는 `language: 'ko'`를 사용하세요. N
 A: OpenAI Realtime 어댑터를 사용하는 경우 서버 VAD가 자동으로 처리합니다. 카스케이드 파이프라인에서는 `DELETE /api/v1/tts/{linkedId}` REST API를 호출하여 진행 중인 TTS 재생을 중단할 수 있습니다.
 
 **Q: AI 응답 대기 중 통화가 무음이 되어 고객이 끊습니다.**
-A: `GW_COMFORT_NOISE_ENABLED=true`를 설정하세요. 파이프라인 빌더 사용 시 별도 코드 없이 자동으로 comfort noise가 주입됩니다. 자세한 내용은 [16. Comfort Noise](#16-comfort-noise--ai-처리-중-무음-방지) 섹션을 참고하세요.
+A: Comfort Noise 기능을 쓰세요. 이 기능은 게이트웨이 운영사(관리자)가 켜야 하므로 운영사에 요청하세요. 켜진 뒤에는 파이프라인 빌더 사용 시 별도 코드 없이 자동으로 comfort noise가 주입됩니다. 자세한 내용은 [16. Comfort Noise](#16-comfort-noise--ai-처리-중-무음-방지) 섹션을 참고하세요.
 
 **Q: API 키 비용이 걱정됩니다.**
 A: [15. STT·TTS API 비용 절감](#15-stttts-api-비용-절감--캐시-및-최적화-전략) 섹션을 참고하세요. 주요 전략:
@@ -21,7 +21,7 @@ A: [15. STT·TTS API 비용 절감](#15-stttts-api-비용-절감--캐시-및-최
 A: `onTranscript` 콜백에서 DB에 저장하면 됩니다. 단, 개인정보보호법 준수를 위해 동의 없이 저장하지 마세요.
 
 **Q: 동시에 몇 통화까지 처리할 수 있나요?**
-A: 서버 라이선스에 따라 다릅니다 (1 / 10 / 50 / 100 / 500+ 동시 통화). `http://your-gateway:8080/api/v1/license/status`에서 현재 한도를 확인할 수 있습니다.
+A: 게이트웨이 라이선스에 따라 다릅니다 (1 / 10 / 50 / 100 / 500+ 동시 통화). 내 환경의 현재 한도는 운영사에 문의하세요. 한도를 넘는 통화는 callinfo 이벤트 `call:rejected` 로 알 수 있습니다.
 
 **Q: 인터넷 없이 온프레미스로만 사용 가능한가요?**
 A: DVGateway 서버 자체는 온프레미스로 설치 가능합니다. 단, AI 서비스(Deepgram, ElevenLabs 등)는 외부 API를 호출하므로 인터넷 연결이 필요합니다. 완전 폐쇄망 환경은 별도 문의하세요.
@@ -30,7 +30,9 @@ A: DVGateway 서버 자체는 온프레미스로 설치 가능합니다. 단, AI
 
 ## 20. 문제 해결
 
-> 💡 **게이트웨이를 올린 직후에 생긴 문제라면** 먼저 [업그레이드 안내](../upgrade-notes.md) 를 보세요 — 버전별로 바뀐 기본값(예: 1.4.16.234 부터 오디오 스트림 토큰 필수)을 모아 두었습니다.
+> 💡 **게이트웨이 버전이 바뀐 뒤 생긴 문제라면** 버전별로 바뀐 동작을 운영사에 확인하세요(예: 게이트웨이 1.4.16.234 부터 오디오 스트림 연결에 토큰이 필수입니다).
+>
+> 💡 **운영사에 문의할 때는** 다음을 함께 보내면 빨리 확인할 수 있습니다: 통화 `linkedId`, 문제가 생긴 시각(시간대 포함), 받은 HTTP 상태·오류 코드(`code`·`X-DVG-Auth-Code`), 사용한 SDK 버전, 호출한 API 경로.
 
 ### 오디오 스트림 연결이 401 로 거절된다 (gw 1.4.16.234+)
 
@@ -42,18 +44,16 @@ A: DVGateway 서버 자체는 온프레미스로 설치 가능합니다. 단, AI
 
 ### 연결 오류: `ECONNREFUSED http://localhost:8080`
 
-DVGateway 서버가 실행 중인지 확인하세요:
+SDK가 게이트웨이 주소에 접속하지 못한 경우입니다.
+
+1. `baseUrl`(Python `base_url`)이 운영사에서 받은 게이트웨이 주소·포트와 같은지 확인하세요.
+2. 봇을 실행하는 컴퓨터에서 그 주소로 접속할 수 있는지(사내망·VPN·방화벽) 확인하세요:
 
 ```bash
-# 서비스 상태 확인
-systemctl status dvgateway
-
-# 재시작
-systemctl restart dvgateway
-
-# 로그 확인
-journalctl -u dvgateway -f
+curl -sS https://gw.example.com/health
 ```
+
+3. 주소가 맞는데도 접속되지 않으면 운영사에 문의하세요 — 게이트웨이 주소, 시각, 오류 메시지를 함께 보내세요.
 
 ### SSL 오류: `SSL: WRONG_VERSION_NUMBER`
 
@@ -94,14 +94,7 @@ SDK가 게이트웨이 서버에 연결할 때 API 키를 JWT로 교환하는데
 1. `.env` 파일이 `bot.py` (또는 `bot.js`)와 **같은 폴더**에 있는지 확인
 2. `.env` 파일에서 `DV_API_KEY` 값이 플레이스홀더가 아닌 **실제 키**인지 확인
 3. 키 앞뒤에 따옴표(`"`)나 공백이 없는지 확인 (`.env` 파일에는 따옴표 없이 값만 넣으세요)
-4. 게이트웨이 서버에서 API 키를 다시 확인:
-
-```bash
-# DVGateway 서버에서 실행
-sudo cat /etc/dvgateway/api-key
-
-# 또는 대시보드(http://서버IP:8081) → 설정 → API Keys
-```
+4. 키가 맞는지 운영사에 다시 확인하세요(대시보드 접근 권한을 받았다면 **설정 → SDK API Key** 에서도 볼 수 있습니다).
 
 5. API 키가 맞는지 직접 테스트:
 
@@ -122,13 +115,14 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 
 1. Deepgram API 키가 올바른지 확인 (`dg_` 로 시작)
 2. 언어 코드 확인 (`language: 'ko'`)
-3. 대시보드(`http://your-server:8081`)에서 VU 미터로 오디오 수신 여부 확인
+3. `gw.streamAudio(linkedId)` 로 오디오 프레임이 실제로 들어오는지 확인 (프레임이 오지 않으면 운영사에 `linkedId` 와 시각을 보내 오디오 수신 여부 확인을 요청하세요)
 
 ### TTS 음성이 통화에 재생되지 않음
 
 1. `linkedId`가 정확한지 확인
 2. `audioFilter` 방향 확인 (인바운드/아웃바운드)
-3. DVGateway 로그에서 TTS 주입 오류 확인
+3. `gw.say()` 가 던진 오류와 callinfo 의 `tts:*` 이벤트를 확인
+4. 그래도 원인을 모르겠으면 운영사에 `linkedId`·시각·오류 메시지를 보내 확인을 요청하세요 (자세한 점검은 [TTS 오디오 문제 해결](12-tts-audio-troubleshooting.md) 참고)
 
 ### OpenAI Realtime 연결 오류
 
@@ -148,21 +142,7 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 
 ---
 
-## 21. 원라인 서버 업데이트
-
-```bash
-# 대시보드 UI에서 업데이트 버튼 클릭
-# 또는 터미널에서:
-curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/download/install.sh | sudo bash
-```
-
-업데이트는 서비스 무중단으로 진행됩니다 (zero-downtime rolling update).
-
----
-
----
-
-## 22. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
+## 21. 진짜 초보자용 메뉴얼 — Node.js·Python 설치부터 봇 실행까지
 
 > 이 섹션은 프로그래밍 경험이 없거나 처음 시작하는 분들을 위한 단계별 안내입니다.
 > 마치 옆에서 알려주듯이 하나씩 따라 하세요. 어렵지 않아요! 😊
@@ -232,26 +212,15 @@ cd my-voice-bot
 
 ---
 
-#### A-3. DVGateway 서버 설치
+#### A-3. 게이트웨이 접속 정보 받기
 
-AI 음성 봇이 통화를 받으려면 DVGateway 서버가 필요합니다.
-서버는 여러분의 컴퓨터(또는 클라우드 서버)에 설치합니다.
+AI 음성 봇은 DVGateway 게이트웨이를 통해 통화를 받습니다.
+게이트웨이는 운영사(관리자)가 운영합니다. 운영사에서 아래 두 가지를 받으세요:
 
-```bash
-# DVGateway 서버 원라인 설치 (Ubuntu/Debian 서버)
-# ⚠️ 이 명령은 서버 컴퓨터(Linux)에서 실행하세요
-curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/download/install.sh | sudo bash
-```
+- **게이트웨이 주소** (예: `https://gw.example.com`) — 코드의 `baseUrl` 에 넣습니다
+- **게이트웨이 API 키** (`DV_API_KEY`) — 아래 A-5-1 참고
 
-설치 후 자동으로 서비스가 시작됩니다.
-
-```bash
-# 서버가 잘 실행되는지 확인
-systemctl status dvgateway
-
-# 대시보드 접속 (웹 브라우저)
-# http://서버IP주소:8081
-```
+봇이 받을 전화번호를 AI 봇으로 연결하는 설정도 운영사가 합니다.
 
 ---
 
@@ -312,21 +281,23 @@ EOF
 #### A-5-1. 내 게이트웨이 API 키(`DV_API_KEY`) 확인하는 방법
 
 `.env` 파일에 넣을 `DV_API_KEY` 값을 모르겠다면 아래 방법으로 확인하세요.
-이 키는 Deepgram·OpenAI 등 AI 서비스 키와 **다른 키**입니다 — DVGateway 서버 자체에 접속하기 위한 키입니다.
+이 키는 Deepgram·OpenAI 등 AI 서비스 키와 **다른 키**입니다 — DVGateway 게이트웨이에 접속하기 위한 키입니다.
 
-**방법 1. 대시보드에서 확인 (가장 쉬움)**
+**방법 1. 운영사에 요청 (기본)**
 
-1. 브라우저를 열고 주소창에 `http://서버IP:8081` 을 입력합니다.
+게이트웨이 운영사(관리자)에게 SDK API 키를 요청하세요.
+
+**방법 2. 대시보드에서 확인 (대시보드 접근 권한을 받은 경우)**
+
+1. 운영사가 알려 준 대시보드 주소로 접속합니다.
 2. 왼쪽 메뉴에서 **설정**을 클릭합니다.
 3. **SDK API Key** 항목에서 키를 확인합니다.
 4. **복사** 버튼을 누르면 키가 복사됩니다 → `.env` 파일의 `DV_API_KEY=` 뒤에 붙여넣으세요.
 
-> 처음 접속하면 키가 자동으로 생성됩니다. 별도 신청이 필요 없습니다.
+**키를 분실했거나 재발급이 필요할 때**
 
-**방법 2. 키를 분실했거나 재발급이 필요할 때**
-
-대시보드(`http://서버IP:8081`)의 **설정 → SDK API Key** 에서 **재발급** 버튼을 누르세요.
-새 키가 화면에 한 번 표시됩니다 — 이때 반드시 복사해 두세요!
+운영사에 재발급을 요청하세요(대시보드 권한이 있다면 **설정 → SDK API Key → 재발급**).
+새 키는 한 번만 표시되므로 반드시 복사해 두세요!
 
 > ⚠️ 재발급하면 이전 키는 즉시 무효화됩니다. 기존 봇의 `.env` 파일도 새 키로 업데이트하세요.
 
@@ -546,7 +517,7 @@ async function main() {
       // TTS로 환영 인사를 먼저 재생합니다
       await gw.say(
         session.linkedId,
-        '안녕하세요, MAKECALL AI 안내 서비스입니다. 무엇을 도와드릴까요?',
+        '안녕하세요, AI 안내 서비스입니다. 무엇을 도와드릴까요?',
         tts,
       );
       console.log('🔊 인사말 재생 완료');
@@ -783,21 +754,18 @@ TTS> 담당자를 연결해 드리겠습니다.
 
 #### A-7⅞. 커스텀 변수 활용 — 해피콜 · 주문확인 · 설문조사 봇
 
-Dynamic VoIP 다이얼플랜에서 `CUSTOM_VALUE_01/02/03` 변수를 설정하면, SDK의 `session.customValue1/2/3`으로 전달됩니다. 이를 활용해 **고객 이름으로 인사하는 봇**, **주문번호를 확인하는 봇** 등을 만들 수 있습니다.
+통화마다 최대 3개의 업무 값(고객 이름·주문번호·용도 등)을 게이트웨이를 통해 SDK의 `session.customValue1/2/3`(Python `custom_value_1/2/3`)으로 받을 수 있습니다. 이를 활용해 **고객 이름으로 인사하는 봇**, **주문번호를 확인하는 봇** 등을 만들 수 있습니다.
 
 **원리 요약:**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Dynamic VoIP 다이얼플랜                                          │
-│   Set(CUSTOM_VALUE_01=홍길동)      ← 고객 이름               │
-│   Set(CUSTOM_VALUE_02=ORD-20260321-001)  ← 주문번호          │
-│   Set(CUSTOM_VALUE_03=happycall)  ← 용도 구분                │
-│   Stasis(dvgateway, ..., custom_value_01=${CUSTOM_VALUE_01}, │
-│     custom_value_02=${CUSTOM_VALUE_02},                      │
-│     custom_value_03=${CUSTOM_VALUE_03})                      │
+│ 운영사 설정 / 발신 요청                                       │
+│   값 1 = 홍길동             ← 고객 이름                      │
+│   값 2 = ORD-20260321-001   ← 주문번호                       │
+│   값 3 = happycall          ← 용도 구분                      │
 └───────────────────────┬─────────────────────────────────────┘
-                        │
+                        │  게이트웨이
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ SDK (Node.js / Python)                                      │
@@ -810,34 +778,9 @@ Dynamic VoIP 다이얼플랜에서 `CUSTOM_VALUE_01/02/03` 변수를 설정하�
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**다이얼플랜 예제 (Dynamic VoIP extensions.conf):**
+**값을 채우는 방법:**
 
-해피콜, 주문확인, 설문조사 등 각 용도별로 커스텀 변수를 설정합니다.
-CRM 시스템에서 Dynamic VoIP Originate API를 호출할 때 변수를 전달하면 됩니다.
-
-```ini
-; ── 해피콜 발신 컨텍스트 ──────────────────────────────────────
-; CRM에서 Originate 호출 시 CUSTOM_VALUE_01~03 변수를 전달합니다.
-; 예: AMI Action: Originate
-;     Channel: SIP/trunk/01012345678
-;     Context: outbound-happycall
-;     Variable: CUSTOM_VALUE_01=홍길동,CUSTOM_VALUE_02=ORD-20260321-001,CUSTOM_VALUE_03=happycall
-[outbound-happycall]
-exten => _X.,1,NoOp(해피콜 발신: ${CUSTOM_VALUE_01})
- same => n,Set(DID_NUMBER=${CALLERID(num)})
- same => n,Stasis(dvgateway,mode=both,role=monitor,did=${DID_NUMBER},callernum=${CALLERID(num)},callednum=${EXTEN},custom_value_01=${CUSTOM_VALUE_01},custom_value_02=${CUSTOM_VALUE_02},custom_value_03=${CUSTOM_VALUE_03})
- same => n,Dial(SIP/trunk/${EXTEN},60)
- same => n,Hangup()
-
-; ── 설문조사 발신 컨텍스트 ────────────────────────────────────
-; CUSTOM_VALUE_01=고객이름, CUSTOM_VALUE_02=설문ID, CUSTOM_VALUE_03=survey
-[outbound-survey]
-exten => _X.,1,NoOp(설문조사 발신: ${CUSTOM_VALUE_01})
- same => n,Set(DID_NUMBER=${CALLERID(num)})
- same => n,Stasis(dvgateway,mode=both,role=monitor,did=${DID_NUMBER},callernum=${CALLERID(num)},callednum=${EXTEN},custom_value_01=${CUSTOM_VALUE_01},custom_value_02=${CUSTOM_VALUE_02},custom_value_03=${CUSTOM_VALUE_03})
- same => n,Dial(SIP/trunk/${EXTEN},60)
- same => n,Hangup()
-```
+어떤 통화에 어떤 값을 넣을지(해피콜·주문확인·설문조사 발신 등)는 운영사가 설정합니다. 운영사에 "통화에 커스텀 값 1~3(`CUSTOM_VALUE_01`~`03`)으로 이런 값을 넣어 달라"고 요청하세요. 값이 비어 있으면 SDK 필드는 `undefined`(Python `None`)입니다.
 
 ##### 예제 1. 해피콜 봇 (Node.js)
 
@@ -1179,7 +1122,7 @@ python examples/python/05_happycall_bot.py
 
 ##### 커스텀 변수 활용 요약
 
-| 변수 | SDK 필드 (TS / Python) | 활용 예시 |
+| 커스텀 값 | SDK 필드 (TS / Python) | 활용 예시 |
 |------|----------------------|----------|
 | `CUSTOM_VALUE_01` | `customValue1` / `custom_value_1` | 고객 이름 → TTS 인사말에 삽입 |
 | `CUSTOM_VALUE_02` | `customValue2` / `custom_value_2` | 주문번호 / 설문 ID → 업무 컨텍스트 |
@@ -1218,9 +1161,7 @@ llm.setSystemPrompt(
 );
 ```
 
-> 💡 **CRM 연동 팁:** Dynamic VoIP AMI `Originate` API로 전화를 걸 때
-> `Variable` 파라미터에 `CUSTOM_VALUE_01=홍길동,CUSTOM_VALUE_02=ORD-001`을 전달하면,
-> 자동으로 다이얼플랜 → 게이트웨이 → SDK로 전달됩니다.
+> 💡 **CRM 연동 팁:** CRM에서 발신할 때 이 값을 함께 넘기는 방법은 운영사와 협의하세요.
 
 ---
 
@@ -1363,7 +1304,7 @@ DV_API_KEY=여기에_게이트웨이_API_키_붙여넣기
 > ```
 
 **`DV_API_KEY` 값을 모르겠다면?** → 위의 [A-5-1. 내 게이트웨이 API 키 확인하는 방법](#a-5-1-내-게이트웨이-api-키dv_api_key-확인하는-방법) 섹션을 참고하세요.
-대시보드(`http://서버IP:8081`) → 설정 → SDK API Key에서 복사하는 것이 가장 쉽습니다.
+운영사에 요청하거나, 대시보드 권한이 있다면 설정 → SDK API Key에서 복사하세요.
 
 ---
 
@@ -1578,7 +1519,7 @@ async def main():
         # TTS로 환영 인사를 먼저 재생합니다
         await gw.say(
             session.linked_id,
-            "안녕하세요, MAKECALL AI 안내 서비스입니다. 무엇을 도와드릴까요?",
+            "안녕하세요, AI 안내 서비스입니다. 무엇을 도와드릴까요?",
             tts,
         )
         print("🔊 인사말 재생 완료")
@@ -1817,7 +1758,8 @@ TTS> 담당자를 연결해 드리겠습니다.
 sudo tee /etc/systemd/system/voice-bot.service << 'EOF'
 [Unit]
 Description=My Voice Bot
-After=network.target dvgateway.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -1850,15 +1792,11 @@ journalctl -u voice-bot -f
 
 #### "ECONNREFUSED" 오류가 나요
 
-DVGateway 서버가 실행 중이지 않습니다.
+게이트웨이 주소에 접속하지 못했습니다.
 
-```bash
-# 서버 상태 확인
-sudo systemctl status dvgateway
-
-# 서버 시작
-sudo systemctl start dvgateway
-```
+1. 코드의 `baseUrl`(`base_url`)이 운영사에서 받은 주소·포트와 같은지 확인하세요.
+2. 봇 컴퓨터의 인터넷·사내망 연결을 확인하세요.
+3. 그래도 안 되면 운영사에 게이트웨이 주소·시각·오류 메시지를 보내 문의하세요.
 
 #### "Invalid API key" 오류가 나요
 
@@ -1893,16 +1831,9 @@ pip install "dvgateway[adapters]" python-dotenv
 
 #### 전화가 와도 봇이 응답하지 않아요
 
-1. SIP 전화기 설정이 DVGateway 서버를 가리키는지 확인
-2. 방화벽에서 SIP(5060) 및 RTP(10000-20000) 포트가 열려 있는지 확인:
-
-```bash
-# Ubuntu 방화벽 포트 열기
-sudo ufw allow 5060/udp    # SIP
-sudo ufw allow 10000:20000/udp  # RTP
-sudo ufw allow 8080/tcp    # SDK API
-sudo ufw allow 8081/tcp    # 대시보드
-```
+1. 봇이 실행 중이고 "✅ 봇이 준비되었습니다" 가 출력됐는지 확인하세요.
+2. `onNewCall`(`on_new_call`) 로그가 찍히는지 확인하세요. 찍히지 않으면 그 전화번호가 AI 봇으로 연결되지 않은 것입니다 — 운영사에 **건 전화번호와 시각**을 보내 연결 설정을 확인해 달라고 요청하세요.
+3. `onNewCall` 은 찍히는데 응답이 없으면 `onError` 로그와 STT·TTS 어댑터 오류를 확인하세요.
 
 #### Python `asyncio` 관련 오류가 나요 (Windows)
 
@@ -1943,4 +1874,4 @@ if sys.platform == "win32":
 ---
 
 © 2026 OLSSOO Inc. All rights reserved.
-DVGateway SDK는 [MIT 라이선스](../LICENSE)로 배포됩니다.
+DVGateway SDK는 MIT 라이선스로 배포됩니다.

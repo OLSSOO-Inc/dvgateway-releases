@@ -17,17 +17,12 @@ MCP(Model Context Protocol)는 AI 에이전트가 외부 시스템의 기능을 
 
 ---
 
-## 1. 켜기 (2분)
+## 1. 켜기
 
-```bash
-# 게이트웨이 서버에서
-echo 'GW_MCP_ENABLED=true' | sudo tee -a /etc/dvgateway/dvgateway.env
-sudo systemctl restart dvgateway
-# 부팅 로그 확인: [MCP] server enabled — POST /mcp ...
-```
+이 기능은 게이트웨이 운영사(관리자)가 켜야 합니다. 운영사에 요청하세요.
 
 > 기본은 **꺼짐**입니다. 전화 발신·문자 발송을 AI 에게 여는 기능이므로
-> 의도적으로 켜야 합니다.
+> 의도적으로 켜야 합니다. 꺼져 있으면 `POST /mcp` 가 404 를 돌려줍니다.
 
 **토큰 발급** (모든 예시 공통 — 테넌트 스코프 토큰 권장):
 
@@ -79,19 +74,19 @@ Authentication 에 Bearer 토큰. AI Agent 노드에 붙이면 됩니다.
 
 ```bash
 # 도구 목록 보기
-curl -s https://gw:8080/mcp -H "Authorization: Bearer $TOKEN" \
+curl -s https://gw.example.com/mcp -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq '.result.tools[].name'
 
 # 최근 통화 5건
-curl -s https://gw:8080/mcp -H "Authorization: Bearer $TOKEN" \
+curl -s https://gw.example.com/mcp -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
        "params":{"name":"list_recent_calls","arguments":{"limit":5}}}' \
   | jq -r '.result.content[0].text'
 
 # 특정 통화 AI 요약 (배송 렌즈 + 키워드 하이라이트)
-curl -s https://gw:8080/mcp -H "Authorization: Bearer $TOKEN" \
+curl -s https://gw.example.com/mcp -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call",
        "params":{"name":"summarize_call",
@@ -115,9 +110,9 @@ curl -s https://gw:8080/mcp -H "Authorization: Bearer $TOKEN" \
 토큰이면 도구 인자에 `tenantId` 를 지정합니다. 모바일 앱 토큰은 MCP 를 쓸 수
 없습니다(서버/에이전트 전용 표면).
 
-## 6. 온프렘 — 인터넷 없이 전부 돌리기
+## 6. 사내망 구성 — 인터넷 없이 전부 돌리기
 
-1. **MCP 서버**: 게이트웨이 내장 — 사내망만으로 동작.
+1. **MCP 서버**: 게이트웨이 내장 — 사내망만으로 동작(게이트웨이가 사내에 설치된 경우).
 2. **AI 요약의 LLM 도 사내로**: 대시보드 → 프로바이더 API 키 → **LLM →
    OpenAI GPT 카드**에 Base URL 로 사내 vLLM/Ollama 주소를 입력
    (예 `http://10.0.0.5:8000`), 모델명은 "AI 파이프라인" 탭 `llmModel`
@@ -126,7 +121,7 @@ curl -s https://gw:8080/mcp -H "Authorization: Bearer $TOKEN" \
 
 ## 7. 자주 묻는 것
 
-- **404 가 나요** → `GW_MCP_ENABLED=true` + 재시작 확인.
+- **404 가 나요** → MCP 기능이 꺼져 있습니다. 운영사에 활성화를 요청하세요.
 - **401 이 나요** → Bearer 토큰 만료/누락. `/api/v1/auth/token` 으로 재발급.
 - **요약 도구가 503** → STT/LLM 키 미설정. `GET /api/v1/config/ai` 로 가용성을
   확인하고 대시보드 "프로바이더 API 키" 탭에서 키를 등록하세요.
@@ -134,6 +129,3 @@ curl -s https://gw:8080/mcp -H "Authorization: Bearer $TOKEN" \
   [09. 파이프라인 훅·Webhook](09-hooks-webhook.md))으로도 대부분 가능합니다 —
   MCP 는 "에이전트가 전화를 조작", webhook 은 "통화 중 파이프라인이 외부 데이터
   사용"으로 방향이 다릅니다.
-
-> 기술 상세(프로토콜·보안·설계)는 저장소의
-> [docs/mcp-integration.md](https://github.com/OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway/blob/master/docs/mcp-integration.md) 참조.

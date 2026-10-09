@@ -213,7 +213,7 @@ await gw.pipeline()
   .onNewCall(async (session) => {
     console.log(
       `📞 [${session.linkedId}] 새 콜: ${session.caller ?? '비공개'}\n` +
-      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // ── 커스텀 값 (운영사 PBX 설정에서 전달) ──
       // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
       // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
       `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +

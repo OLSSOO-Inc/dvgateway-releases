@@ -129,8 +129,8 @@ AI가 추천할 답변의 "지식 베이스"를 준비합니다.
 ## 🚀 다음 단계
 
 - 도입 검토 → 영업팀 문의로 콜센터 환경 진단 받기
-- 기술 구현 → [docs/sdk-guide/05-events-fallback.md](../sdk-guide/05-events-fallback.md), [06-monitoring-sentiment.md](../sdk-guide/06-monitoring-sentiment.md)
-- 다이얼플랜 monitor 모드 → `go-gateway/docs/asterisk-dialplan.md`
+- 기술 구현 → [docs/sdk-guide/05-events-fallback.md](../05-events-fallback.md), [06-monitoring-sentiment.md](../06-monitoring-sentiment.md)
+- 상담 번호를 monitor 모드로 연결 → 운영사에 요청
 - 다른 가이드 → [README.md](README.md)
 
 ---

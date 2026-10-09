@@ -194,7 +194,7 @@ const interpreter = new OpenAIRealtimeAdapter({
 
 - 지원 언어: 입력 70+ / 출력 13 (OpenAI Realtime translate 기준).
 - 직접 `instructions`를 지정하면 SDK 자동 합성을 덮어쓰므로 도메인 용어집/존댓말 규칙 커스텀 시 사용.
-- 실행 가능 예제: [examples/10-realtime-translate-ko-en.ts](../../examples/10-realtime-translate-ko-en.ts) · [examples/python/05_realtime_translate_ko_en.py](../../examples/python/05_realtime_translate_ko_en.py)
+- 실행 가능 예제: [examples/typescript/10-realtime-translate-ko-en.ts](examples/typescript/10-realtime-translate-ko-en.ts) · [examples/python/09_realtime_translate_ko_en.py](examples/python/09_realtime_translate_ko_en.py)
 
 ### 리얼타임 vs 파이프라인 비교
 
@@ -211,37 +211,17 @@ const interpreter = new OpenAIRealtimeAdapter({
 
 ## 9. 파이프라인 패턴 3: VoiceFlow — Stage 그래프 IVR (SDK 1.6.2+, gateway 1.3.9.4+)
 
-위 두 패턴(7, 8)은 **통화 시작 시점부터 양방향 오디오를 항상 부착**하는 모델입니다. IVR / 메뉴 / 폼 입력 / "DTMF로 분기 → 단계별 AI 호출" 같은 시나리오는 단계마다 필요한 자원이 다릅니다 — 메뉴 안내 단계는 TTS만, 콜백 번호 수집 단계는 DTMF만, AI 상담 단계만 풀-듀플렉스. SDK 1.6.2부터는 **VoiceFlow 빌더**로 이 비대칭을 표현할 수 있고, 게이트웨이는 단계별로 ExternalMedia를 만들었다 사라지게 합니다.
+위 두 패턴(7, 8)은 **통화 시작 시점부터 양방향 오디오를 항상 부착**하는 모델입니다. IVR / 메뉴 / 폼 입력 / "DTMF로 분기 → 단계별 AI 호출" 같은 시나리오는 단계마다 필요한 자원이 다릅니다 — 메뉴 안내 단계는 TTS만, 콜백 번호 수집 단계는 DTMF만, AI 상담 단계만 풀-듀플렉스. SDK 1.6.2부터는 **VoiceFlow 빌더**로 이 비대칭을 표현할 수 있고, 게이트웨이는 단계별로 오디오 연결을 만들었다 사라지게 합니다.
 
-### 다이얼플랜 진입
+### 통화 진입
 
-`Stasis()` 호출에 `flow=true` arg를 추가하면 게이트웨이가 ExternalMedia/Bridge를 자동 생성하지 않고 통화를 holding 상태로 둡니다. SDK가 stage onEnter/onExit 시점에 명시적으로 attach/detach REST 호출을 보낼 때만 ExternalMedia가 만들어졌다 사라집니다.
+VoiceFlow를 쓰려면 **운영사가 해당 번호를 VoiceFlow 모드(flow 모드)로 연결합니다.** 이 모드에서는 통화가 대기(holding) 상태로 유지되고, SDK가 stage onEnter/onExit 시점에 attach/detach REST 호출을 보낼 때만 게이트웨이 오디오 연결이 만들어졌다 사라집니다.
 
-```asterisk
-; /etc/asterisk/extensions.conf
-;
-; VoiceFlow 진입 — flow=true가 핵심.
-; 다른 arg(tenantid, callernum, callednum 등)는 일반 Stasis 진입과 동일.
-[from-pstn-flow]
-exten => _X.,1,NoOp(VoiceFlow inbound from ${CALLERID(num)} to ${EXTEN})
- same => n,Set(TENANTID=acme)
- same => n,Stasis(dvgateway,flow=true,tenantid=${TENANTID},did=${EXTEN},
-                  callernum=${CALLERID(num)},callername=${CALLERID(name)},
-                  callednum=${EXTEN},timestamp=${EPOCH()})
- same => n,Hangup()
-
-; 비교: 기존 (flow=false / 미지정) — 진입 즉시 ExternalMedia 자동 생성
-[from-pstn-classic]
-exten => _X.,1,Stasis(dvgateway,role=monitor,tenantid=${TENANTID},did=${EXTEN},
-                      callernum=${CALLERID(num)})
- same => n,Hangup()
-```
-
-`flow=true`가 없는 모든 통화는 기존 동작 그대로 유지됩니다 — **회귀 영향 0**. 같은 게이트웨이에 두 모드를 공존시킬 수 있고, DID 별로 다이얼플랜에서 분기하면 됩니다.
+VoiceFlow 모드가 아닌 번호는 기존 동작(진입 즉시 양방향 오디오 연결) 그대로입니다. 한 게이트웨이에서 번호별로 두 모드를 함께 쓸 수 있으니, 필요한 번호를 운영사에 알려 주세요.
 
 ### 단계 audio 모드와 게이트웨이 자원
 
-| 모드 | REST `dir` | ExternalMedia | 사용 단계 예시 |
+| 모드 | REST `dir` | 오디오 연결 | 사용 단계 예시 |
 |------|-----------|---------------|--------------|
 | `'none'` | (없음) | **분리** — 채널은 holding bridge | DTMF 메뉴 대기, 폼 입력, 외부 시스템 응답 대기 |
 | `'tts-only'` | `out` | 단방향 (gateway → caller) | 안내 멘트 재생 (STT 비용 0) |
@@ -378,7 +358,7 @@ async def on_bye(ctx):
 print("🌊 VoiceFlow 봇이 준비되었습니다.")
 ```
 
-### 자원 비교 (단계별 ExternalMedia)
+### 자원 비교 (단계별 오디오 연결)
 
 ```
             ┌── greet ──┐    ┌── callback ──┐    ┌── confirm ──┐
@@ -387,23 +367,23 @@ caller ──┐  │  out 1ch  │    │   (분리)      │    │   out 1ch 
          ▼  │           │    │              │    │             │
     [holding bridge — 통화 끝까지 유지]  ←━━━━━━━━━━━━━━━━━━━━━━━━┛
          ▲
-caller ──┘  └─ ExternalMedia 동적 생성/삭제 ─┘
+caller ──┘  └─ 오디오 연결 동적 생성/삭제 ─┘
 
 기존 패턴(7번/8번)
-caller ──→ [bridge + ExternalMedia (양방향)] ─── 통화 끝까지 유지 (변동 없음)
+caller ──→ [bridge + 오디오 연결 (양방향)] ─── 통화 끝까지 유지 (변동 없음)
 ```
 
-DTMF는 AMI 채널 레벨에서 흐르므로 ExternalMedia 분리 상태에서도 정상 수신 — `ctx.collectDtmf()`가 그대로 작동합니다.
+DTMF는 전화 채널 레벨에서 전달되므로 오디오 연결이 분리된 상태에서도 정상 수신 — `ctx.collectDtmf()`가 그대로 작동합니다.
 
 ### 언제 VoiceFlow를 쓰지 말아야 하는가
 
-- **항상 풀-듀플렉스 AI 대화** (예: 위 패턴 7) — `gw.pipeline()` 단독으로 충분. flow=true는 오버헤드만 추가.
-- **Click-to-call 발신** — 발신 시점부터 양방향 필요. flow=true 의미 없음.
-- **회의 (ConfBridge, 패턴 10)** — 다중 참여자 모델은 flow=true와 호환되지 않음.
+- **항상 풀-듀플렉스 AI 대화** (예: 위 패턴 7) — `gw.pipeline()` 단독으로 충분. VoiceFlow 모드는 오버헤드만 추가.
+- **Click-to-call 발신** — 발신 시점부터 양방향 필요. VoiceFlow 모드 의미 없음.
+- **회의 (ConfBridge, 패턴 10)** — 다중 참여자 모델은 VoiceFlow 모드와 호환되지 않음.
 
 ### 추가 자료
 
-- 전체 VoiceFlow API 레퍼런스 + FlowContext 헬퍼 표: [packages/SDK-CLAUDE.md "VoiceFlow" 섹션](../../packages/SDK-CLAUDE.md#voiceflow--stage-그래프-ivr-자동화-gateway-1394)
+- 전체 VoiceFlow API 레퍼런스 + FlowContext 헬퍼 표: [CLAUDE.md "VoiceFlow" 섹션](CLAUDE.md#voiceflow--stage-그래프-ivr-자동화-gateway-1394)
 - 직접 `attachAudio` / `detachAudio` 호출 (빌더 없이): 같은 문서의 "직접 attach/detach" 절
 
 ---

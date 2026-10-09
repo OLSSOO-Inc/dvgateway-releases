@@ -14,8 +14,8 @@
 
 ## 0. 사전 준비
 
-이 API는 게이트웨이가 **Dynamic VoIP 테넌트 동기화**(`PBX_TENANT_SYNC_ENABLED=true`)로 PBX와
-연결되어 있어야 동작합니다. 꺼져 있으면 모든 큐 호출이 **503** 을 반환합니다.
+이 API는 게이트웨이가 PBX와 연동(테넌트 동기화)되어 있어야 동작합니다. 이 기능은 게이트웨이
+운영사(관리자)가 켜야 합니다. 꺼져 있으면 모든 큐 호출이 **503** 을 반환하니 운영사에 요청하세요.
 
 ```typescript
 import { DVGatewayClient } from 'dvgateway-sdk';
@@ -40,7 +40,7 @@ gw = DVGatewayClient(base_url="https://your-gateway:8080",
 - **Admin 토큰**(대시보드/통합 서버): 어느 테넌트에도 속하지 않으므로 `tenantId`(= PBX `path`)
   를 **반드시** 넘겨 대상 테넌트를 지정해야 합니다. 미지정 시 **400**.
 
-아래 예제는 테넌트 토큰 기준입니다. Admin 이라면 각 호출에 `{ tenantId: '5a77fc279d842279' }`
+아래 예제는 테넌트 토큰 기준입니다. Admin 이라면 각 호출에 `{ tenantId: '0123456789abcdef' }`
 (Python `tenant_id=...`) 를 추가하세요.
 
 ---
@@ -117,7 +117,7 @@ for queue_id, s in status.items():
 | `queue` | string | 큐 이름 (예 `Q500`) |
 | `type` | `dynamic`\|`static` | 멤버십 유형 |
 
-> 💡 **즉시 반영**: login/logout/pause/unpause 는 라이브 AMI 조작이라 호출 즉시 큐에 반영됩니다.
+> 💡 **즉시 반영**: login/logout/pause/unpause 는 실시간 조작이라 호출 즉시 큐에 반영됩니다.
 > (큐 *설정* 변경과 달리 별도 apply 단계가 필요 없습니다.)
 
 ---
@@ -184,7 +184,7 @@ console.log('created queue_id =', created.queue_id);
 
 // 수정 (전체 본문, 생성과 동일 형태)
 await gw.updateQueue(created.queue_id!, {
-  description: 'VitalPBX Partners',
+  description: 'Partners (updated)',
   strategy: 'rrordered',
   timeout: 15,
   queue_timeout: 300,
@@ -214,7 +214,7 @@ created = await gw.create_queue({
 print("created queue_id =", created.get("queue_id"))
 
 await gw.update_queue(created["queue_id"], {
-    "description": "VitalPBX Partners",
+    "description": "Partners (updated)",
     "strategy": "rrordered",
     "timeout": 15,
     "queue_timeout": 300,
@@ -242,10 +242,10 @@ await gw.delete_queue(created["queue_id"])
 | `record` | `false` | 큐 통화 녹취 여부 |
 | `members[]` | — | 멤버 배열 — 각 항목 `extension_id`(필수), `penalty`, `type`(dynamic/static) |
 
-전체 필드(40+)와 의미는 [큐 API 분석 문서](https://github.com/OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway/blob/master/go-gateway/docs/queue-api-analysis.md)를 참고하세요.
+전체 필드(40+)는 `getQueue()` / `get_queue()` 응답에서 확인할 수 있습니다.
 
-> ⚠️ **큐 설정 변경의 PBX 반영**: 생성/수정/삭제는 PBX DB에 즉시 기록되지만, 일부 변경은
-> Asterisk 다이얼플랜 재적용(apply)이 필요할 수 있습니다. SDK 의 `applyChanges()` /
+> ⚠️ **큐 설정 변경의 PBX 반영**: 생성/수정/삭제는 즉시 저장되지만, 일부 변경은
+> PBX 설정 적용(apply)이 필요할 수 있습니다. SDK 의 `applyChanges()` /
 > `apply_changes()` (PBX 관리 섹션 참조)로 적용하세요. **에이전트 런타임(섹션 1)은 apply 불필요.**
 
 ---
@@ -269,7 +269,7 @@ await gw.delete_queue(created["queue_id"])
 
 | 상황 | 응답 | 대처 |
 |------|------|------|
-| PBX 동기화 비활성 | **503** `PBX tenant sync disabled` | 게이트웨이 `PBX_TENANT_SYNC_ENABLED=true` 확인 |
+| PBX 동기화 비활성 | **503** `PBX tenant sync disabled` | 운영사에 PBX 연동 활성화 요청 |
 | Admin 이 `tenantId` 미지정 | **400** | `{ tenantId }` / `tenant_id=` 추가 |
 | 다른 테넌트 지정(테넌트 토큰) | **403** | 자기 테넌트만 접근 가능 |
 | 잘못된 `direction` / action | **400** | `inbound`/`outbound`, `login/logout/pause/unpause` 만 |
@@ -309,7 +309,7 @@ try {
 ## 아직 제공되지 않는 것 (로드맵)
 
 - **실시간 큐 통계** — 대기콜 수·평균 대기시간·SLA 달성률 등 라이브 지표는 이 REST API에
-  포함되지 않습니다(Asterisk AMI 이벤트 출처). 추후 WebSocket push 로 제공 예정.
+  포함되지 않습니다. 추후 WebSocket push 로 제공 예정.
 - **모바일 상담원 self-service** — 현재 에이전트 런타임은 테넌트/Admin 토큰 스코프입니다.
   모바일 앱 사용자가 본인 단말만 제어하는 device-소유권 강제는 후속 예정.
 

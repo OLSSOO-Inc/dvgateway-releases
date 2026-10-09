@@ -61,7 +61,7 @@ DVGateway가 알려준 통화 정보를 받아서, 원하는 시스템에 자유
 | **Flowise** | LLM 워크플로 특화 | AI 응답 자동화까지 원할 때 |
 
 ### 2단계 — DVGateway에서 Webhook 켜기 (5분)
-관리 대시보드에서 다음 두 항목만 설정:
+관리 대시보드에서(또는 운영사에 요청해) 다음 두 항목만 설정:
 - 어떤 이벤트를 보낼지 (예: 통화 종료 시 / 회의록 완성 시)
 - 어디로 보낼지 (n8n/Zapier에서 발급한 URL)
 
@@ -169,7 +169,7 @@ DVGateway가 알려준 통화 정보를 받아서, 원하는 시스템에 자유
 
 - 도입 검토 → 영업팀 문의로 현재 CRM/도구 진단 받기
 - 발신 자동화까지 → [가이드 6](06-outbound-campaign.md)
-- 기술 구현 → [docs/sdk-guide/09-hooks-webhook.md](../sdk-guide/09-hooks-webhook.md)
+- 기술 구현 → [docs/sdk-guide/09-hooks-webhook.md](../09-hooks-webhook.md)
 - 다른 가이드 → [README.md](README.md)
 
 ---

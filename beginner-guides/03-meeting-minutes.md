@@ -126,7 +126,7 @@
 - **저장 위치**: 게이트웨이 서버 자체 저장 또는 사내 NAS — **외부 클라우드 미전송 가능** (음성 인식만 외부 API)
 - **온프레미스 STT**: 외부에 음성 데이터조차 보내고 싶지 않다면 사내 GPU 서버에 자체 STT 운영 가능 (별도 도입 비용 발생)
 
-→ 금융·의료·법무 등 규제 산업은 [한국 AI SaaS 규제 가이드](../korea-ai-saas-regulatory-guide.md) 참조.
+→ 금융·의료·법무 등 규제 산업은 한국 AI SaaS 규제 가이드(영업팀 문의) 참조.
 
 ## 📊 정확도 (현실적 기대치)
 
@@ -143,8 +143,8 @@
 ## 🚀 다음 단계
 
 - 도입 검토 → 영업팀 문의 / 데모 회의 진행
-- 기술 구현 → [docs/sdk-guide/02-ai-services.md](../sdk-guide/02-ai-services.md) STT 섹션
-- 규제 산업이라면 → [한국 AI SaaS 규제 가이드](../korea-ai-saas-regulatory-guide.md)
+- 기술 구현 → [docs/sdk-guide/02-ai-services.md](../02-ai-services.md) STT 섹션
+- 규제 산업이라면 → 한국 AI SaaS 규제 가이드(영업팀 문의)
 - 다른 가이드 → [README.md](README.md)
 
 ---

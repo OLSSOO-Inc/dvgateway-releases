@@ -1,6 +1,6 @@
 # 13. 음성 플로우 제어 API
 
-makecall Voice Flow / VoiceSOP 같은 오케스트레이터가 통화 흐름을 제어하는 데 사용하는 4가지 API를 한 문서에 정리합니다. 모든 기능은 Python SDK와 TypeScript SDK에서 동일한 시맨틱으로 제공됩니다.
+음성 플로우 오케스트레이터(IVR·상담 봇)가 통화 흐름을 제어하는 데 사용하는 4가지 API를 한 문서에 정리합니다. 모든 기능은 Python SDK와 TypeScript SDK에서 동일한 시맨틱으로 제공됩니다.
 
 ---
 
@@ -19,14 +19,7 @@ makecall Voice Flow / VoiceSOP 같은 오케스트레이터가 통화 흐름을 
 
 SDK 설치 및 기본 연결 설정은 [01-getting-started.md](01-getting-started.md)를 참조하세요.
 
-이 가이드의 API는 다음 환경변수가 게이트웨이에 설정되어 있어야 합니다.
-
-| 환경변수 | 기본값 | 설명 |
-|----------|--------|------|
-| `GW_DTMF_ENABLED` | `true` | AMI DTMF 이벤트 포워딩 활성화 |
-| `GW_DTMF_PHASE_FILTER` | `end` | `end` phase만 카운트 (키를 뗄 때 입력 완료) |
-
-기본값으로 활성화되므로 별도 설정 없이 사용할 수 있습니다.
+DTMF 수집은 게이트웨이에서 기본으로 켜져 있어 별도 설정 없이 사용할 수 있습니다. DTMF 이벤트가 오지 않으면 운영사에 문의하세요.
 
 ---
 
@@ -121,17 +114,17 @@ async function handlePin(linkedId: string) {
 }
 ```
 
-### 게이트웨이 내부 동작
+### 동작 상세
 
-- AMI `DTMFBegin` / `DTMFEnd` 이벤트를 callinfo WebSocket 스트림으로 포워딩
-- SDK는 `phase === "end"` 이벤트만 카운트 (키를 뗄 때 입력 완료, IVR 표준 방식)
+- 발신자의 키 입력은 callinfo 이벤트 `call:dtmf` 로 전달되며, 키를 누를 때(`begin`)와 뗄 때(`end`) 두 번 옵니다.
+- SDK는 `phase === "end"` 이벤트만 카운트합니다 (키를 뗄 때 입력 완료, IVR 표준 방식).
 - STT 음소거는 레퍼런스 카운터로 관리 — 동일 `linked_id`에 `collect_dtmf`를 동시에 여러 개 호출해도 안전하게 공존하며, 마지막 수집이 끝날 때만 음소거 해제
 
 ### 주의사항
 
 - `max_digits`에 도달한 경우 `timed_out=False`이므로 `timed_out` 플래그만 확인하면 정상/비정상을 구분할 수 있습니다.
 - `terminator=""` 설정 시 `max_digits` 또는 타임아웃으로만 완료됩니다.
-- Dynamic VoIP 다이얼플랜에서 DTMF 감지 방식(`dtmfmode`)이 `auto` 또는 `rfc2833`인지 확인하세요.
+- 키를 눌러도 `call:dtmf` 이벤트가 오지 않으면 운영사에 해당 전화번호(회선)의 DTMF 전송 방식 확인을 요청하세요.
 
 ---
 
@@ -191,7 +184,7 @@ await gw.unmuteStt(linkedId);
 
 ### 동작
 
-HTTP(S) URL의 오디오 파일을 다운로드해 통화 채널에 주입합니다. 게이트웨이가 FFmpeg를 사용해 mp3/wav/ogg 등을 16kHz 모노 PCM으로 자동 변환합니다.
+HTTP(S) URL의 오디오 파일을 다운로드해 통화 채널에 주입합니다. 게이트웨이가 mp3/wav/ogg 등을 16kHz 모노 PCM으로 자동 변환합니다.
 
 주요 용도: IVR 안내 멘트, 법적 고지, 대기 음악, 사전 녹음 안내
 
@@ -254,15 +247,9 @@ await gw.stopAudio(linkedId);
 - 사용자 입력을 URL에 직접 포함하지 마세요 (SSRF 위험).
 - 내부 네트워크 IP(192.168.x.x, 10.x.x.x, 172.16-31.x.x, 127.x.x.x)로의 요청은 게이트웨이 방화벽 정책에 따라 차단될 수 있습니다.
 
-### FFmpeg 의존성
+### 재생이 안 될 때
 
-`play_audio`는 게이트웨이 서버에 FFmpeg가 설치되어 있어야 합니다.
-
-```bash
-sudo apt install -y ffmpeg
-```
-
-설치 후 게이트웨이를 재시작하세요. FFmpeg 없이 wav/mp3를 재생하면 게이트웨이 로그에 오류가 기록됩니다.
+URL이 공개적으로 접근 가능한지(인증·사내망 전용 주소가 아닌지) 먼저 확인하세요. URL은 정상인데 mp3/wav가 재생되지 않으면 운영사에 `linkedId`·시각·URL을 보내 문의하세요.
 
 ### wait_for_completion 선택 기준
 
@@ -282,60 +269,38 @@ sudo apt install -y ffmpeg
 
 통화를 상담원 내선 또는 외부 PSTN 번호로 이관합니다. 게이트웨이가 상담원 레그를 새로 발신하고, 상담원이 수신하면 양 레그를 브릿지합니다. 이관 중에는 발신자에게 대기 음악을 재생할 수 있고, 상담원이 응답한 직후 — 브릿지 *전* — 에 상담 준비 정보(whisper)를 상담원에게만 들려줄 수 있습니다.
 
-**SDK 1.6.5 / Gateway 1.3.9.9 부터 (외부 PSTN 이관 안정 동작):**
+**외부 번호 이관 (SDK 1.6.5+ / 게이트웨이 1.3.9.9+):**
 
 - 외부 휴대폰/유선번호로의 이관 지원 (`outbound=True` 옵션)
-- whisper TTS 실제 재생 — 게이트웨이가 테넌트별 클라우드 TTS 프로바이더로 16 kHz PCM 을 합성하여 상담원 채널에 ARI Play 로 주입. 활성 TTS 프로바이더가 없으면 whisper 만 조용히 스킵 (이관 자체는 정상)
-- 상담원 레그 outbound caller-ID / accountcode 지정 (`cid_number`, `cid_name`, `account_code`)
+- whisper TTS 재생 — 게이트웨이가 테넌트에 설정된 클라우드 TTS로 whisper 를 합성해 상담원에게만 들려줍니다. 활성 TTS 프로바이더가 없으면 whisper 만 조용히 스킵 (이관 자체는 정상)
+- 상담원 레그 발신번호 / 발신자 이름 / 계정 코드 지정 (`cid_number`, `cid_name`, `account_code`)
 
-**SDK 1.6.6 / Gateway 1.4.0.0 부터 (mixed audio capture stream):**
+> 외부 번호 이관은 게이트웨이 1.3.9.9 이상이 필요합니다. 내부 내선 이관(`outbound=False`)은 모든 버전에서 동작합니다.
 
-- `stream_mixed_to_external_media=True` 옵션으로 customer↔agent 합성 audio 를 ExternalMedia → `/api/v1/ws/stream?linkedid=<lid>&dir=both` 로 실시간 송출. STT / 통화 transcript / Voice Flow 요약 파이프라인이 warm transfer 이후에도 끊김 없이 audio 수신 가능.
+**Mixed audio capture stream (SDK 1.6.6+ / 게이트웨이 1.4.0.0+):**
+
+- `stream_mixed_to_external_media=True` 옵션으로 고객↔상담원 합성 오디오를 `/api/v1/ws/stream?linkedid=<lid>&dir=both` 로 실시간 송출. STT / 통화 transcript / 요약 파이프라인이 warm transfer 이후에도 끊김 없이 오디오를 받을 수 있습니다.
 - 결과 객체에 `mixed_stream_started` (bool), `mixed_stream_url` (Optional[str]) 추가.
 - 포맷: mono slin16 (16 kHz, 20 ms / 640 B 프레임). stereo split 은 미지원 (Deepgram nova-3 등의 mono diarization 으로 화자 분리 권장).
+- `mixed_stream_url` 에는 토큰이 들어 있지 않습니다. 직접 열 때는 `&token=<JWT>` 를 붙이거나 SDK `streamAudio()` 를 쓰세요 (게이트웨이 1.4.16.234+ 는 토큰 필수).
 - warm transfer 가 성공하더라도 capture 부착에 실패하면 `mixed_stream_started=False` 로 graceful degrade — 이관 자체는 정상 유지.
 
-**Gateway 1.4.0.1 부터 (bridge teardown 안정화):**
-
-- warm transfer 이후 customer 또는 agent 한쪽이 hangup 하면 자동으로 다른 쪽도 hangup 되고 mixing bridge 가 destroy 됩니다. 1.4.0.0 에서는 ARI mixing bridge 의 기본 동작 (한 명이 떠나도 나머지 alive 유지) 으로 인해 한쪽 hangup 시 다른 쪽 통화가 영원히 끝나지 않는 회귀가 보고됨.
-- 게이트웨이가 ARI `ChannelLeftBridge` 이벤트를 구독하여 customer/agent 중 어느 한쪽이 leave 하면 나머지 + (옵션) mixed-stream ExternalMedia 까지 cascade hangup 후 bridge destroy. `Dial()`-스타일 semantics 와 동일.
-- 동시 hangup race 는 `sync.Map.CompareAndDelete` 로 단일 firing 보장.
-- attachMixedStream 진입 결정 (skipped / requested / attached / failed) 모두 `[WARM-TRANSFER] mixed stream …` 로 로깅 — `mixed_stream_started=false` 디버깅 시 즉시 path 식별 가능.
-
-**Gateway 1.4.0.2 부터 (mixed stream Stasis-app race 해결):**
-
-- 1.4.0.0/1.4.0.1 에서 `attachMixedStream` 이 `createExternalMedia` 직후 `addChannel` 을 호출하면 chan_websocket 채널이 Stasis app 에 enter 하기 전이라 ARI 가 `422 Channel not in Stasis application` 으로 거부 — `mixed_stream_started=False` 의 실제 root cause. 1.4.0.1 의 진단 로그가 이 패턴을 노출시킴.
-- 1.4.0.2: autonomous 모드의 표준 패턴 (5회 × 200 ms = 1초 천장) 으로 retry 적용. 동일 race 를 해결하는 검증된 코드 경로 재사용. retry 마다 `[WARM-TRANSFER] mixed stream addToBridge retry n/5 ...` 로깅.
-
-**Gateway 1.4.0.3 부터 (main bridge add transient race 대응):**
-
-- Step 6 의 customer + agent 메인 bridge add 도 customer 가 autonomous-mode bridge 에서 warm bridge 로 cross-bridge 이동하는 transient 윈도우에서 `400 Channel not found` 로 실패하는 케이스 발생 (운영 보고).
-- 1.4.0.3: 동일 5회 × 200 ms retry 패턴을 메인 bridge add 에도 적용 (`attachMixedStream` 과 symmetric). retry 마다 `[WARM-TRANSFER] adding to bridge retry n/5 ...` 로깅.
-- 단, customer/agent 가 *실제로* hangup 한 케이스는 retry 가 회복시키지 못합니다 (1초 지연 후 동일 실패). 진짜 hangup 케이스인지 transient race 인지 구분은 retry 로그 수에서 확인 가능 — retry 0회면 즉시 실패 (= 진짜 hangup), retry 1~2회면 race 였던 것.
-
-> **Gateway 1.3.9.5 / 1.3.9.6 / 1.3.9.7 / 1.3.9.8 회귀 안내**:
->
-> - **1.3.9.5**: `outbound=True` 시 게이트웨이가 상담원 leg 에 ExternalMedia 를 자동 부착하여 customer↔agent audio bridge 가 형성되지 않음. 1.3.9.6 에서 수정.
-> - **1.3.9.6**: ARI Originate 가 만든 Local 채널 pair 가 트렁크 응답 시점에 자동 optimize 되어 `400 Channel not found` 로 실패. 1.3.9.7 에서 endpoint 에 `/n` (no-optimize) 플래그를 추가해 해결.
-> - **1.3.9.7**: AddToBridge REST 호출이 두 채널을 comma-joined string 으로 보냈는데 일부 Asterisk 버전 (20.x 이상에서 관찰) 의 JSON body 파서가 split 을 하지 않아 전체 문자열을 단일 채널 ID 로 lookup 하면서 `find_channel_control: Couldn't find 'CHA,CHB'` 패턴으로 실패. 1.3.9.8 에서 채널당 별도 POST 로 변경해 해결.
-> - **1.3.9.8**: 단일 채널 POST 로 바뀐 이후에도, customer leg 를 채널 NAME (`PJSIP/DKCT-...`) 로 lookup 하면 일부 Asterisk 버전이 JSON body 의 name 기반 lookup 을 거부하여 `400 Channel not found` 가 다시 발생. 1.3.9.9 에서 customer leg 도 채널 ID (Asterisk uniqueid) 로 전환하여 해결 (autonomous 모드의 `addChannelToBridge` 와 동일하게 ID 사용).
->
-> **외부 PSTN 이관을 사용한다면 반드시 1.3.9.9 이상을 배포하세요.** 내부 내선 이관(`outbound=False`, digit-only destination → `PJSIP/{ext}`)은 모든 버전에서 정상 동작합니다 — Local 채널을 사용하지 않기 때문.
+**통화 종료 동작 (게이트웨이 1.4.0.1+):** 이관 후 고객 또는 상담원 한쪽이 끊으면 다른 쪽도 자동으로 끊깁니다 (일반 전화 연결과 같은 동작).
 
 ### 파라미터
 
 | 파라미터 | Python | TypeScript | 기본값 | 설명 |
 |---------|--------|------------|--------|------|
 | 통화 식별자 | `linked_id` | `linkedId` | — | 필수 |
-| 이관 대상 | `destination` | `destination` | — | 필수. 상담원 내선 번호 또는 외부 PSTN 번호 (`01026132471` 등) |
+| 이관 대상 | `destination` | `destination` | — | 필수. 상담원 내선 번호 또는 외부 PSTN 번호 (`01012345678` 등) |
 | 귀속 안내문 | `whisper_text` | `whisperText` | `""` | 상담원에게만 들리는 안내 (브릿지 전 재생) |
 | 대기 음악 URL | `hold_audio_url` | `holdAudioUrl` | `""` | 발신자 대기 중 재생할 오디오 URL |
-| 다이얼플랜 컨텍스트 | `context` | `context` | `"from-internal"` | 상담원 레그 발신 컨텍스트. `outbound=True` 시 트렁크 컨텍스트 (예: `"cos-all"`) |
+| 발신 컨텍스트 | `context` | `context` | `"from-internal"` | 상담원 레그 발신 컨텍스트. `outbound=True` 시 외부 발신용 컨텍스트 — 값은 운영사에 확인하세요 |
 | 이관 타임아웃 | `timeout_ms` | `timeoutMs` | `30000` | 상담원 수신 대기 시간 (ms, >0) |
-| 외부 PSTN 라우팅 | `outbound` | `outbound` | `False` | `True` 시 endpoint 를 `Local/{dest}@{context}` 로 강제 — 외부 PSTN/트렁크 라우팅. 기본 false (digit-only → PJSIP 내부 peer) |
-| Outbound CID 번호 | `cid_number` | `cidNumber` | `""` | 상담원 레그 caller-ID 번호. `CALLERID(num)` + `EXTERNAL_CID_NUMBER` 양쪽에 주입되어 트렁크 측 P-Asserted-Identity 에 반영 |
-| Outbound CID 이름 | `cid_name` | `cidName` | `""` | 상담원 레그 caller-ID 이름 (`CALLERID(name)`) |
-| 계정 코드 | `account_code` | `accountCode` | `""` | CDR 계정 코드 (`CHANNEL(accountcode)`) |
+| 외부 PSTN 라우팅 | `outbound` | `outbound` | `False` | `True` 시 `destination` 을 외부 번호로 발신. 기본 false (숫자만 있는 대상은 내부 내선으로 발신) |
+| Outbound CID 번호 | `cid_number` | `cidNumber` | `""` | 상담원 레그 발신번호 (상담원 전화기에 표시). 사용 가능한 번호는 운영사에 확인하세요 |
+| Outbound CID 이름 | `cid_name` | `cidName` | `""` | 상담원 레그 발신자 이름 |
+| 계정 코드 | `account_code` | `accountCode` | `""` | 통화기록(CDR) 계정 코드 |
 | Mixed audio capture | `stream_mixed_to_external_media` | `streamMixedToExternalMedia` | `False` | `True` 시 warm bridge 의 mixed audio 를 `/api/v1/ws/stream?linkedid=<lid>` 로 실시간 송출 (1.6.6+) |
 
 ### 반환값 (WarmTransferResult)
@@ -376,12 +341,12 @@ else:
 ```python
 res = await gw.warm_transfer(
     linked_id,
-    destination="01026132471",            # 상담원 휴대폰
+    destination="01012345678",            # 상담원 휴대폰
     outbound=True,                         # ★ 외부 PSTN 라우팅 활성화
-    context="cos-all",                     # 트렁크 다이얼플랜 컨텍스트
-    cid_number="16682471",                 # 트렁크 측에 표시될 발신번호
+    context="outbound-context",            # 운영사가 알려 준 외부 발신 컨텍스트
+    cid_number="0212345678",               # 상담원 전화기에 표시될 발신번호
     cid_name="회사명",
-    account_code="07045144800",            # CDR 계정 코드
+    account_code="07012345600",            # CDR 계정 코드
     whisper_text="고객: 홍길동, 용건: 환불 문의",
     hold_audio_url="https://cdn.example.com/hold.mp3",
     timeout_ms=90_000,
@@ -403,12 +368,12 @@ const res = await gw.warmTransfer({
 // 외부 PSTN 번호
 const res = await gw.warmTransfer({
   linkedId,
-  destination: '01026132471',
+  destination: '01012345678',
   outbound: true,
-  context: 'cos-all',
-  cidNumber: '16682471',
+  context: 'outbound-context',  // 운영사가 알려 준 외부 발신 컨텍스트
+  cidNumber: '0212345678',
   cidName: '회사명',
-  accountCode: '07045144800',
+  accountCode: '07012345600',
   whisperText: '고객: 홍길동, 용건: 환불 문의',
   holdAudioUrl: 'https://cdn.example.com/hold.mp3',
   timeoutMs: 90_000,
@@ -417,10 +382,9 @@ const res = await gw.warmTransfer({
 
 ### Whisper 재생 동작
 
-1. 상담원이 응답하면 게이트웨이가 `whisper_text` 를 테넌트별 클라우드 TTS 프로바이더로 16 kHz PCM 합성
-2. PCM 을 게이트웨이 호스트의 `GW_WARM_TRANSFER_WHISPER_DIR`(기본 `/var/lib/dvgateway/whisper`)에 `.sln16` 임시 파일로 저장
-3. ARI `POST /channels/{agentChannel}/play` 로 상담원 채널에만 재생 — 이 시점 발신자는 hold music/무음 상태이므로 whisper 가 발신자에게는 들리지 않음
-4. PlaybackFinished 이벤트 또는 `GW_WARM_TRANSFER_WHISPER_TIMEOUT_MS`(기본 20초) 경과 후 임시 파일 삭제 → 양 레그를 브릿지
+1. 상담원이 응답하면 게이트웨이가 `whisper_text` 를 테넌트에 설정된 클라우드 TTS로 합성합니다.
+2. 합성한 음성을 상담원 채널에만 재생합니다 — 이 시점 발신자는 대기 음악/무음 상태이므로 whisper 가 발신자에게는 들리지 않습니다.
+3. 재생이 끝나면(또는 최대 20초 경과 후) 양 레그를 브릿지합니다.
 
 활성 클라우드 TTS 프로바이더가 없거나 합성/재생 중 어떤 단계라도 실패하면 whisper 만 스킵되고 (`whisper_played=False`) 이관 자체는 정상 진행됩니다.
 
@@ -428,23 +392,16 @@ const res = await gw.warmTransfer({
 
 - `timed_out=True`: 이관 실패. 원본 통화(`linked_id`)는 유지 상태이므로 후속 처리(재시도, 콜백 예약 등)를 진행할 수 있습니다.
 - `error`가 있는 경우: 상담원 레그 발신 자체가 실패한 것이므로 원본 통화 역시 이미 끊겼을 가능성이 있습니다. 세션 상태를 확인하세요.
-- `connected=True` 이후: SDK 측에서는 통화가 상담원에게 이관된 것으로 간주합니다. 상담원 통화 이후 이벤트(종료 등)는 AMI 이벤트 스트림에서 확인하세요.
+- `connected=True` 이후: SDK 측에서는 통화가 상담원에게 이관된 것으로 간주합니다. 상담원 통화 이후 이벤트(종료 등)는 callinfo 이벤트(`call:ended` 등)로 확인하세요.
 
-### 게이트웨이 환경변수 (운영자용)
+### 기본값
 
-| 변수 | 기본값 | 설명 |
-|---|---|---|
-| `GW_WARM_TRANSFER_ENABLED` | `true` | warm_transfer 마스터 스위치. ARI 활성화 (`ARI_ENABLED=true`) 필수 |
-| `GW_WARM_TRANSFER_DEFAULT_TIMEOUT_MS` | `30000` | 클라이언트가 `timeoutMs` 미지정 시 적용되는 기본 타임아웃 |
-| `GW_WARM_TRANSFER_DEFAULT_CONTEXT` | `"from-internal"` | 클라이언트가 `context` 미지정 시 적용되는 기본 컨텍스트 |
-| `GW_WARM_TRANSFER_WHISPER_DIR` | `/var/lib/dvgateway/whisper` | whisper `.sln16` 임시 파일 디렉터리. **PBX 프로세스가 읽을 수 있어야 함**. 디렉터리는 게이트웨이가 자동 생성 (mode 0755), 파일은 0644 로 작성 |
-| `GW_WARM_TRANSFER_WHISPER_TIMEOUT_MS` | `20000` | whisper PlaybackFinished 최대 대기 시간 (초과 시 whisper 스킵하고 브릿지 진행) |
+`timeout_ms` 와 `context` 를 생략하면 게이트웨이 기본값(30초 / `from-internal`)이 적용됩니다. warm transfer 가 동작하지 않으면(기능 꺼짐 등) 운영사에 문의하세요.
 
 ---
 
 ## 6. 관련 문서
 
-- REST 엔드포인트 상세: [../api.md](../api.md)
 - DTMF 이벤트 수신 (`call:dtmf`): [05-events-fallback.md](05-events-fallback.md)
 - TTS 주입 및 say(): [03-pipeline-patterns.md](03-pipeline-patterns.md)
 - Comfort Noise (대기 중 배경음): [08-comfort-noise.md](08-comfort-noise.md)

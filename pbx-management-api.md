@@ -1,6 +1,6 @@
 # DVGateway PBX 관리 API 가이드
 
-> DVGateway REST API를 통해 Dynamic VoIP PBX의 착신전환, 발신자표시, API 키, 외부 DB, 아웃바운드 캠페인을 관리합니다.
+> DVGateway REST API를 통해 Dynamic VoIP PBX의 착신전환, 발신자표시, 통화기록, API 키, 응답 전 안내음, 클릭투콜, 아웃바운드 캠페인을 관리합니다.
 
 ---
 
@@ -12,19 +12,10 @@
 3. [발신자표시 (Caller ID)](#3-발신자표시-caller-id)
    - [통화기록 (CDR)](#통화기록-cdr)
 4. [API 키 관리 (App Keys)](#4-api-키-관리-app-keys)
-5. [외부 DB 프록시](#5-외부-db-프록시)
-6. [Early Media (응답 전 안내음)](#6-early-media-응답-전-안내음)
-7. [PBX API 연동](#7-pbx-api-연동)
-8. [아웃바운드 캠페인 (예약/동보/주기 발신)](#8-아웃바운드-캠페인)
-9. [게이트웨이 설정](#9-게이트웨이-설정)
-10. [에러 응답 레퍼런스](#10-에러-응답-레퍼런스)
-
-### 단말번호 ↔ DID 번호 관계
-
-```
-DID 번호 = "070" + 단말번호
-예: 단말번호 45144801 → DID 07045144801
-```
+5. [Early Media (응답 전 안내음)](#5-early-media-응답-전-안내음)
+6. [PBX API 연동 (설정 재적용 · 클릭투콜)](#6-pbx-api-연동)
+7. [아웃바운드 캠페인 (예약/동보/주기 발신)](#7-아웃바운드-캠페인)
+8. [에러 응답 레퍼런스](#8-에러-응답-레퍼런스)
 
 ---
 
@@ -47,14 +38,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/...
 |-----|:------:|:-----:|
 | 착신전환 | ✅ (자기 테넌트만) | ✅ (?tenantId= 지정) |
 | 발신자표시 | ✅ | ✅ |
-| API 키 | ✅ | ✅ |
-| 외부 DB 프록시 | - | ✅ (Admin만) |
-| DB 설정 | - | ✅ (Admin만) |
+| 통화기록 | ✅ | ✅ |
+| API 키 | - | ✅ (Admin만) |
+| 아웃바운드 캠페인 | - | ✅ (Admin만) |
 
 ### 1.1 모바일 앱: Firebase ID 토큰 인증 (v1.4.8.44+)
 
 `dvgw_` 키는 게이트웨이 **전역 권한**(모든 테넌트 조회/제어)이라 모바일 앱에 임베드할 수
-없습니다(유출 시 전 테넌트 위험). 대신 **착신전환·폰북** 두 엔드포인트는 소프트폰 프로비저닝
+없습니다(유출 시 전 테넌트 위험). 대신 아래 모바일 엔드포인트는 소프트폰 프로비저닝
 (`/api/v1/softphone/*`)과 **동일한 Firebase ID 토큰**을 추가로 수용합니다.
 
 | 엔드포인트 | Firebase 토큰 | dvgw 키→JWT |
@@ -74,9 +65,9 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
 
 **동작 / 권한 모델:**
 
-- 게이트웨이는 토큰을 검증(RS256·aud·iss·exp)한 뒤 `email` → **활성 모바일 seat** 으로
-  `tenantId`(Dynamic VoIP path) 와 배정 `extension` 을 **서버가 해석**합니다(요청 본문/쿼리의
-  테넌트·extension 신뢰 안 함).
+- 게이트웨이는 토큰을 검증한 뒤 토큰의 `email` → **활성 모바일 seat** 으로
+  `tenantId` 와 배정 `extension` 을 **서버가 해석**합니다(요청 본문/쿼리의
+  테넌트·extension 을 신뢰하지 않음).
 - **소유 검증**: 토큰 사용자의 seat 에 **배정된 extension** 에만 접근 가능.
 - **멀티 테넌트(gateway 1.4.8.45+)**: 동일 이메일이 여러 테넌트(팀)에 소속된 경우, 어느 팀으로
   해석할지 **`?tenantId=<path>`** 쿼리(또는 `X-Tenant-ID` 헤더)로 선택합니다. 선택값은 토큰
@@ -84,10 +75,10 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
   후보 목록은 `GET /api/v1/softphone/seats` 로 받습니다.
   ```bash
   curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
-    "http://localhost:8080/api/v1/diversions/1010?tenantId=7be69580e27641df"
+    "http://localhost:8080/api/v1/diversions/1010?tenantId=0123456789abcdef"
   ```
-- 활성화 조건: 게이트웨이에 `GW_SOFTPHONE_FIREBASE_PROJECT` 설정(소프트폰 Firebase 인증과 동일) +
-  모바일 seat 활성. 미구성 시 이 엔드포인트는 기존 `dvgw_`→JWT 방식만 동작.
+- 이 인증 방식은 게이트웨이 운영사(관리자)가 Firebase 인증을 켜야 합니다. 운영사에 요청하세요.
+  켜지지 않은 게이트웨이에서는 `dvgw_`→JWT 방식만 동작합니다.
 
 | 상황 | HTTP |
 |------|:----:|
@@ -95,25 +86,25 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
 | 토큰 무효/만료, 해당 email 의 활성 seat 없음, 멀티 테넌트인데 `tenantId` 미지정/비소유(모호) | `401` |
 | 타 extension 요청(비소유) / seat 에 extension 미배정 | `403` |
 
-> Firebase 수용은 위 **두 경로에만** 적용됩니다(다른 관리 API 로 번지지 않음).
+> Firebase 토큰은 위 표의 **모바일 엔드포인트에만** 적용됩니다(다른 관리 API 로 번지지 않음).
 
 ### 1.2 온프레미스(Firebase 없는) 모바일 인증 — `api.accessToken` (v1.4.11.40+)
 
-Firebase 클라우드를 쓰지 않는 **온프레미스 배포**를 위해, `POST /api/v1/softphone/provision`
-(enrollToken/QR 경로 — 이미 Firebase-free)와 `POST /api/v1/softphone/refresh` 응답에
-**REST 데이터 평면용 단기 게이트웨이 서명 토큰**(`api.accessToken`)을 추가로 내려줍니다.
+Firebase 를 쓰지 않는 **온프레미스 배포**를 위해, `POST /api/v1/softphone/provision`
+(enrollToken/QR 경로)과 `POST /api/v1/softphone/refresh` 응답에
+**REST 데이터 평면용 단기 게이트웨이 토큰**(`api.accessToken`)이 포함됩니다.
 앱은 이 토큰 하나로 1.1 의 **모든 모바일 데이터 엔드포인트**(착신전환·폰북·발신표시·CDR·
 클릭투콜)를 **Firebase 없이** 호출합니다.
 
 ```jsonc
-// provision / refresh 200 응답 (api 블록 신규, 나머지는 기존 계약 그대로)
+// provision / refresh 200 응답 (api 블록)
 {
   "extension": "1001",
-  "tenantId": "5a77fc279d842279",
+  "tenantId": "0123456789abcdef",
   "sip": { "wssUri": "...", "authUser": "...", "authToken": "...", "expiresAt": "..." },
   "ice": [ /* ... */ ],
   "api": {                                 // ★ v1.4.11.40+
-    "accessToken": "<HS256 JWT>",          //   (tenantId, extension) 스코프, kind=mobile
+    "accessToken": "<token>",              //   (tenantId, extension) 스코프 — 앱은 불투명 값으로 취급
     "expiresAt": "2026-06-19T13:00:00Z"    //   RFC3339, 기본 수명 1h
   },
   "refresh": { "url": "...", "refreshToken": "rt_...", "minTtlSeconds": 300 }
@@ -131,30 +122,22 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/v1/pbx/cdr?sea
 
 **규약 / 동작:**
 
-- `accessToken` 은 게이트웨이가 `JWT_SECRET` 으로 서명한 HS256 JWT 로, 클레임
-  `{tid, ext, kind:"mobile", iat, exp}` 를 담아 **(tenantId, extension) 단일 seat 에
-  스코프**됩니다. Firebase ID 토큰이 seat 으로 해석되던 것과 **동일한 권한·소유검증·경로
-  스코프**로 처리되므로, 1.1 의 권한 모델(본인 extension 만, CDR 본인 통화만, 클릭투콜
-  caller=본인, 발신표시 읽기전용)이 그대로 적용됩니다.
-- **경로 스코프(보안 핵심)**: 이 토큰은 1.1 표의 **모바일 엔드포인트에서만** 유효합니다.
-  그 외 경로(`/api/v1/sessions`, `/api/v1/tts/*`, `apply-changes` 등)에서는 `tid` 가 있어도
-  **테넌트 전역 토큰으로 승격되지 않고 `401`** 입니다(Firebase 경로와 동일한 게이팅).
+- `accessToken` 은 **(tenantId, extension) 단일 seat 에 스코프**된 토큰입니다. 앱은 내용을
+  해석하지 말고 그대로 `Authorization: Bearer` 로 보냅니다. Firebase ID 토큰과 **동일한
+  권한·소유검증·경로 스코프**로 처리되므로, 1.1 의 권한 모델(본인 extension 만, CDR 본인
+  통화만, 클릭투콜 caller=본인, 발신표시 읽기전용)이 그대로 적용됩니다.
+- **경로 스코프**: 이 토큰은 1.1 표의 **모바일 엔드포인트에서만** 유효합니다.
+  그 외 경로(`/api/v1/sessions`, `/api/v1/tts/*`, `apply-changes` 등)에서는 **`401`** 입니다.
 - **회전**: `POST /api/v1/softphone/refresh`(기존 `refreshToken`)가 `sip` 과 함께
-  `api.accessToken` 도 **새로 발급**합니다. 앱은 기존 refresh 메커니즘 하나로 SIP·REST
-  토큰을 모두 갱신합니다. stateless JWT 라 즉시 회수가 불가하므로 수명을 짧게 유지합니다
-  (`GW_SOFTPHONE_API_TOKEN_TTL`, 기본 1h).
-- **멀티 테넌트**: 토큰이 이미 특정 테넌트 `tid` 를 고정하므로 `?tenantId=` 는 동일 값일
+  `api.accessToken` 도 **새로 발급**합니다. 앱은 refresh 하나로 SIP·REST 토큰을 모두
+  갱신합니다. 즉시 회수가 불가한 토큰이라 수명이 짧습니다(기본 1h) — `expiresAt` 전에 refresh 하세요.
+- **멀티 테넌트**: 토큰이 이미 특정 테넌트에 고정되므로 `?tenantId=` 는 동일 값일
   때만 통과하고 다른 값이면 `403`(cross-tenant). 테넌트별로 각자의 enroll → 각자의
   accessToken 을 받습니다.
-- **활성화 조건**: 별도 설정 없음. `JWT_SECRET`(미설정 시 자동 생성)만 있으면 발급되며,
-  **Firebase 프로젝트 설정과 무관**하게 동작합니다. `JWT_SECRET` 이 비활성(인증 OFF) 배포는
-  데이터 평면이 본래 개방 상태이므로 `api` 블록을 생략합니다.
-- enrollToken 미배정(push-only) 응답에도 `tid` 스코프 토큰(`ext=""`)을 발급합니다 — 본인검증
-  엔드포인트는 ext 없으면 `403`(fail-closed), 테넌트 디렉토리(폰북) 조회는 가능합니다.
-
-> **온프레미스 부팅**: `GW_SOFTPHONE_FIREBASE_PROJECT` 가 **하나도 없어도** 게이트웨이는
-> 정상 부팅하며(Firebase Admin 미초기화 — `firebaseauth.NewVerifier("")` → nil, fatal 없음),
-> enrollToken provision → `api.accessToken` → 모든 데이터 엔드포인트가 `200` 동작합니다.
+- **활성화 조건**: 별도 설정 없이 발급되며 Firebase 설정과 무관합니다. 게이트웨이 인증이
+  꺼진 배포에서는 `api` 블록이 생략됩니다.
+- 내선 미배정(push-only) 응답에도 테넌트 스코프 토큰(extension 없음)을 발급합니다 — 본인검증
+  엔드포인트는 extension 이 없으면 `403`, 테넌트 디렉토리(폰북) 조회는 가능합니다.
 
 | 상황 | HTTP |
 |------|:----:|
@@ -167,8 +150,8 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/v1/pbx/cdr?sea
 
 ## 2. 착신전환 (Diversions)
 
-Dynamic VoIP AstDB의 착신전환(Call Forward)·**방해금지(DND)**·**개인비서(Personal Assistant)**
-설정을 관리합니다. 셋 다 동일한 `diversions/` 네임스페이스에 저장됩니다.
+Dynamic VoIP PBX의 착신전환(Call Forward)·**방해금지(DND)**·**개인비서(Personal Assistant)**
+설정을 관리합니다.
 
 ### 착신전환 / 부가서비스 타입
 
@@ -183,9 +166,10 @@ Dynamic VoIP AstDB의 착신전환(Call Forward)·**방해금지(DND)**·**개�
 
 > 각 타입은 **독립적으로 설정 가능**하며, 동시에 여러 타입을 활성화할 수 있습니다.
 
-> **⚠️ 개인비서(PEA) 우선 동작**: PEA를 활성화하면 **착신전환 규칙이 설정되어 있어도
-> 개인비서가 먼저 전화를 수신**합니다. 이 우선순위 판단은 Dynamic VoIP(Asterisk)
-> 다이얼플랜이 수행하며, 게이트웨이/SDK는 `PEA/enable` 플래그를 기록할 뿐입니다.
+> **⚠️ 개인비서(PEA)와 착신전환의 우선순위**: 즉시 착신전환(**CFI**)이 켜져 있으면 CFI 가
+> 우선하며 PEA 는 동작하지 않습니다. CFI 가 꺼져 있고 PEA 가 켜져 있으면 **벨이 울리기 전에
+> 개인비서가 먼저 전화를 받으므로** 조건부 착신전환(CFB/CFN/CFU)에는 도달하지 않습니다.
+> 우선순위는 PBX 가 판단하며 API 는 각 타입의 켜짐/꺼짐만 기록합니다.
 
 ### ⚠️ 활성화 필수 조건
 
@@ -198,55 +182,38 @@ Dynamic VoIP AstDB의 착신전환(Call Forward)·**방해금지(DND)**·**개�
 
 > **DND·PEA는 destination이 없는 on/off 토글**입니다. `{"enable":"yes"}` 또는
 > `{"enable":"no"}` 로 켜고 끄며, destination을 보내도 무시됩니다.
-> **`timeGroup` 은 gw 1.4.14.88 부터 CF 4종 + DND/PEA 전부 지원** — 값은 Time Group
-> 컨텍스트 `"TG-{id}"`(또는 숫자 id — 서버가 정규화, `"none"` = 시간 조건 해제).
-> 코어 다이얼플랜이 그 시간대에만 해당 diversion 을 발동합니다(예: "업무시간
-> 종료에만 PEA"). Time Group 생성/관리는 `GET/POST /api/v1/timegroups`,
-> `PUT/DELETE /api/v1/timegroups/{id}` — 스케줄은 Asterisk 시간 형식
-> `"09:00-18:00,mon-fri,*,*"`(4필드: 시간,요일,일,월 — `&` 다중, `18:00-09:00`=야간
-> 익일 창), 저장 시 해당 테넌트 apply_changes 가 자동 실행돼 `[TG-{id}]` 컨텍스트가
-> 재생성됩니다. 모바일 토큰은 조회 + 본인 내선 소유 그룹만 생성/수정/삭제.
+
+> **시간 조건(`timeGroup`)** — CF 4종 + DND/PEA 전부 지원(gw 1.4.14.88+). 값은 Time Group
+> `"TG-{id}"`(또는 숫자 id — 서버가 정규화, `"none"` = 시간 조건 해제). 지정한 시간대에만 해당
+> 규칙이 동작합니다(예: "업무시간 종료 후에만 PEA").
+> Time Group 생성/관리는 `GET/POST /api/v1/timegroups`, `PUT/DELETE /api/v1/timegroups/{id}` —
+> 스케줄 형식은 `"09:00-18:00,mon-fri,*,*"`(4필드: 시간,요일,일,월 — `&` 다중, `18:00-09:00`=야간
+> 익일 창)이며 저장하면 PBX 에 자동 반영됩니다. 모바일 토큰은 조회 + 본인 내선 소유 그룹만
+> 생성/수정/삭제할 수 있습니다.
 > **PUT `schedules` 3-상태**: 필드 생략 = 기존 유지, `[]` = 스케줄 전체 삭제(그룹은
-> 유지 — 참조하는 diversion 은 발동 안 함), `["행",…]` = **전체 교체**(append 아님 —
+> 유지 — 참조하는 규칙은 동작하지 않음), `["행",…]` = **전체 교체**(append 아님 —
 > 개별 행 수정/삭제는 남길 행 전체를 다시 보냄). POST 는 최소 1개 필수.
 
-> **PEA 활성화 전제 — 안내음 (gw 1.4.14.88+)**: 개인비서는 코어 다이얼플랜이
-> `pa/{단말번호}/pamsg.wav`(피호출 **내선번호** 키)를 재생하는 IVR입니다. PEA를 켤 때
-> 이 파일이 없으면 폴백 체인으로 자동 프로비저닝합니다: **테넌트 기본**(`PUT
-> /api/v1/earlymedia/_default` 로 업로드/TTS 합성) → **내장 기본 안내음**(gw
-> 1.4.14.90+, go:embed — 아무 음원도 없어도 PEA가 막히지 않음). `400
-> {"code":"pea_no_recording"}` 은 이제 spool 기록 실패 등 예외 상황에만 발생합니다.
+> **PEA 활성화 전제 — 안내음**: 개인비서는 내선별 안내음을 재생하는 IVR입니다. PEA를 켤 때
+> 그 내선의 안내음이 없으면 **테넌트 기본 안내음**(`PUT /api/v1/earlymedia/_default` 로
+> 업로드/TTS 합성) → **내장 기본 안내음** 순으로 자동 사용하므로, 음원이 없어도 PEA 가
+> 막히지 않습니다. `400 {"code":"pea_no_recording"}` 은 안내음 준비 자체가 실패한 예외 상황에만
+> 발생합니다(운영사에 문의하세요).
 > 내선별 안내음 등록/교체 = `PUT /api/v1/earlymedia/{단말번호}` (url/tts/upload) —
-> **모바일 토큰은 본인 내선 키만**(gw 1.4.14.90+, `_default`/타 키는 403 `not_owner`).
+> **모바일 토큰은 본인 내선 키만**(`_default`/타 키는 403 `not_owner`).
 >
 > **안내음 등록 3방식** (`PUT /api/v1/earlymedia/{단말번호}`, JSON):
-> - **URL**: `{"enabled":"yes","audioUrl":"https://…mp3|wav"}` — 서버가 내려받아 8kHz WAV 변환. TTS 프로바이더 불필요.
-> - **TTS**: `{"enabled":"yes","tts":{"text":"…","provider":"openai"?,"voice":"…"?}}` — 클라우드 TTS 합성. **테넌트 또는 global(`프로바이더 API 키` 탭)에 TTS 키가 있어야 함**; 없으면 400 `{"code":"tts_provider_not_configured"}`(gw 1.4.14.103). gw 1.4.14.103+ 는 테넌트별 키가 없으면 **global 키를 상속**한다.
+> - **URL**: `{"enabled":"yes","audioUrl":"https://…mp3|wav"}` — 서버가 내려받아 8kHz WAV 로 변환. TTS 프로바이더 불필요.
+> - **TTS**: `{"enabled":"yes","tts":{"text":"…","provider":"openai"?,"voice":"…"?}}` — 클라우드 TTS 합성. **게이트웨이에 TTS 키가 등록되어 있어야 함**; 없으면 400 `{"code":"tts_provider_not_configured"}` — 운영사에 TTS 키 등록을 요청하세요.
 > - **파일 업로드**: `POST /api/v1/earlymedia/{단말번호}/upload` (multipart/form-data, field **`file`**, 최대 **10MB**, wav/mp3). 인증은 PUT 과 동일.
 >
-> 다운로드/합성 실패 시 gw 1.4.14.103+ 는 **502 `{"code":"recording_provision_failed","detail":…}`** 를 반환한다(종전엔 200 이라 앱이 성공 오인 → PEA 무음). 성공 시 200 + `{synthesized|downloaded:true}`.
+> 다운로드/합성 실패 시 **502 `{"code":"recording_provision_failed","detail":…}`** 를 반환합니다. 성공 시 200 + `{synthesized|downloaded:true}`.
 
-### AstDB 저장 구조
-
-```
-# 착신전환 (CFI/CFB/CFN/CFU)
-/{tenantId}/diversions/{단말번호}/{타입}/enable       → yes | no
-/{tenantId}/diversions/{단말번호}/{타입}/destination   → sub-custom-numbers,{전화번호},1
-/{tenantId}/diversions/{단말번호}/{타입}/time_group    → (시간 조건 그룹)
-
-# 방해금지 / 개인비서 (enable-only 토글)
-/{tenantId}/diversions/{단말번호}/DND/enable           → yes | no
-/{tenantId}/diversions/{단말번호}/PEA/enable           → yes | no
-
-# 개인비서(PEA) IVR 옵션 목적지 (DTMF 1~4 분기, 0=무입력/타임아웃 폴백)
-# → /api/v1/pea/{단말번호}/destinations 로 관리 (gw 1.4.14.96)
-/{tenantId}/diversions/{단말번호}/PEA/destination_0~4  → 1010 | dvgateway-flow,s,1 | T2_cos-all,4801,1
-
-# 코어 마스터 게이트 — 어떤 diversion 이든 하나라도 켜져 있으면 yes 여야
-# 코어 다이얼플랜이 위 규칙들을 평가한다. 게이트웨이가 enable 쓰기 시
-# 자동 관리(gw 1.4.14.88+) — 직접 만질 필요 없음.
-/{tenantId}/diversions/{단말번호}/has_enable_diversions → yes | no
-```
+> **개인비서 IVR 옵션 목적지** — 개인비서 안내 중 발신자가 누르는 DTMF 키별 목적지는
+> `GET/PUT /api/v1/pea/{단말번호}/destinations` 로 관리합니다.
+> 본문 `{"destinations":{"1":"1010","2":"01012345678"}}` — 키는 `"0"`~`"4"`(`"0"` = 무입력/타임아웃),
+> 보낸 키만 갱신되고 빈 문자열은 그 옵션 삭제, 범위 밖 키는 400. 값은 영숫자·`_.,-` 만 허용(최대 128자).
+> 내선·전화번호 외의 목적지(예: AI 봇 연결)에 쓸 값은 운영사에 문의하세요. 모바일 토큰은 본인 내선만.
 
 ### 엔드포인트 목록
 
@@ -273,11 +240,11 @@ curl -H "Authorization: Bearer $TOKEN" \
 **응답:**
 ```json
 {
-  "tenantId": "bdd23e154a7ea1c8",
+  "tenantId": "89abcdef01234567",
   "extensions": [
     {
-      "extension": "45144801",
-      "did": "07045144801",
+      "extension": "12345601",
+      "did": "07012345601",
       "rules": [
         {"type": "CFI", "enable": "yes", "destination": "01012345678", "rawDestination": "sub-custom-numbers,01012345678,1"},
         {"type": "CFB", "enable": "no"},
@@ -289,19 +256,21 @@ curl -H "Authorization: Bearer $TOKEN" \
 }
 ```
 
+> `destination` 은 착신번호이고, `rawDestination` 은 PBX 원본 표기입니다. 앱은 `destination` 을 사용하세요.
+
 ### 2.2 특정 내선 전체 규칙 조회
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/diversions/45144801
+  http://localhost:8080/api/v1/diversions/12345601
 ```
 
 **응답:**
 ```json
 {
-  "tenantId": "bdd23e154a7ea1c8",
-  "extension": "45144801",
-  "did": "07045144801",
+  "tenantId": "89abcdef01234567",
+  "extension": "12345601",
+  "did": "07012345601",
   "rules": [
     {"type": "CFI", "enable": "yes", "destination": "01012345678", "rawDestination": "sub-custom-numbers,01012345678,1"},
     {"type": "CFB", "enable": "no", "destination": ""},
@@ -317,25 +286,25 @@ curl -H "Authorization: Bearer $TOKEN" \
 # CFI 즉시 착신전환 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/CFI \
+  http://localhost:8080/api/v1/diversions/12345601/CFI \
   -d '{"enable":"yes","destination":"01012345678"}'
 
 # CFB 통화중 착신전환 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/CFB \
-  -d '{"enable":"yes","destination":"07045144802"}'
+  http://localhost:8080/api/v1/diversions/12345601/CFB \
+  -d '{"enable":"yes","destination":"07012345602"}'
 
 # CFN 부재중 착신전환 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/CFN \
+  http://localhost:8080/api/v1/diversions/12345601/CFN \
   -d '{"enable":"yes","destination":"01098765432"}'
 
 # CFU 미연결 착신전환 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/CFU \
+  http://localhost:8080/api/v1/diversions/12345601/CFU \
   -d '{"enable":"yes","destination":"01098765432"}'
 ```
 
@@ -343,9 +312,9 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|:----:|:----:|------|
-| `enable` | string | - | `"yes"` 또는 `"no"` |
-| `destination` | string | - | 착신번호 (전화번호) |
-| `timeGroup` | string | - | 시간 조건 그룹 (선택) |
+| `enable` | string | - | `"yes"` 또는 `"no"` (그 밖의 값은 400) |
+| `destination` | string | - | 착신번호 (영숫자·`_.,+*#-`, 최대 160자 — 공백 등 그 밖의 문자는 400) |
+| `timeGroup` | string | - | 시간 조건 그룹 (선택, 위 `timeGroup` 설명 참고) |
 
 > `enable`만 보내면 번호는 유지, `destination`만 보내면 활성화 상태는 유지됩니다.
 
@@ -353,9 +322,9 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 ```json
 {
   "ok": true,
-  "tenantId": "bdd23e154a7ea1c8",
-  "extension": "45144801",
-  "did": "07045144801",
+  "tenantId": "89abcdef01234567",
+  "extension": "12345601",
+  "did": "07012345601",
   "rule": {
     "type": "CFI",
     "enable": "yes",
@@ -372,26 +341,26 @@ DND·PEA는 **destination 없는 on/off 토글**입니다. `{"enable":"yes"|"no"
 ```bash
 # 방해금지(DND) 켜기 / 끄기
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/DND -d '{"enable":"yes"}'
+  http://localhost:8080/api/v1/diversions/12345601/DND -d '{"enable":"yes"}'
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/DND -d '{"enable":"no"}'
+  http://localhost:8080/api/v1/diversions/12345601/DND -d '{"enable":"no"}'
 
-# 개인비서(PEA) 켜기 — 착신전환이 설정되어 있어도 개인비서가 먼저 수신
+# 개인비서(PEA) 켜기 — CFI 가 꺼져 있으면 벨이 울리기 전에 개인비서가 먼저 수신
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/PEA -d '{"enable":"yes"}'
+  http://localhost:8080/api/v1/diversions/12345601/PEA -d '{"enable":"yes"}'
 
 # 조회 (단일 타입 / 전체) — 전체 조회 시 rules[]에 DND·PEA도 포함
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/diversions/45144801/PEA
+  http://localhost:8080/api/v1/diversions/12345601/PEA
 ```
 
 **응답 (PEA):**
 ```json
 {
   "ok": true,
-  "tenantId": "bdd23e154a7ea1c8",
-  "extension": "45144801",
-  "did": "07045144801",
+  "tenantId": "89abcdef01234567",
+  "extension": "12345601",
+  "did": "07012345601",
   "rule": { "type": "PEA", "enable": "yes" }
 }
 ```
@@ -401,7 +370,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/diversions/45144801/CFI \
+  http://localhost:8080/api/v1/diversions/12345601/CFI \
   -d '{"enable":"no"}'
 ```
 
@@ -409,15 +378,15 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 
 ```bash
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/diversions/45144801/CFI
+  http://localhost:8080/api/v1/diversions/12345601/CFI
 ```
 
 **응답:**
 ```json
 {
   "ok": true,
-  "tenantId": "bdd23e154a7ea1c8",
-  "extension": "45144801",
+  "tenantId": "89abcdef01234567",
+  "extension": "12345601",
   "type": "CFI",
   "action": "disabled"
 }
@@ -427,8 +396,8 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ## 폰북 (Phonebook)
 
-테넌트의 내부 디렉터리를 조회합니다. 모바일 앱(makecall)이 **연락처 화면 분류**와
-**"기능번호·음성회의는 인터넷통화(mVoIP) 전용 발신"** 분기에 사용하므로, 각 항목에
+테넌트의 내부 디렉터리를 조회합니다. 모바일 앱이 **연락처 화면 분류**와
+**"기능번호·음성회의는 인터넷통화(mVoIP) 전용 발신"** 분기에 사용할 수 있도록, 각 항목에
 **카테고리(`type`)** 가 포함됩니다. (v1.4.8.44+)
 
 ### 엔드포인트
@@ -437,7 +406,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 |:------:|:-----|:-----|
 | `GET` | `/api/v1/phonebook[?tenantId=...]` | 테넌트 폰북(연락처 목록) 조회 |
 
-- **인증**: 착신전환과 동일 — `dvgw_`→JWT(서버/관리) **또는** Firebase ID 토큰(모바일).
+- **인증**: 착신전환과 동일 — `dvgw_`→JWT(서버/관리) **또는** Firebase ID 토큰/accessToken(모바일).
   자세한 내용은 [1.1 모바일 Firebase 인증](#11-모바일-앱-firebase-id-토큰-인증-v14844).
 - **테넌트 범위**: 테넌트/모바일 토큰은 자기 테넌트로 자동 스코프(`?tenantId=` 무시).
   Admin(`dvgw_`) 토큰은 `?tenantId={path}` 필수.
@@ -446,16 +415,16 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ```json
 {
-  "phonebookId": "internal-7be69580e27641df",
-  "tenantId": "7be69580e27641df",
+  "phonebookId": "internal-0123456789abcdef",
+  "tenantId": "0123456789abcdef",
   "contacts": [
     {
       "name": "기술이사",
       "number": "1010",
       "type": "Extensions",
-      "email": "cto@makecall.io",
-      "company": "OLSSOO",
-      "mobile": "01011112222"
+      "email": "user@example.com",
+      "company": "Example",
+      "mobile": "01012345678"
     },
     {
       "name": "영업팀",
@@ -469,7 +438,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 | 필드 | 타입 | 필수 | 설명 |
 |------|:----:|:----:|------|
 | `phonebookId` | string | ✅ | 폰북 식별자(`internal-{tenantId}`) |
-| `tenantId` | string | ✅ | 테넌트 식별자(Dynamic VoIP path, 16-hex) |
+| `tenantId` | string | ✅ | 테넌트 식별자(16-hex) |
 | `contacts` | array | ✅ | 연락처 목록 |
 | `contacts[].name` | string | ✅ | 표시 이름(없으면 번호로 폴백) |
 | `contacts[].number` | string | ✅ | **발신 번호**(단말번호/그룹번호/회의번호/기능번호) |
@@ -488,7 +457,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 | `Conferences` | 음성회의 | **mVoIP 전용** |
 
 > 카테고리는 **PBX 원본 값을 그대로 보존**합니다(게이트웨이가 추론·재분류하지 않음). 정렬은
-> 카테고리 선언 순서 → 번호 오름차순.
+> 카테고리 선언 순서 → 번호 오름차순. 번호가 없는 항목은 목록에서 제외됩니다.
 
 ### 예시
 
@@ -499,49 +468,11 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
 
 # dvgw 키→JWT(Admin) — 특정 테넌트 지정
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/phonebook?tenantId=7be69580e27641df"
+  "http://localhost:8080/api/v1/phonebook?tenantId=0123456789abcdef"
 ```
 
-### 데이터 소스 / 운영 메모
-
-소스는 **Dynamic VoIP(VitalPBX) REST API** 이며, PBX 가 contact 마다 `category` 를 이미 내려주므로
-게이트웨이는 그대로 프록시합니다(카테고리 추론·재분류·유실 없음). 게이트웨이는 두 단계를 거칩니다:
-
-1. `GET /api/v2/phonebooks` — 테넌트의 전화번호부 목록. 각 항목은
-   `{id, description, source_type:"internal"|"external", tenant_id, ...}`.
-   **`source_type:"internal"`** 전화번호부가 내선/그룹/회의/기능번호를 자동 집계한 디렉터리이며,
-   게이트웨이는 **첫 번째 internal** 전화번호부의 `id` 를 선택합니다.
-2. `GET /api/v2/phonebooks/{id}/contacts` — 그 전화번호부의 contact 목록. 각 항목은
-   `{name, telephone, mobile_number, home_number, email, organization, job_title, category}`.
-
-```jsonc
-// 1) GET /api/v2/phonebooks  (발췌)
-{ "status": "success", "data": [
-  { "id": 2,  "description": "얼쑤팩토리", "source_type": "external", "tenant_id": 6 },
-  { "id": 12, "description": "내선그룹",   "source_type": "internal", "tenant_id": 6 }  // ← 첫 internal 선택
-]}
-
-// 2) GET /api/v2/phonebooks/12/contacts  (발췌)
-{ "status": "success", "data": [
-  { "name": "웹폰", "telephone": "1000", "mobile_number": null, "email": null,
-    "organization": null, "job_title": null, "category": "Extensions" }
-]}
-```
-
-**필드 매핑** (PBX contact → `/api/v1/phonebook` contact):
-
-| PBX 필드 | 게이트웨이 필드 |
-|----------|-----------------|
-| `name` | `name` (빈 값이면 `number` 로 폴백) |
-| `telephone` | `number` (빈 값이면 해당 contact 제외) |
-| `category` | `type` (**원본 그대로 보존**) |
-| `email` | `email` |
-| `organization` | `company` |
-| `mobile_number` | `mobile` |
-
-> REST 인증(`app-key` + `tenant` 헤더)은 단말 조회(`GET /api/v2/devices`)와 동일한 read-only
-> 경로를 재사용합니다. PBX 동기화(`PBX_TENANT_SYNC_ENABLED`)가 꺼져 있으면 폰북은 **503**,
-> internal 전화번호부가 없으면 빈 `contacts` 를 반환합니다(타 테넌트 누출 없음).
+> 테넌트에 내부 디렉터리가 없으면 빈 `contacts` 를 반환합니다. 게이트웨이에서 PBX 연동이 구성되지
+> 않았으면 **503** 입니다 — 운영사에 문의하세요.
 
 ---
 
@@ -554,8 +485,8 @@ Dynamic VoIP PBX의 내선별 발신자표시(CID)를 관리합니다.
 ```
 "발신자이름" <발신자번호>
 
-예: "OLSSOO Inc." <16682471>
-예: "07045144800" <07045144800>
+예: "Example Inc." <0212345678>
+예: "07012345600" <07012345600>
 ```
 
 ### 엔드포인트 목록
@@ -565,133 +496,127 @@ Dynamic VoIP PBX의 내선별 발신자표시(CID)를 관리합니다.
 | `GET` | `/api/v1/callerid/{단말번호}` | 내부/외부 발신자표시 조회 |
 | `PUT` | `/api/v1/callerid/{단말번호}` | 외부 발신자표시 변경 |
 
-> 🔐 **테넌트 스코프** — 내선번호는 테넌트마다 겹치므로 조회·변경은 `ombu_extensions.tenant_id`
-> 로 좁힌다. 테넌트·모바일 토큰은 **토큰 테넌트로 고정**되고, admin 은 `?tenantId=<path>` 로
-> 대상을 정한다. admin 이 `tenantId` 를 생략하면 그 내선이 **한 테넌트에만** 있을 때만 동작하고,
-> 여러 테넌트에 있으면 `409 ambiguous_extension` 이다(종전에는 임의 테넌트의 행을 읽고,
-> PUT 은 **모든 테넌트의 같은 번호 행**을 바꿨다). 테넌트를 PBX 로 해석하지 못하면
-> `403 tenant_unresolved`(부팅 직후 캐시가 비었으면 `503 tenant_cache_not_ready` + `Retry-After` · PBX 동기화가 꺼진 설치는 같은 내선 행이 정확히 하나일 때만 응답하고 둘 이상이면 `409 ambiguous_extension`), 해석 못 하는 `tenantId` 는 `400 unknown_tenant`.
+> 🔐 **테넌트 스코프** — 내선번호는 테넌트마다 겹칠 수 있으므로 조회·변경은 테넌트 단위로 좁혀집니다.
+> 테넌트·모바일 토큰은 **토큰 테넌트로 고정**되고, admin 은 `?tenantId=<path>` 로 대상을 정합니다.
+> admin 이 `tenantId` 를 생략하면 그 내선이 **한 테넌트에만** 있을 때만 동작하고,
+> 여러 테넌트에 있으면 `409 ambiguous_extension` 입니다. 테넌트를 해석하지 못하면
+> `403 tenant_unresolved`(게이트웨이 기동 직후에는 `503 tenant_cache_not_ready` + `Retry-After` — 잠시 후 재시도),
+> 해석할 수 없는 `tenantId` 는 `400 unknown_tenant` 입니다.
 
-> `internal_cid`(내부발신자표시)는 **조회만** 가능합니다 (PBX 관리).
-> `external_cid`(외부발신자표시)는 **조회 + 변경** 가능합니다.
+> `internalCid`(내부발신자표시)는 **조회만** 가능합니다 (PBX 관리).
+> `externalCid`(외부발신자표시)는 **조회 + 변경** 가능합니다.
 
-> ⚠️ **`did` 의 의미가 gw 1.4.15.197 에서 바뀌었습니다.** 종전에는 `"070" + 단말번호` 를
-> **합성**해서 돌려줬습니다 — 번호를 블록에서 배정하는 설치에서는 **그냥 틀린 값**이었고,
-> 앱은 이미 그것을 *"신뢰할 수 없는 내부값"* 으로 판정해 읽지 않고 있었습니다(실측 2026-08-22).
-> 이제 **seat 에 지정된 실제 수신 DID** 를 돌려주고, **모르면 빈 문자열**입니다(추측하지 않음).
-> 같은 값이 provision 응답의 `dids` 이며 **권위 소스는 seat 설정 하나**입니다.
+> **`did`** 는 그 내선(seat)에 지정된 **실제 수신 DID** 이며, **모르면 빈 문자열**입니다(추측하지 않음).
+> provision 응답의 `dids` 와 같은 값입니다.
 >
-> **`perCallCid`**(gw 1.4.15.197): 이 설치에서 **통화별 발신번호 선택이 실제로 동작하는가**
-> (`GW_PERCALL_CID_ENABLED`, 기본 `false`). 모바일 flat 응답에도 포함됩니다.
-> 앱은 `false` 면 발신번호 선택 UI 를 **숨겨야** 합니다 — 꺼진 설치에서는 고른 번호가 조용히
-> 무시되고 단말 CID 로 나가므로 화면만 "골라졌다"고 말하게 됩니다.
-> ⚠️ **필드 부재 = 구버전 게이트웨이** → 종전 동작을 유지하십시오(부재를 `false` 로 읽으면
-> 멀쩡히 켜진 설치에서 기능이 사라집니다).
+> **`perCallCid`**: 이 게이트웨이에서 **통화별 발신번호 선택이 동작하는가**. 모바일 flat 응답에도
+> 포함됩니다. 앱은 `false` 면 발신번호 선택 UI 를 **숨기세요** — 꺼진 게이트웨이에서는 고른 번호가
+> 무시되고 단말 CID 로 발신됩니다. 기능이 필요하면 운영사에 요청하세요.
+> ⚠️ **필드 부재 = 구버전 게이트웨이** → 기존 동작을 유지하십시오(부재를 `false` 로 읽지 마세요).
 
 ### 3.1 발신자표시 조회
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/callerid/45144800
+  http://localhost:8080/api/v1/callerid/12345600
 ```
 
 **응답:**
 ```json
 {
-  "extension": "45144800",
-  "did": "07045144800",
+  "extension": "12345600",
+  "did": "07012345600",
   "perCallCid": true,
-  "name": "07045144800",
+  "name": "07012345600",
   "internalCid": {
-    "name": "07045144800",
-    "number": "45144800",
-    "raw": "\"07045144800\" <45144800>"
+    "name": "07012345600",
+    "number": "12345600",
+    "raw": "\"07012345600\" <12345600>"
   },
   "externalCid": {
-    "name": "07045144800",
-    "number": "07045144800",
-    "raw": "\"07045144800\" <07045144800>"
+    "name": "07012345600",
+    "number": "07012345600",
+    "raw": "\"07012345600\" <07012345600>"
   }
 }
 ```
 
 #### 모바일(Firebase) 조회 — flat `{name, number}` (v1.4.8.47+)
 
-모바일 앱은 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)의 Firebase ID 토큰으로 **GET 만** 호출하며
+모바일 앱은 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)의 Firebase ID 토큰(또는 accessToken)으로 **GET 만** 호출하며
 (PUT 은 403 `read_only` — CID 변경은 admin/서버 전용), 응답은 **외부 발신표시(이름/번호)만** flat 으로
 받습니다(내부 CID 미노출). 멀티 테넌트는 `?tenantId=<path>`. 자기 배정 단말번호만 접근(타 단말 → 403).
 
 ```bash
 curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
-  "http://localhost:8080/api/v1/callerid/1010?tenantId=7be69580e27641df"
+  "http://localhost:8080/api/v1/callerid/1010?tenantId=0123456789abcdef"
 ```
 ```json
-{ "name": "OLSSOO 대표", "number": "07045141010" }
+{ "name": "Example 대표", "number": "07012341010" }
 ```
 
-> dvgw 키→JWT(admin) 호출은 기존 rich 응답(extension/did/internalCid/externalCid) 그대로 유지.
+> dvgw 키→JWT(admin) 호출은 rich 응답(extension/did/internalCid/externalCid)을 그대로 받습니다.
 
 #### 테넌트 대표 CID — `GET /api/v1/callerid/_default` (v1.4.8.49+)
 
 외부발신 표시정보 **폴백 체인**의 ②단계 — 내선별 CID(`/callerid/{ext}`)가 비어 있을 때 쓰는
-**테넌트 대표 발신표시**(대표 이름 `cid_name` / 대표 번호 `cid_number`). PBX 테넌트 설정에서
-가져오며, 인증·테넌트 스코프는 다른 callerid GET 과 동일(Firebase 또는 admin JWT). **GET 전용**
-(대표 CID 변경은 테넌트 설정 `PUT /api/v1/tenants/{id}` 의 `cidName`/`cidNumber`).
+**테넌트 대표 발신표시**(대표 이름 / 대표 번호). 인증·테넌트 스코프는 다른 callerid GET 과
+동일(Firebase 또는 admin JWT). **GET 전용**(대표 CID 변경은 관리자가 테넌트 설정에서 합니다).
 
-- `_default` 는 **테넌트 단위** 정보라 per-extension 소유 검증이 없다 — 그 테넌트에 seat 을 가진
+- `_default` 는 **테넌트 단위** 정보라 내선별 소유 검증이 없습니다 — 그 테넌트에 seat 을 가진
   사용자면 누구나 조회. 멀티 테넌트는 `?tenantId=<path>`.
 
 ```bash
 curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
-  "http://localhost:8080/api/v1/callerid/_default?tenantId=7be69580e27641df"
+  "http://localhost:8080/api/v1/callerid/_default?tenantId=0123456789abcdef"
 ```
 ```json
-{ "name": "OLSSOO", "number": "0270001000" }
+{ "name": "Example", "number": "0270001000" }
 ```
 
 > 앱 폴백 체인: ① `/callerid/{ext}` → ② (비면) `/callerid/_default`(테넌트 대표) → ③ (그래도 비면)
-> 앱 최종 PBX `external_cid`.
+> 앱의 최종 기본값.
 
 ### 3.2 외부 발신자표시 변경
 
 > ⚠️ **중요:** 발신자 정보 변경 후 PBX에 반영하려면 **설정 재적용(apply_changes)**이 필요합니다.
-> `"applyChanges": true`를 포함하면 DB 변경 + 설정 재적용이 **한번의 호출로** 처리됩니다.
+> `"applyChanges": true`를 포함하면 변경 + 설정 재적용이 **한번의 호출로** 처리됩니다.
 
 **이름만 변경 + 즉시 적용:**
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/callerid/45144800 \
+  http://localhost:8080/api/v1/callerid/12345600 \
   -d '{"name":"홍길동","applyChanges":true}'
 ```
-→ `external_cid = "홍길동" <07045144800>` + PBX 설정 재적용
+→ 외부 발신표시 `"홍길동" <07012345600>` + PBX 설정 재적용
 
 **번호만 변경 + 즉시 적용:**
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/callerid/45144800 \
+  http://localhost:8080/api/v1/callerid/12345600 \
   -d '{"number":"0212345678","applyChanges":true}'
 ```
-→ `external_cid = "07045144800" <0212345678>` + PBX 설정 재적용
+→ 외부 발신표시 `"07012345600" <0212345678>` + PBX 설정 재적용
 
 **이름 + 번호 동시 변경 + 즉시 적용:**
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/callerid/45144800 \
-  -d '{"name":"OLSSOO Inc.","number":"16682471","applyChanges":true}'
+  http://localhost:8080/api/v1/callerid/12345600 \
+  -d '{"name":"Example Inc.","number":"0212345678","applyChanges":true}'
 ```
-→ `external_cid = "OLSSOO Inc." <16682471>` + PBX 설정 재적용
+→ 외부 발신표시 `"Example Inc." <0212345678>` + PBX 설정 재적용
 
-**DB만 변경 (적용 보류):**
+**저장만 (적용 보류):**
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/callerid/45144800 \
+  http://localhost:8080/api/v1/callerid/12345600 \
   -d '{"name":"홍길동"}'
 ```
-→ DB만 변경, PBX에는 미반영 (별도 `POST /api/v1/pbx/apply-changes` 필요)
+→ 저장만 되고 PBX에는 미반영 (별도 `POST /api/v1/pbx/apply-changes` 필요)
 
 **PUT Body:**
 
@@ -707,12 +632,12 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 ```json
 {
   "ok": true,
-  "extension": "45144800",
-  "did": "07045144800",
+  "extension": "12345600",
+  "did": "07012345600",
   "externalCid": {
-    "name": "OLSSOO Inc.",
-    "number": "16682471",
-    "raw": "\"OLSSOO Inc.\" <16682471>"
+    "name": "Example Inc.",
+    "number": "0212345678",
+    "raw": "\"Example Inc.\" <0212345678>"
   },
   "applied": true
 }
@@ -722,31 +647,29 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 
 ## 통화기록 (CDR)
 
-PBX 통화기록을 DVG 경유로 조회합니다. 앱이 기존에 PBX `GET /api/v2/cdr` 를 직접 호출하던 것을
-**모든 트래픽을 DVG 로 통일**하면서 이 프록시가 대신 호출합니다(전역 PBX app-key 를 앱에
-임베드하지 않기 위함). (v1.4.8.52+)
+PBX 통화기록을 게이트웨이 경유로 조회합니다. 앱은 PBX 자격증명 없이 게이트웨이 토큰만으로
+통화기록을 조회할 수 있습니다. (v1.4.8.52+)
 
 ### 엔드포인트
 
 | 메서드 | 경로 | 설명 |
 |:------:|:-----|:-----|
-| `GET` | `/api/v1/pbx/cdr` | 통화기록 조회 (PBX `/api/v2/cdr` 프록시) |
+| `GET` | `/api/v1/pbx/cdr` | 통화기록 조회 |
 
-- **인증**: 착신전환·폰북과 동일 — `dvgw_`→JWT(서버/관리) **또는** Firebase ID 토큰(모바일).
+- **인증**: 착신전환·폰북과 동일 — `dvgw_`→JWT(서버/관리) **또는** Firebase ID 토큰/accessToken(모바일).
   멀티 테넌트는 `?tenantId=<path>`([1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)).
 - **노출 범위**:
-  - **모바일(Firebase)**: 토큰 사용자의 **자기 단말(내선) 또는 그 단말에 걸린 착신통화만**.
-    게이트웨이가 PBX 응답 행을 caller 의 내선(`src`/`dst`)·수신 DID(`did`)로 post-filter 합니다
-    (fail-closed — 일치 필드 없으면 제외, 타인 통화 누출 방지). 내선 미배정(push-only) 사용자는 빈 결과.
-  - **dvgw 키→JWT(admin/tenant)**: 테넌트 전체(필터 없음 — 서버/관리 경로). 테넌트 격리는 PBX
-    `tenant` 헤더가 보장(앱 직접호출과 동일 스코프).
-- **쿼리 전달**: 앱이 보낸 쿼리(`search`/`search_fields`/페이지·기간 등)를 그대로 PBX 로 전달합니다
-  (게이트웨이 전용 `tenantId`/`token` 키만 제거). 예: linkedid 단건 조회.
-- **응답**: **PBX `/api/v2/cdr` 원본 형식 그대로**(passthrough, 레거시 호환). 모바일은 동일
-  envelope 에서 본인 통화 행만 남깁니다(행 형식·봉투 구조 보존). 행 배열 위치는 배포마다 다를 수
-  있어(`data`[] · `data.result`[] · `data.results`[] · 최상위 `results`[]) 게이트웨이가 그중
-  처음 발견한 배열을 필터합니다(v1.4.8.54+). 어떤 형태도 못 찾으면 원본을 변형 없이 통과(깨짐 방지).
-  앱 파서도 `data.result`/`data.results`/`data`/`results` 를 모두 처리합니다.
+  - **모바일**: 토큰 사용자의 **자기 단말(내선) 또는 그 단말에 걸린 착신통화만**.
+    게이트웨이가 행을 caller 의 내선(`src`/`dst`)·수신 DID(`did`)로 필터합니다
+    (일치 필드가 없으면 제외 — 타인 통화 미노출). 내선 미배정(push-only) 사용자는 빈 결과.
+  - **dvgw 키→JWT(admin/tenant)**: 테넌트 전체(필터 없음).
+- **쿼리 전달**: 앱이 보낸 쿼리(`search`/`search_fields`/페이지·기간 등)를 그대로 PBX 조회에 사용합니다
+  (`tenantId`/`token` 키만 제외). 예: linkedid 단건 조회.
+- **응답**: **PBX 통화기록 원본 형식 그대로**(행 형식·봉투 구조 보존). 모바일은 같은 봉투에서
+  본인 통화 행만 남습니다. 행 배열 위치는 배포마다 다를 수 있으므로(`data`[] · `data.result`[] ·
+  `data.results`[] · 최상위 `results`[]) 앱 파서는 네 형태를 모두 처리하세요.
+- **녹취**: 각 행의 `has_recording`(불리언)이 녹취 유무를 알려 줍니다. 녹취 파일 URL(`recording_url`·`recfile`)은
+  기본적으로 응답에서 제거되므로(그 값에 의존하지 마세요), 재생은 인증된 `GET /api/v1/pbx/cdr/recording` 으로 합니다.
 
 ### 예시
 
@@ -757,55 +680,29 @@ curl -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \
 
 # dvgw 키→JWT(admin) — 특정 테넌트 전체
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/pbx/cdr?tenantId=7be69580e27641df&search=1010&search_fields=src,dst"
+  "http://localhost:8080/api/v1/pbx/cdr?tenantId=0123456789abcdef&search=1010&search_fields=src,dst"
 ```
 
-> **필드 가정**: 본인 통화 필터는 VitalPBX/Asterisk CDR 표준 필드(`src` 발신·`dst` 착신·`did`
-> 수신 대표번호)를 기준으로 정확히 일치합니다. PBX 스키마가 다르면 과소노출(빈 결과)로 **안전하게**
-> 동작하므로(누출 없음), 그 경우 필드명을 확인해 `internal/api/pbxcdr.go` 의 `cdrRowOwned` 를 조정하세요.
+> **본인 통화 필터**는 표준 CDR 필드(`src` 발신·`dst` 착신·`did` 수신 대표번호)의 정확 일치로 동작합니다.
+> 본인 통화가 보이지 않으면 운영사에 문의하세요.
 
-### 통화 ↔ linkedid 연계 (온프레미스: 푸시 없는 녹취 조회) — `X-Linkedid` SIP 헤더
+### 통화 ↔ linkedid 연계 — `X-Linkedid` SIP 헤더
 
-온프레미스는 푸시(FCM)가 없어 `call_summary`/`call_linkedid` 푸시로 linkedid 를 받을 수
-없습니다. 그래서 앱이 통화 직후 정확한 linkedid 로 CDR/녹취를 조회하려면(번호·시각 휴리스틱
-대신) mVoIP 통화의 SIP 메시지에 **`X-Linkedid` 커스텀 헤더**를 실어 앱이 SIP 시점에 캡처합니다.
+푸시(FCM)를 쓰지 않는 배포에서는 앱이 푸시로 linkedid 를 받을 수 없습니다. 그래서 앱이 통화 직후
+정확한 linkedid 로 CDR/녹취를 조회하려면(번호·시각 추정 대신) mVoIP 통화의 SIP 메시지에 실린
+**`X-Linkedid` 커스텀 헤더**를 앱이 SIP 시점에 읽습니다.
 
-> **이 헤더는 게이트웨이가 주입하지 않습니다 — Dynamic VoIP 다이얼플랜에서 추가합니다.**
-> 게이트웨이는 **control plane**(프로비저닝·ICE·토큰)만 담당하고 SIP 미디어/시그널링 경로에
-> 끼지 않습니다(앱은 `nginx → Asterisk chan_pjsip wss` 로 직접 등록). 따라서 INVITE/200 OK 에
-> 헤더를 넣는 일은 구조상 PBX(Asterisk) 측에서만 가능합니다.
-
-WebRTC seat 통화에 헤더를 추가하는 다이얼플랜 예시(발신·수신 양방향):
-
-```ini
-; 소프트폰 발신/수신 레그에서 linkedid 를 커스텀 헤더로 부착
-exten => _X.,1,Set(PJSIP_HEADER(add,X-Linkedid)=${CHANNEL(linkedid)})
- same => n,...   ; 이후 Dial(PJSIP/...) 등 기존 라우팅
-```
-
-- 헤더명: **`X-Linkedid`** (값 = Asterisk `${CHANNEL(linkedid)}`).
+- 이 헤더는 게이트웨이가 아니라 **PBX 가 부착**합니다. 헤더가 오지 않으면 운영사에 `X-Linkedid` 부착을 요청하세요.
+- 헤더명: **`X-Linkedid`** (값 = 그 통화의 linkedid).
 - 앱은 SIP 연결 시 이 헤더를 읽어 로컬 통화이력에 linkedid 를 저장 → 위 `GET /api/v1/pbx/cdr?
-  search=<linkedid>&search_fields=linkedid` 로 정확히 조회(휴리스틱·푸시 불필요).
-- 클라우드 배포에서도 동일 헤더를 부착하면 푸시와 무관하게 더 견고합니다(공통 채택 권장).
+  search=<linkedid>&search_fields=linkedid` 로 정확히 조회(추정·푸시 불필요).
+- 푸시를 쓰는 배포에서도 같은 헤더를 쓰면 푸시와 무관하게 더 견고합니다.
 
 ---
 
 ## 4. API 키 관리 (App Keys)
 
-Dynamic VoIP PBX의 단말별 API 인증 키(`ombu_app_keys` 테이블)를 관리합니다.
-
-### 테이블 구조
-
-```sql
-CREATE TABLE ombu_app_keys (
-  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  description VARCHAR(255) NOT NULL,    -- DID 번호 (070 + 단말번호)
-  `key`       VARCHAR(255) NOT NULL,    -- MD5 해시 (32자리 hex)
-  tenant      INT UNSIGNED DEFAULT 1,
-  enabled     ENUM('yes','no') DEFAULT 'yes',
-  tenant_id   INT UNSIGNED DEFAULT 1
-);
-```
+Dynamic VoIP PBX의 단말(DID)별 API 인증 키를 관리합니다.
 
 ### 엔드포인트 목록
 
@@ -813,12 +710,11 @@ CREATE TABLE ombu_app_keys (
 |:------:|:-----|:-----|
 | `GET` | `/api/v1/appkeys` | 전체 키 목록 |
 | `GET` | `/api/v1/appkeys/{DID}` | DID로 키 조회 |
-| `POST` | `/api/v1/appkeys` | 키 생성 (MD5 자동 생성) |
+| `POST` | `/api/v1/appkeys` | 키 생성 (32자리 hex 자동 생성) |
 | `PUT` | `/api/v1/appkeys/{DID}` | 활성화/비활성화, 키 재생성 |
 | `DELETE` | `/api/v1/appkeys/{DID}` | 키 삭제 |
 
-> 🔐 **관리자 JWT 전용** — `ombu_app_keys` 는 PBX REST 인증 키 표라 테넌트·모바일 토큰은
-> `403 admin_required` 다(종전에는 검사가 없어 테넌트 토큰으로 모든 테넌트의 키를 읽고 바꿀 수 있었다).
+> 🔐 **관리자 JWT 전용** — 테넌트·모바일 토큰은 `403 admin_required` 입니다.
 
 ### 4.1 전체 키 목록 조회
 
@@ -832,26 +728,34 @@ curl -H "Authorization: Bearer $TOKEN" \
 {
   "columns": ["id", "description", "key", "tenant", "enabled", "tenant_id"],
   "rows": [
-    {"id": 1, "description": "07045144801", "key": "6eee820f89e769967beec99a7b6d8281", "tenant": 1, "enabled": "yes", "tenant_id": 1},
-    {"id": 2, "description": "07045144800", "key": "3fc99c88ed6fd288d5ec3340921feeec", "tenant": 1, "enabled": "yes", "tenant_id": 1}
+    {"id": 1, "description": "07012345601", "key": "0123456789abcdef0123456789abcdef", "tenant": 1, "enabled": "yes", "tenant_id": 1},
+    {"id": 2, "description": "07012345600", "key": "fedcba9876543210fedcba9876543210", "tenant": 1, "enabled": "yes", "tenant_id": 1}
   ],
   "count": 2
 }
 ```
 
+| 필드 | 설명 |
+|------|------|
+| `description` | DID 번호 |
+| `key` | API 키 (32자리 hex) |
+| `tenant` | 키가 속한 테넌트 번호 |
+| `enabled` | `yes` / `no` |
+| `tenant_id` | 레거시 필드 (항상 `1`) |
+
 ### 4.2 DID로 키 조회
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/appkeys/07045144801
+  http://localhost:8080/api/v1/appkeys/07012345601
 ```
 
 **응답:**
 ```json
 {
   "id": 1,
-  "description": "07045144801",
-  "key": "6eee820f89e769967beec99a7b6d8281",
+  "description": "07012345601",
+  "key": "0123456789abcdef0123456789abcdef",
   "tenant": 1,
   "enabled": "yes",
   "tenant_id": 1
@@ -860,48 +764,44 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ### 4.3 키 생성
 
-DID 번호 또는 단말번호로 생성합니다. MD5 해시 키가 자동 생성되며, 중복 체크를 수행합니다.
+DID 번호 또는 단말번호로 생성합니다. 키는 자동 생성되며, 중복 체크를 수행합니다.
 
 ```bash
-# DID 번호로 생성
+# DID 번호로 생성 (권장)
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   http://localhost:8080/api/v1/appkeys \
-  -d '{"did":"07045144803"}'
+  -d '{"did":"07012345603","tenantId":"0123456789abcdef"}'
 
-# 단말번호로 생성 (070 자동 추가)
-# ⚠️ gw 1.4.15.197: 이 합성은 **남겨 뒀지만**(문서화된 입력 규칙) 이 값이
-#    ombu_app_keys.description 의 중복 판정 키가 되므로, 070+단말번호가 실제 DID 가
-#    아닌 설치에서는 잘못된 키가 만들어집니다. 가능하면 did 를 명시하십시오.
-#    (합성이 일어나면 [APPKEYS WARN] 로그가 남습니다)
+# 단말번호로 생성 ("070" + 단말번호를 DID 로 사용)
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   http://localhost:8080/api/v1/appkeys \
-  -d '{"extension":"45144803"}'
+  -d '{"extension":"12345603"}'
 ```
 
 **POST Body:**
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|:----:|:----:|------|
-| `did` | string | O* | DID 번호 (예: `07045144803`) |
-| `extension` | string | O* | 단말번호 (예: `45144803`, 자동으로 `070` 추가) |
-| `tenantId` | string | - | 키가 묶일 테넌트 — Dynamic VoIP 테넌트 path(16-hex) 또는 숫자 tenant_id. `?tenantId=` 쿼리도 받는다(본문 우선) |
+| `did` | string | O* | DID 번호 (예: `07012345603`) |
+| `extension` | string | O* | 단말번호 (예: `12345603`, `"070"` 을 붙여 DID 로 사용) |
+| `tenantId` | string | - | 키가 묶일 테넌트 — 테넌트 path(16-hex) 또는 숫자 tenant_id. `?tenantId=` 쿼리도 받습니다(본문 우선) |
 
 > `did` 또는 `extension` 중 하나 필수. 이미 존재하면 409 Conflict.
 >
-> ⚠️ **`tenant` 컬럼은 «이 키가 어느 테넌트의 키인가»다** — 게이트웨이가 테넌트별 PBX 키를 고를 때
-> `tenant = 숫자 tenant_id` 로 찾는다(`resolvePBXKey`). 종전 이 API 는 그 값을 **`1` 로 고정**해
-> 다른 테넌트 DID 의 키도 tenant 1 의 키로 기록했다. 이제 `tenantId` 를 주면 그 테넌트로 기록하고,
-> **생략하면 종전과 같이 `1`**(응답 `tenantDefaulted:true` · 그 DID 를 가진 seat 이 다른 테넌트에
-> 있으면 `[APPKEYS WARN]`). 해석할 수 없는 `tenantId` 는 **`1` 로 떨어뜨리지 않고** 400
-> `unknown_tenant`(캐시 미준비는 `tenant_cache_not_ready`). `tenant_id` 컬럼은 레거시라 계속 `1`.
+> ⚠️ **`extension` 입력은 `"070"+단말번호` 가 실제 DID 인 경우에만 쓰세요.** 그렇지 않은 설치에서는
+> 엉뚱한 DID 로 키가 만들어집니다 — 가능하면 `did` 를 명시하십시오.
+>
+> ⚠️ **`tenantId` 를 지정하세요.** 생략하면 키가 테넌트 `1` 로 기록되고 응답에 `tenantDefaulted:true` 가
+> 실립니다. 해석할 수 없는 `tenantId` 는 400 `unknown_tenant`(게이트웨이 기동 직후에는 `tenant_cache_not_ready` —
+> 잠시 후 재시도)입니다.
 
 **응답:**
 ```json
 {
   "ok": true,
-  "did": "07045144803",
+  "did": "07012345603",
   "key": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
   "tenant": "1",
   "tenantDefaulted": true
@@ -914,25 +814,25 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 # 비활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/appkeys/07045144801 \
+  http://localhost:8080/api/v1/appkeys/07012345601 \
   -d '{"enabled":"no"}'
 
 # 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/appkeys/07045144801 \
+  http://localhost:8080/api/v1/appkeys/07012345601 \
   -d '{"enabled":"yes"}'
 
-# 키 재생성 (새 MD5 해시 발급)
+# 키 재생성 (새 키 발급)
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/appkeys/07045144801 \
+  http://localhost:8080/api/v1/appkeys/07012345601 \
   -d '{"regenerateKey":true}'
 
 # 비활성화 + 키 재생성 동시
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/appkeys/07045144801 \
+  http://localhost:8080/api/v1/appkeys/07012345601 \
   -d '{"enabled":"no","regenerateKey":true}'
 ```
 
@@ -941,13 +841,13 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 | 필드 | 타입 | 필수 | 설명 |
 |------|:----:|:----:|------|
 | `enabled` | string | - | `"yes"` 또는 `"no"` |
-| `regenerateKey` | bool | - | `true`면 새 MD5 키 생성 |
+| `regenerateKey` | bool | - | `true`면 새 키 생성 |
 
 **응답:**
 ```json
 {
   "ok": true,
-  "did": "07045144801",
+  "did": "07012345601",
   "enabled": "no",
   "key": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6"
 }
@@ -957,163 +857,23 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 
 ```bash
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/appkeys/07045144803
+  http://localhost:8080/api/v1/appkeys/07012345603
 ```
 
 ---
 
-## 5. 외부 DB 프록시
+## 5. Early Media (응답 전 안내음)
 
-DVGateway를 통해 로컬 MySQL/PostgreSQL 데이터베이스에 직접 CRUD 작업을 수행합니다.
-**Admin 전용** 엔드포인트입니다.
-
-> ⚠️ **gw 1.4.15.196 부터 코드가 실제로 강제합니다.** 그 전까지 `query`·`insert`·`update`
-> 세 경로에는 admin 검사가 없어 **아무 테넌트 토큰으로도** 호출됐습니다(`ping` 에만
-> 게이트가 있었습니다). 이 프록시는 **테이블 이름을 호출자가 정하는** 원시 접근이라
-> 테넌트 스코프가 없습니다 — 테넌트 토큰에 열려 있으면 그 토큰으로 **다른 테넌트의**
-> 행을 읽고 쓸 수 있습니다.
->
-> 테넌트 토큰으로 이 경로를 쓰던 자동화가 있다면 **admin 토큰으로 교체**하십시오.
-> 거절은 조용하지 않습니다 — `[EXTDB DENY] {경로} tenant={id}` 로 로그에 남습니다.
-
-### 엔드포인트 목록
-
-| 메서드 | 경로 | 설명 |
-|:------:|:-----|:-----|
-| `GET` | `/api/v1/db/ping` | DB 연결 테스트 |
-| `POST` | `/api/v1/db/query` | SELECT 조회 |
-| `POST` | `/api/v1/db/insert` | INSERT 삽입 |
-| `POST` | `/api/v1/db/update` | UPDATE 수정 (WHERE 필수) |
-
-### 5.1 DB 연결 테스트
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/db/ping
-```
-
-**응답:**
-```json
-{"ok": true, "driver": "mysql"}
-```
-
-### 5.2 데이터 조회 (SELECT)
-
-```bash
-# 단말번호로 조회
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/db/query \
-  -d '{
-    "table": "ombu_extensions",
-    "where": {"extension": "45144801"},
-    "limit": 10
-  }'
-
-# 전체 조회 (WHERE 없이)
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/db/query \
-  -d '{"table": "ombu_app_keys", "orderBy": "id", "limit": 100}'
-
-# 조건부 조회
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/db/query \
-  -d '{
-    "table": "ombu_app_keys",
-    "where": {"enabled": "yes", "tenant_id": "1"},
-    "orderBy": "description",
-    "limit": 50
-  }'
-```
-
-**POST Body:**
-
-| 필드 | 타입 | 필수 | 설명 |
-|------|:----:|:----:|------|
-| `table` | string | O | 테이블명 |
-| `where` | object | - | WHERE 조건 (컬럼: 값) |
-| `orderBy` | string | - | 정렬 컬럼명 |
-| `limit` | int | - | 최대 행 수 (기본 100, 최대 1000) |
-
-**응답:**
-```json
-{
-  "columns": ["id", "description", "key", "tenant", "enabled", "tenant_id"],
-  "rows": [
-    {"id": 1, "description": "07045144801", "key": "6eee820f...", "tenant": 1, "enabled": "yes", "tenant_id": 1}
-  ],
-  "count": 1
-}
-```
-
-### 5.3 데이터 삽입 (INSERT)
-
-```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/db/insert \
-  -d '{
-    "table": "ombu_app_keys",
-    "data": {
-      "description": "07045144805",
-      "key": "abcdef1234567890abcdef1234567890",
-      "tenant": "1",
-      "enabled": "yes",
-      "tenant_id": "1"
-    }
-  }'
-```
-
-**POST Body:**
-
-| 필드 | 타입 | 필수 | 설명 |
-|------|:----:|:----:|------|
-| `table` | string | O | 테이블명 |
-| `data` | object | O | 삽입할 데이터 (컬럼: 값) |
-
-### 5.4 데이터 수정 (UPDATE)
-
-```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/db/update \
-  -d '{
-    "table": "ombu_app_keys",
-    "set": {"enabled": "no"},
-    "where": {"description": "07045144805"}
-  }'
-```
-
-**POST Body:**
-
-| 필드 | 타입 | 필수 | 설명 |
-|------|:----:|:----:|------|
-| `table` | string | O | 테이블명 |
-| `set` | object | O | 변경할 데이터 (컬럼: 값) |
-| `where` | object | O | WHERE 조건 (**필수** — 전체 업데이트 차단) |
-
-> ⚠️ `where`는 반드시 지정해야 합니다. 전체 테이블 UPDATE는 보안상 차단됩니다.
-
----
-
-## 6. Early Media (응답 전 안내음)
-
-전화 응답(Answer) 전에 183 Session Progress로 안내음을 재생합니다.
-DID별로 활성화/비활성화 및 음원 URL을 관리합니다.
+전화 응답(Answer) 전에 안내음을 재생합니다(183 Session Progress).
+번호별로 활성화/비활성화 및 음원을 관리합니다.
 
 ### 동작 원리
 
 ```
-전화 수신 → 다이얼플랜 → Progress() (183 SDP) → Playback(pamsg) → Answer() → Stasis(dvgateway)
-                                                   ↑ 응답 전 안내음                    ↑ AI 봇 연결
+전화 수신 → 응답 전 안내음 재생 → 응답(Answer) → AI 봇 연결
 ```
 
-음원 파일 저장 경로: `/var/spool/asterisk/{tenantPath}/pa/{extension}/pamsg.wav`
-(`{tenantPath}` = 통화의 실제 테넌트 = 다이얼플랜 `${TENANT_PATH}`. gw 1.4.14.93+
-는 요청 테넌트를 사용하며, `PBX_API_TENANT_ID` env 는 테넌트를 해석할 수 없는
-단일테넌트 배포의 폴백으로만 쓰인다.)
+> 이 번호로 들어오는 전화에 응답 전 안내음이 재생되도록 연결하는 작업은 운영사가 합니다.
 
 ### 엔드포인트
 
@@ -1121,53 +881,56 @@ DID별로 활성화/비활성화 및 음원 URL을 관리합니다.
 |:------:|:-----|:-----|
 | `GET` | `/api/v1/earlymedia/{extension}` | Early Media 설정 조회 |
 | `PUT` | `/api/v1/earlymedia/{extension}` | Early Media 설정/변경 |
+| `POST` | `/api/v1/earlymedia/{extension}/upload` | 음원 파일 업로드 (multipart `file`, 최대 10MB) |
 
-### 6.1 Early Media 조회
+### 5.1 Early Media 조회
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=7be69580e27641df"
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=0123456789abcdef"
 ```
 
 **응답:**
 ```json
 {
-  "extension": "07045144801",
-  "did": "07007045144801",
+  "tenantId": "0123456789abcdef",
+  "extension": "07012345601",
+  "did": "07012345601",
   "enabled": "yes",
-  "audioUrl": "https://www.makecall.io/demo-echotest.mp3",
+  "audioUrl": "https://cdn.example.com/greeting.mp3",
   "source": "url",
   "ttsText": "",
   "ttsProvider": "",
   "ttsVoice": "",
-  "localPath": "/var/spool/asterisk/7be69580e27641df/pa/07045144801/pamsg.wav",
   "fileExists": true
 }
 ```
+
+`tenantId` 는 서버가 실제로 적용한 테넌트입니다. 의도한 테넌트와 같은지 확인하세요.
 
 `source` 필드는 음원의 출처를 나타냅니다:
 - `"url"` — 외부 URL에서 다운로드
 - `"tts"` — 클라우드 TTS로 합성
 
-### 6.2 Early Media 설정 (음원 URL + 활성화)
+### 5.2 Early Media 설정 (음원 URL + 활성화)
 
-음원 URL을 설정하면 **자동으로 다운로드 + WAV 변환**됩니다 (MP3, OGG, FLAC 등 모든 형식 지원).
+음원 URL을 설정하면 **자동으로 다운로드 + WAV 변환**됩니다 (MP3, OGG, FLAC 등 지원).
 
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=7be69580e27641df" \
-  -d '{"enabled":"yes","audioUrl":"https://www.makecall.io/demo-echotest.mp3"}'
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=0123456789abcdef" \
+  -d '{"enabled":"yes","audioUrl":"https://cdn.example.com/greeting.mp3"}'
 ```
 
 **응답:**
 ```json
 {
   "ok": true,
-  "extension": "07045144801",
-  "did": "07007045144801",
+  "extension": "07012345601",
+  "did": "07012345601",
   "enabled": "yes",
-  "audioUrl": "https://www.makecall.io/demo-echotest.mp3",
+  "audioUrl": "https://cdn.example.com/greeting.mp3",
   "source": "url",
   "downloaded": true
 }
@@ -1179,9 +942,9 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 |------|:----:|:----:|------|
 | `enabled` | string | - | `"yes"` 또는 `"no"` |
 | `audioUrl` | string | - | 음원 URL (mp3/wav/ogg/flac — 8kHz mono WAV로 자동 변환) |
-| `tts` | object | - | TTS 합성 (아래 6.5 참고). `audioUrl`과 동시 사용 불가 |
+| `tts` | object | - | TTS 합성 (아래 5.5 참고). `audioUrl`과 동시 사용 불가 |
 
-### 6.3 Early Media 활성화/비활성화만 변경
+### 5.3 Early Media 활성화/비활성화만 변경
 
 음원은 유지하고 활성화 상태만 변경:
 
@@ -1189,39 +952,39 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 # 비활성화 (음원 유지)
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=7be69580e27641df" \
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=0123456789abcdef" \
   -d '{"enabled":"no"}'
 
 # 다시 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=7be69580e27641df" \
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=0123456789abcdef" \
   -d '{"enabled":"yes"}'
 ```
 
-### 6.4 음원만 변경
+### 5.4 음원만 변경
 
 활성화 상태는 유지하고 음원만 교체:
 
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=7be69580e27641df" \
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=0123456789abcdef" \
   -d '{"audioUrl":"https://cdn.example.com/new-greeting.mp3"}'
 ```
 
-### 6.5 TTS 합성으로 Early Media 설정
+### 5.5 TTS 합성으로 Early Media 설정
 
 텍스트만 보내면 클라우드 TTS로 합성된 음성이 Early Media로 등록됩니다. 음원 파일을 따로 준비할 필요가 없습니다.
 
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=7be69580e27641df" \
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=0123456789abcdef" \
   -d '{
     "enabled": "yes",
     "tts": {
-      "text": "안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.",
+      "text": "안녕하세요, 예시상사입니다. 잠시만 기다려주세요.",
       "provider": "elevenlabs"
     }
   }'
@@ -1231,13 +994,13 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 ```json
 {
   "ok": true,
-  "extension": "07045144801",
-  "did": "07007045144801",
+  "extension": "07012345601",
+  "did": "07012345601",
   "enabled": "yes",
   "source": "tts",
   "synthesized": true,
   "ttsProvider": "elevenlabs",
-  "ttsVoice": "9BWtsMINqrJLrRacOk9x"
+  "ttsVoice": "<voice-id>"
 }
 ```
 
@@ -1246,28 +1009,23 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 | 필드 | 타입 | 필수 | 설명 |
 |------|:----:|:----:|------|
 | `text` | string | ✅ | 합성할 텍스트 |
-| `provider` | string | - | `google` / `openai` / `elevenlabs` / `azure` / `aws` / `gemini` / `cosyvoice` / `qwen`. 미지정 시 대시보드의 primary 프로바이더 사용 |
-| `voice` | string | - | 음성 ID. 미지정 시 대시보드 설정 또는 프로바이더 기본값 사용 |
+| `provider` | string | - | `google` / `openai` / `elevenlabs` / `azure` / `aws` / `gemini` / `cosyvoice` / `qwen`. 미지정 시 게이트웨이에 지정된 기본(1순위) 프로바이더 사용 |
+| `voice` | string | - | 음성 ID. 미지정 시 게이트웨이 설정 또는 프로바이더 기본값 사용 |
 
 **중요:**
-- API 키는 본 요청에 포함하지 않습니다. 대시보드 **프로바이더 API 키** 탭에서 테넌트별로 사전 등록된 키가 자동 사용됩니다.
+- API 키는 본 요청에 포함하지 않습니다. 게이트웨이에 테넌트별로 사전 등록된 TTS 키가 자동 사용됩니다.
+  키가 등록되지 않았으면 400 `tts_provider_not_configured` 입니다 — 운영사에 TTS 키 등록을 요청하세요.
 - `audioUrl`과 `tts`는 **동시 사용 불가**입니다. 하나만 선택하세요.
-- 합성된 음성은 자동으로 8kHz mono WAV로 변환되어 동일한 경로(`pamsg.wav`)에 저장됩니다.
-- TTS 메타데이터(`text`, `provider`, `voice`)는 AstDB에 저장되어 GET 응답과 재합성에 활용됩니다.
+- 합성된 음성은 자동으로 8kHz mono WAV로 변환되어 저장됩니다.
+- TTS 메타데이터(`text`, `provider`, `voice`)는 서버에 저장되어 GET 응답에 포함됩니다.
 
-**대시보드에서 TTS 키 사전 등록:**
+### 5.6 테넌트 기본값 (v1.4+) — `_default` 특수 extension
 
-1. 대시보드 → **⚙ Dynamic VoIP 설정** → **🔑 프로바이더 API 키** 탭
-2. **TTS (Text-to-Speech)** 섹션에서 사용할 프로바이더 활성화 + API 키 입력
-3. **1순위 사용**으로 설정하면 `provider` 미지정 시 자동 선택됨
+번호마다 개별 설정이 없을 때 폴백으로 재생되는 **테넌트 전체 기본 Early Media**. `extension` 위치에 예약어 `_default` 를 넣으면 일반 번호별 엔드포인트가 그대로 재활용됩니다.
 
-### 6.6 테넌트 기본값 (v1.4+) — `_default` 특수 extension
+**폴백 순서:**
 
-DID마다 개별 설정이 없을 때 폴백으로 재생되는 **테넌트 전체 기본 Early Media**. `extension` 위치에 예약어 `_default` 를 넣으면 일반 per-DID 엔드포인트가 그대로 재활용됩니다.
-
-**다이얼플랜 폴백 순서** (`[dvgateway-pa-noa]` 컨텍스트):
-
-1. 해당 DID 개별 설정 `enabled="yes"` → **per-DID 사용**
+1. 해당 번호 개별 설정 `enabled="yes"` → **번호별 설정 사용**
 2. 아니면 `_default` 프로파일 `enabled="yes"` → **테넌트 기본값 사용**
 3. 둘 다 비활성 → Early Media 스킵
 
@@ -1275,7 +1033,7 @@ DID마다 개별 설정이 없을 때 폴백으로 재생되는 **테넌트 전�
 # 테넌트 기본 Early Media를 TTS로 설정
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=7be69580e27641df" \
+  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=0123456789abcdef" \
   -d '{
     "enabled": "yes",
     "tts": {
@@ -1287,53 +1045,49 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 
 # 조회 — 동일한 응답 스키마
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=7be69580e27641df"
+  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=0123456789abcdef"
 
-# 기본값 비활성화 (per-DID 설정은 영향 없음)
+# 기본값 비활성화 (번호별 설정은 영향 없음)
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=7be69580e27641df" \
+  "http://localhost:8080/api/v1/earlymedia/_default?tenantId=0123456789abcdef" \
   -d '{"enabled":"no"}'
 ```
 
-**저장 경로**:
-- 파일: `/var/spool/asterisk/{tenantId}/pa/_default/pamsg.wav`
-- AstDB: `/{tenantId}/earlymedia/_default/{enabled,audio_url,source,tts_*}`
+**입력 규칙**: API는 `extension` 값이 숫자(와 하이픈) 이거나 정확히 `_default` 여야만 받아들입니다. 그 밖의 문자열은 400 에러로 거부됩니다.
 
-**보안**: API는 `extension` 값이 숫자(와 하이픈) 이거나 정확히 `_default` 여야만 받아들입니다. `../` 같은 경로 탐색이나 임의 문자열은 400 에러로 거부됩니다.
-
-### 6.7 SDK 사용법
+### 5.7 SDK 사용법
 
 **TypeScript:**
 ```typescript
-// Per-DID 조회
-const config = await gw.getEarlyMedia('07045144801', 'tenant-id');
+// 번호별 조회
+const config = await gw.getEarlyMedia('07012345601', 'tenant-id');
 console.log(config);
 // { enabled: "yes", audioUrl: "https://...", source: "url", fileExists: true }
 
-// Per-DID — 음원 URL + 활성화 설정
-await gw.setEarlyMedia('07045144801', {
+// 번호별 — 음원 URL + 활성화 설정
+await gw.setEarlyMedia('07012345601', {
   enabled: 'yes',
-  audioUrl: 'https://www.makecall.io/demo-echotest.mp3',
+  audioUrl: 'https://cdn.example.com/greeting.mp3',
 }, 'tenant-id');
 
-// Per-DID — TTS로 설정 (대시보드 프로바이더 키 사용)
-await gw.setEarlyMedia('07045144801', {
+// 번호별 — TTS로 설정 (게이트웨이에 등록된 프로바이더 키 사용)
+await gw.setEarlyMedia('07012345601', {
   enabled: 'yes',
   tts: {
-    text: '안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.',
+    text: '안녕하세요, 예시상사입니다. 잠시만 기다려주세요.',
     provider: 'elevenlabs',  // optional
   },
 }, 'tenant-id');
 
 // 비활성화만 (음원 유지)
-await gw.setEarlyMedia('07045144801', { enabled: 'no' }, 'tenant-id');
+await gw.setEarlyMedia('07012345601', { enabled: 'no' }, 'tenant-id');
 
 // 다시 활성화
-await gw.setEarlyMedia('07045144801', { enabled: 'yes' }, 'tenant-id');
+await gw.setEarlyMedia('07012345601', { enabled: 'yes' }, 'tenant-id');
 
 // 음원만 교체
-await gw.setEarlyMedia('07045144801', {
+await gw.setEarlyMedia('07012345601', {
   audioUrl: 'https://cdn.example.com/new-greeting.mp3',
 }, 'tenant-id');
 
@@ -1341,7 +1095,7 @@ await gw.setEarlyMedia('07045144801', {
 // 기본값 조회
 const def = await gw.getEarlyMediaDefault('tenant-id');
 
-// 기본값 TTS 설정 — 모든 미설정 DID가 이 안내음 재생
+// 기본값 TTS 설정 — 모든 미설정 번호가 이 안내음 재생
 await gw.setEarlyMediaDefault({
   enabled: 'yes',
   tts: {
@@ -1357,7 +1111,7 @@ await gw.setEarlyMediaDefault({
   audioUrl: 'https://cdn.example.com/brand-jingle.mp3',
 }, 'tenant-id');
 
-// 기본값 비활성화 (per-DID 설정은 영향 없음)
+// 기본값 비활성화 (번호별 설정은 영향 없음)
 await gw.setEarlyMediaDefault({ enabled: 'no' }, 'tenant-id');
 
 // 상수로 명시적 지정도 가능 (동일 결과)
@@ -1370,32 +1124,32 @@ await gw.setEarlyMedia(
 
 **Python:**
 ```python
-# Per-DID 조회
-config = await gw.get_early_media("07045144801", tenant_id="tenant-id")
+# 번호별 조회
+config = await gw.get_early_media("07012345601", tenant_id="tenant-id")
 
-# Per-DID — 음원 URL + 활성화 설정
-await gw.set_early_media("07045144801",
+# 번호별 — 음원 URL + 활성화 설정
+await gw.set_early_media("07012345601",
     enabled="yes",
-    audio_url="https://www.makecall.io/demo-echotest.mp3",
+    audio_url="https://cdn.example.com/greeting.mp3",
     tenant_id="tenant-id")
 
-# Per-DID — TTS로 설정
-await gw.set_early_media("07045144801",
+# 번호별 — TTS로 설정
+await gw.set_early_media("07012345601",
     enabled="yes",
     tts={
-        "text": "안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.",
+        "text": "안녕하세요, 예시상사입니다. 잠시만 기다려주세요.",
         "provider": "elevenlabs",  # optional
     },
     tenant_id="tenant-id")
 
 # 비활성화만 (음원 유지)
-await gw.set_early_media("07045144801", enabled="no", tenant_id="tenant-id")
+await gw.set_early_media("07012345601", enabled="no", tenant_id="tenant-id")
 
 # 다시 활성화
-await gw.set_early_media("07045144801", enabled="yes", tenant_id="tenant-id")
+await gw.set_early_media("07012345601", enabled="yes", tenant_id="tenant-id")
 
 # 음원만 교체
-await gw.set_early_media("07045144801",
+await gw.set_early_media("07012345601",
     audio_url="https://cdn.example.com/new-greeting.mp3",
     tenant_id="tenant-id")
 
@@ -1403,7 +1157,7 @@ await gw.set_early_media("07045144801",
 # 기본값 조회
 default = await gw.get_early_media_default(tenant_id="tenant-id")
 
-# 기본값 TTS 설정 — 모든 미설정 DID가 이 안내음 재생
+# 기본값 TTS 설정 — 모든 미설정 번호가 이 안내음 재생
 await gw.set_early_media_default(
     enabled="yes",
     tts={
@@ -1421,7 +1175,7 @@ await gw.set_early_media_default(
     tenant_id="tenant-id",
 )
 
-# 기본값 비활성화 (per-DID 설정은 영향 없음)
+# 기본값 비활성화 (번호별 설정은 영향 없음)
 await gw.set_early_media_default(enabled="no", tenant_id="tenant-id")
 
 # 상수로 명시적 지정도 가능 (동일 결과)
@@ -1433,14 +1187,14 @@ await gw.set_early_media(
 )
 ```
 
-### 6.8 실무 시나리오 — 대량 테넌트 프로비저닝
+### 5.8 실무 시나리오 — 대량 테넌트 프로비저닝
 
-수백 개 DID에 동일한 안내음을 반복 설정할 필요 없이, 기본값 1회 + 예외 DID만 개별 설정:
+수백 개 번호에 동일한 안내음을 반복 설정할 필요 없이, 기본값 1회 + 예외 번호만 개별 설정:
 
 **TypeScript:**
 ```typescript
 async function provisionTenant(tenantId: string, brandName: string) {
-  // 1. 테넌트 전체 기본 인사말 — 모든 DID가 이것을 폴백으로 사용
+  // 1. 테넌트 전체 기본 인사말 — 모든 번호가 이것을 폴백으로 사용
   await gw.setEarlyMediaDefault({
     enabled: 'yes',
     tts: {
@@ -1450,13 +1204,13 @@ async function provisionTenant(tenantId: string, brandName: string) {
     },
   }, tenantId);
 
-  // 2. VIP DID만 특별 안내음 (기본값 자동 오버라이드)
-  await gw.setEarlyMedia('07045144801', {
+  // 2. VIP 번호만 특별 안내음 (기본값 자동 오버라이드)
+  await gw.setEarlyMedia('07012345601', {
     enabled: 'yes',
     tts: { text: `${brandName} VIP 고객센터입니다. 최우선으로 응대해 드립니다.` },
   }, tenantId);
 
-  // 3. 수백 개의 나머지 DID는 추가 API 호출 없이 자동으로 기본 인사말 사용
+  // 3. 수백 개의 나머지 번호는 추가 API 호출 없이 자동으로 기본 인사말 사용
 }
 ```
 
@@ -1474,48 +1228,28 @@ async def provision_tenant(tenant_id: str, brand_name: str):
         tenant_id=tenant_id,
     )
 
-    # 2. VIP DID만 특별 안내음
-    await gw.set_early_media("07045144801",
+    # 2. VIP 번호만 특별 안내음
+    await gw.set_early_media("07012345601",
         enabled="yes",
         tts={"text": f"{brand_name} VIP 고객센터입니다. 최우선으로 응대해 드립니다."},
         tenant_id=tenant_id,
     )
 ```
 
-### AstDB 저장 구조
-
-```
-Per-DID:
-  /{tenantId}/earlymedia/{extension}/enabled       → yes | no
-  /{tenantId}/earlymedia/{extension}/audio_url     → https://... (url 모드)
-  /{tenantId}/earlymedia/{extension}/source        → url | tts
-  /{tenantId}/earlymedia/{extension}/tts_text      → 합성된 텍스트 (tts 모드)
-  /{tenantId}/earlymedia/{extension}/tts_provider  → elevenlabs/openai/google/... (tts 모드)
-  /{tenantId}/earlymedia/{extension}/tts_voice     → 사용된 voice ID (tts 모드)
-
-테넌트 기본값 (v1.4+):
-  /{tenantId}/earlymedia/_default/enabled          → yes | no
-  /{tenantId}/earlymedia/_default/audio_url        → https://... (url 모드)
-  /{tenantId}/earlymedia/_default/source           → url | tts
-  /{tenantId}/earlymedia/_default/tts_text         → (tts 모드)
-  /{tenantId}/earlymedia/_default/tts_provider     → (tts 모드)
-  /{tenantId}/earlymedia/_default/tts_voice        → (tts 모드)
-```
-
 ### 음원 파일 변환
 
-| 입력 형식 | 출력 형식 | 변환 도구 |
-|----------|----------|----------|
-| MP3, OGG, FLAC, AAC, WAV 등 | 8kHz, mono, 16-bit PCM WAV | ffmpeg |
+| 입력 형식 | 출력 형식 |
+|----------|----------|
+| MP3, OGG, FLAC, AAC, WAV 등 | 8kHz, mono, 16-bit PCM WAV |
 
-> Asterisk `Playback()`은 8kHz mono WAV만 지원합니다.
-> DVGateway API가 **어떤 형식이든 자동으로 Asterisk 호환 WAV로 변환**합니다.
+> 통화 중 재생은 8kHz mono WAV 만 지원합니다.
+> DVGateway API가 **어떤 형식이든 저장 시 자동으로 변환**하므로 원본 형식은 신경 쓰지 않아도 됩니다.
 
 ---
 
-## 7. PBX API 연동
+## 6. PBX API 연동
 
-PBX API를 통해 설정 재적용 및 클릭투콜 기능을 제공합니다.
+설정 재적용 및 클릭투콜 기능을 제공합니다.
 
 ### 6.1 설정 재적용
 
@@ -1532,7 +1266,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ### 6.2 클릭투콜
 
-PBX API를 통해 아웃바운드 통화를 발신합니다.
+아웃바운드 통화를 발신합니다. 먼저 `caller` 단말이 울리고, 받으면 `callee` 로 연결됩니다.
 
 ```bash
 POST /api/v1/pbx/click-to-call
@@ -1543,10 +1277,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   http://localhost:8080/api/v1/pbx/click-to-call \
   -d '{
-    "caller": "45144801",
+    "caller": "12345601",
     "callee": "01012345678",
-    "cidName": "OLSSOO",
-    "cidNumber": "07045144801",
+    "cidName": "Example",
+    "cidNumber": "07012345601",
     "accountCode": "",
     "customValue1": "홍길동",
     "customValue2": "ORD-001",
@@ -1561,75 +1295,95 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 | `cidName` | string | - | 발신자 표시 이름 |
 | `cidNumber` | string | - | 발신자 표시 번호 |
 | `accountCode` | string | - | 과금 코드 |
-| `customValue1~3` | string | - | 커스텀 변수 (다이얼플랜 전달) |
+| `customValue1~3` | string | - | 커스텀 변수 (통화에 함께 전달) |
+| `clientMsgId` | string | - | 멱등 키 (`Idempotency-Key` 헤더로도 가능) — 같은 키로 재시도하면 다시 발신하지 않고 최초 응답을 돌려줍니다 |
 
-> `cos_id` 는 게이트웨이가 호출 테넌트 기준으로 자동 해석합니다(클라이언트 미전송). `cidNumber`·
-> `accountCode` 도 테넌트 등록값으로 서버가 강제(과금 안전).
+> 발신 등급은 게이트웨이가 호출 테넌트 기준으로 자동 결정합니다(클라이언트 미전송). `cidNumber`·
+> `accountCode` 는 테넌트에 등록된 값이 우선 적용되며, 테넌트에 발신 기본값이 등록되지 않았으면
+> **412** 입니다 — 운영사에 요청하세요. 테넌트별 분당 발신 상한을 넘으면 **429 `cost_rate_limited`**.
+
+**응답:** PBX 응답에 **`actionID`**(이 발신의 상관키)가 함께 실립니다. 앱은 이 값을 저장해 두고
+발신 취소(6.3)·linkedid 조회(6.4)에 사용하세요.
+
+```json
+{ "ok": true, "actionID": "<action-id>" }
+```
 
 #### 모바일(Firebase) 클릭투콜 (v1.4.8.53+)
 
-모바일 앱은 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)의 Firebase ID 토큰으로 호출합니다
-(레거시 VitalPBX `/core/click_to_call` 직접호출의 cross-tenant 503 문제 해소 — seat 가 속한
-테넌트·COS 를 서버가 해석). 멀티 테넌트는 `?tenantId=<path>`(또는 `X-Tenant-ID`).
+모바일 앱은 [1.1](#11-모바일-앱-firebase-id-토큰-인증-v14844)의 Firebase ID 토큰(또는 accessToken)으로 호출합니다.
+seat 가 속한 테넌트는 서버가 해석합니다. 멀티 테넌트는 `?tenantId=<path>`(또는 `X-Tenant-ID`).
 
 - **`caller` 는 토큰 사용자 본인 seat 에 배정된 내선이어야 함**(타 내선 → 403 `not_owner`,
   내선 미배정 → 403 `no_extension`).
-- `cos_id` 는 게이트웨이가 그 테넌트 기준으로 자동 해석 — 클라이언트가 보내지 않습니다.
 - 본문은 위와 동일(`caller`/`callee`/`cidName`/`cidNumber`/`accountCode`/`customValue1~3`).
 
 ```bash
 curl -X POST -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/pbx/click-to-call?tenantId=7be69580e27641df" \
+  "http://localhost:8080/api/v1/pbx/click-to-call?tenantId=0123456789abcdef" \
   -d '{"caller":"1010","callee":"01012345678"}'
 ```
 
 ### 6.3 클릭투콜 발신 취소 (v1.4.14.134+)
 
 클릭투콜 발신 **직후**(내 단말이 울리는 중 / 착신이 아직 응답하기 전) 통화를 취소하고
-양 leg(1-leg 콜백 + 2-leg 착신)를 종료합니다. 앱의 "발신 취소" 버튼용
-(앱 PR [ringneck/makecall#432](https://github.com/ringneck/makecall/pull/432)).
+양쪽 통화(내 단말 콜백 + 착신)를 종료합니다. 앱의 "발신 취소" 버튼용입니다.
 
 ```bash
 POST /api/v1/pbx/click-to-call/cancel
 ```
 
 ```bash
+# 권장: 클릭투콜 응답의 actionID 로 정확히 취소
 curl -X POST -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/pbx/click-to-call/cancel?tenantId=7be69580e27641df" \
-  -d '{"caller":"1010","callee":"01012345678"}'
+  "http://localhost:8080/api/v1/pbx/click-to-call/cancel?tenantId=0123456789abcdef" \
+  -d '{"actionID":"<action-id>","caller":"1010","callee":"01012345678"}'
 ```
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|:----:|:----:|------|
-| `caller` | string | O | 발신 단말번호(모바일=본인 내선) |
-| `callee` | string | O | 수신 전화번호 |
+| `actionID` | string | 권장 | 클릭투콜 응답의 상관키(`actionId` 표기도 허용). 있으면 그 통화를 정확히 찾아 취소 |
+| `caller` | string | O* | 발신 단말번호(모바일=본인 내선) |
+| `callee` | string | O* | 수신 전화번호 |
 
-**인증**: 클릭투콜과 동일(게이트웨이 JWT/API 키 + `?tenantId=`, 또는 모바일 access token).
+> \* `actionID` 가 없으면 `caller`·`callee` 가 필수입니다(그 경우 해당 내선의 진행 중 발신을 찾아 취소하며,
+> 같은 내선의 무관한 동시 통화는 끊지 않습니다).
+
+**인증**: 클릭투콜과 동일(게이트웨이 JWT/API 키 + `?tenantId=`, 또는 모바일 토큰).
 모바일은 `caller == 본인 내선` 강제.
 
-**동작**: 게이트웨이는 originate 시점엔 채널/linkedid 를 모르므로(PBX click_to_call REST 는
-ActionID 만 반환), ① registry 상관관계로 "이 테넌트가 방금 이 `caller`→`callee` 로 발신했다"를
-확인한 뒤 ② AMI `CoreShowChannels` 로 라이브 레그를 찾아 Hangup 합니다. 매칭은 발신 내선 seat
-레그(테넌트 스코프)로 한정하고, `callee` 번호를 함께 실은 통화(linkedid) 그룹을 우선 선택해 같은
-내선의 무관한 동시통화는 끊지 않습니다.
-
-**응답 코드** (앱 매핑과 정합 — 중요):
+**응답 코드:**
 
 | 코드 | 의미 | 앱 처리 |
 |:----:|------|---------|
-| `200` | 취소 성공(양 leg 종료) → `{ok, cancelled, hungUp, linkedids}` | 취소됨 |
-| `400` | `caller`/`callee` 누락 | — |
+| `200` | 취소 성공(양쪽 종료) → `{ok, cancelled, hungUp, linkedids, source}` (`source` = `actionID` \| `seat-leg`) | 취소됨 |
+| `400` | `actionID` 도 없고 `caller`/`callee` 도 누락 | — |
 | `403` | 권한(`not_owner` / `no_extension`) | — |
-| `409` | 진행 중 originate 없음(이미 응답/종료·미발신) — `no_active_originate` | "이미 연결됐을 수 있어요" (⚠️ **404 아님** — 404 면 앱이 "미지원"으로 오인) |
-| `501` | AMI 미구성 / 채널 열거 미지원 — `not_implemented` | "미지원" |
-| `502` | AMI 채널 열거 실패 — `ami_error` | 일시 오류 |
+| `409` | 진행 중 발신 없음(이미 응답/종료·미발신) — `no_active_originate` | "이미 연결됐을 수 있어요" (⚠️ **404 아님** — 404 를 "미지원"으로 해석하지 마세요) |
+| `501` | 이 게이트웨이에서 미지원 — `not_implemented` | "미지원" (운영사에 문의) |
+| `502` | 일시 오류 — `ami_error` | 잠시 후 재시도 |
 
-> **한계**: 취소는 발신 후 짧은 상관 TTL(현재 60초) 이내, 채널이 아직 라이브일 때만 동작합니다.
+> **한계**: 취소는 발신 후 짧은 시간(현재 60초) 이내, 통화가 아직 살아 있을 때만 동작합니다.
 > 착신이 응답을 완료한 통화는 일반 통화이므로 취소 대신 통상 종료(hangup) 흐름을 사용하세요.
+
+### 6.4 클릭투콜 linkedid 조회
+
+```bash
+GET /api/v1/pbx/click-to-call/{actionID}
+```
+
+클릭투콜 응답의 `actionID` 로 그 통화의 `linkedid` 를 조회합니다(CDR·녹취 조회에 사용).
+admin 토큰은 `?tenantId=` 필요, 테넌트/모바일 토큰은 자동. 모바일은 본인 발신만 조회됩니다.
+
+| 코드 | 응답 |
+|:----:|------|
+| `200` | `{"actionID":"…","linkedid":"…","ready":true}` |
+| `202` | `{"actionID":"…","linkedid":"","ready":false}` — 아직 확보 전, 잠시 후 재조회 |
+| `404` | `unknown_action` — 모르는 actionID 또는 만료(남의 발신도 404) |
 
 ---
 
-## 8. 아웃바운드 캠페인
+## 7. 아웃바운드 캠페인
 
 예약 발신, 동보(대량) 발신, 주기적 발신을 지원하는 캠페인 시스템입니다.
 
@@ -1667,10 +1421,8 @@ ActionID 만 반환), ① registry 상관관계로 "이 테넌트가 방금 이 
 | `POST` | `/api/v1/pbx/campaigns/{id}/cancel` | 취소 |
 | `GET` | `/api/v1/pbx/campaigns/{id}/results` | 발신 결과 |
 
-> 🔐 **관리자 JWT 전용** — 캠페인 실행기는 설치 전체 PBX 키와 고정 COS 로 발신하고
-> 발신 내선·CID 는 요청이 정하므로 테넌트 스코프가 성립하지 않는다. 테넌트 토큰은
-> `403 admin_required`. 액션 경로는 표의 메서드만 받는다(그 밖은 `405 method_not_allowed` —
-> 종전에는 GET 한 번으로 캠페인이 시작됐다).
+> 🔐 **관리자 JWT 전용** — 테넌트 토큰은 `403 admin_required`. 액션 경로는 표의 메서드만
+> 받습니다(그 밖은 `405 method_not_allowed`).
 
 ### 7.1 예약 발신 (Scheduled)
 
@@ -1683,9 +1435,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{
     "name": "3월 30일 고객 안내 전화",
     "type": "scheduled",
-    "caller": "45144801",
-    "cidName": "OLSSOO",
-    "cidNumber": "07045144801",
+    "caller": "12345601",
+    "cidName": "Example",
+    "cidNumber": "07012345601",
     "schedule": {
       "type": "once",
       "at": "2026-03-30T14:00:00+09:00",
@@ -1720,9 +1472,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{
     "name": "3월 해피콜 캠페인",
     "type": "bulk",
-    "caller": "45144801",
-    "cidName": "OLSSOO 해피콜",
-    "cidNumber": "07045144801",
+    "caller": "12345601",
+    "cidName": "Example 해피콜",
+    "cidNumber": "07012345601",
     "schedule": {
       "type": "once",
       "at": "2026-03-31T09:00:00+09:00",
@@ -1765,9 +1517,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{
     "name": "주간 해피콜",
     "type": "recurring",
-    "caller": "45144801",
-    "cidName": "OLSSOO",
-    "cidNumber": "07045144801",
+    "caller": "12345601",
+    "cidName": "Example",
+    "cidNumber": "07012345601",
     "schedule": {
       "type": "cron",
       "cron": "0 9 * * 1",
@@ -1806,7 +1558,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{
     "name": "일일 리마인더",
     "type": "recurring",
-    "caller": "45144801",
+    "caller": "12345601",
     "schedule": {
       "type": "interval",
       "interval": "24h",
@@ -1821,7 +1573,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   }'
 ```
 
-**interval 형식:** Go duration (예: `30m`, `1h`, `24h`, `168h`)
+**interval 형식:** 기간 문자열 (예: `30m`, `1h`, `24h`, `168h`)
 
 ### 7.4 스케줄 설정 상세
 
@@ -1838,7 +1590,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 | `schedule.timezone` | string | 시간대 (기본: `Asia/Seoul`) |
 
 > **시간 창(timeWindow):** 설정하면 해당 시간대 밖에서는 발신하지 않습니다.
-> 예: `09:00~18:00` → 야간/공휴일 발신 방지
+> 예: `09:00~18:00` → 야간 발신 방지
 
 ### 7.5 캠페인 제어
 
@@ -1851,7 +1603,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/pbx/campaigns/a1b2c3d4/pause
 
-# 재개 (status를 pending으로 복원 → 스케줄러가 재트리거)
+# 재개 (status를 pending으로 복원 → 스케줄에 따라 다시 실행)
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/pbx/campaigns/a1b2c3d4/resume
 
@@ -1884,7 +1636,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 | 상태 | 설명 |
 |:----:|------|
-| `success` | 발신 성공 (PBX API 200 응답) |
+| `success` | 발신 성공 |
 | `failed` | 모든 재시도 실패 |
 | `pending` | 아직 발신 안 됨 |
 | `skipped` | 캠페인 취소로 건너뜀 |
@@ -1916,76 +1668,16 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 9. 게이트웨이 설정
-
-대시보드 관리 화면 (게이트웨이 설정)에서 DB 접속 정보를 설정합니다.
-
-| 환경변수 | 기본값 | 설명 |
-|----------|--------|------|
-| `EXT_DB_DRIVER` | (빈값) | `mysql` 또는 `postgres` (빈값 = 비활성화) |
-| `EXT_DB_HOST` | `127.0.0.1` | DB 호스트 |
-| `EXT_DB_PORT` | `3306` | DB 포트 |
-| `EXT_DB_USER` | `dipcast` | DB 사용자 |
-| `EXT_DB_PASS` | `dipcast5k1!` | DB 비밀번호 |
-| `EXT_DB_NAME` | `ombutel` | DB 이름 |
-
-**활성화 방법:**
-
-1. 대시보드 → 게이트웨이 설정 → `EXT_DB_DRIVER`를 `mysql`로 설정
-2. 서비스 재시작: `systemctl restart dvgateway`
-3. 연결 테스트: `GET /api/v1/db/ping`
-
-**또는 환경변수 직접 설정:**
-```bash
-# /etc/dvgateway/env
-EXT_DB_DRIVER=mysql
-EXT_DB_HOST=127.0.0.1
-EXT_DB_PORT=3306
-EXT_DB_USER=dipcast
-EXT_DB_PASS=dipcast5k1!
-EXT_DB_NAME=ombutel
-```
-
----
-
-## 10. 에러 응답 레퍼런스
+## 8. 에러 응답 레퍼런스
 
 | HTTP 코드 | 원인 | 예시 응답 |
 |:---------:|------|----------|
-| 400 | 잘못된 요청 | `{"error":"table name required"}` |
+| 400 | 잘못된 요청 | `{"error":"caller and callee required"}` |
 | 400 | 잘못된 착신전환 타입 | `{"error":"invalid forwarding type","supportedTypes":"CFI, CFB, CFN, CFU, DND, PEA"}` |
-| 400 | WHERE 누락 | `{"error":"where clause required (full-table update not allowed)"}` |
 | 401 | 인증 실패 | `{"error":"authentication required"}` |
 | 403 | 권한 부족 | `{"error":"admin access required"}` |
 | 404 | 데이터 없음 | `{"error":"extension not found"}` |
-| 409 | 중복 | `{"error":"app key already exists for this DID"}` |
-| 503 | AMI/DB 미연결 | `{"error":"external database not configured"}` |
-
----
-
-## AstDB 직접 확인 (서버 CLI)
-
-```bash
-# 전체 테넌트 착신전환 조회
-asterisk -rx "database show bdd23e154a7ea1c8/diversions"
-
-# 특정 내선 착신전환 조회
-asterisk -rx "database show bdd23e154a7ea1c8/diversions/45144801"
-
-# 특정 값 조회
-asterisk -rx "database get bdd23e154a7ea1c8 diversions/45144801/CFI/enable"
-
-# 방해금지(DND) / 개인비서(PEA) 토글 상태 조회
-asterisk -rx "database get bdd23e154a7ea1c8 diversions/45144801/DND/enable"
-asterisk -rx "database get bdd23e154a7ea1c8 diversions/45144801/PEA/enable"
-```
-
-## MariaDB 직접 확인 (서버 CLI)
-
-```bash
-# API 키 조회
-mysql -u dipcast -p ombutel -e "SELECT * FROM ombu_app_keys"
-
-# 발신자표시 조회
-mysql -u dipcast -p ombutel -e "SELECT extension, name, internal_cid, external_cid FROM ombu_extensions WHERE extension = '45144800'"
-```
+| 409 | 중복 / 모호 | `{"error":"app key already exists for this DID"}` |
+| 412 | 사전 설정 없음 (예: 클릭투콜 발신 기본값 미등록) | 운영사에 요청하세요 |
+| 429 | 요청 한도 초과 | `{"code":"cost_rate_limited", …}` |
+| 503 | 기능 미구성 / 일시적으로 사용할 수 없음 | 운영사에 문의하세요 |

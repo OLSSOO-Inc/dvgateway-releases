@@ -1,41 +1,20 @@
-# 시작하기 — 설치부터 헬로 월드까지
+# 시작하기 — SDK 설치부터 헬로 월드까지
 
-## 1. 시스템 요구사항
+## 1. 개발 환경 요구사항
 
 | 항목 | 최소 요구사항 |
 |------|-------------|
-| OS | Debian 12/13, Ubuntu 22.04 이상 |
-| CPU | 2코어 이상 |
-| RAM | 2 GB 이상 (4 GB 권장) |
-| Node.js | 20 LTS 이상 |
-| 아키텍처 | amd64 / arm64 |
-| 네트워크 | 공인 IP 또는 포트 포워딩 (SIP/RTP 수신용) |
+| Node.js (TypeScript SDK) | 20 LTS 이상 |
+| Python (Python SDK) | 3.10 이상 |
+| 네트워크 | 게이트웨이 API 주소(HTTP/WebSocket)에 접속 가능 |
 
 ---
 
-## 2. 서버 설치
+## 2. 게이트웨이 접속 정보 받기
 
-```bash
-# 원라인 자동 설치 (Debian/Ubuntu)
-curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/latest/download/install.sh | sudo bash
-```
+게이트웨이 설치·운영은 운영사가 합니다. 접속 주소와 API 키를 운영사에서 받으세요.
 
-특정 버전으로 설치하려면 URL의 `latest`를 원하는 버전 태그로 교체하세요:
-
-```bash
-# 특정 버전으로 설치 (예: v1.2.3)
-curl -fsSL https://github.com/OLSSOO-Inc/dvgateway-releases/releases/download/v1.2.3/install.sh | sudo bash
-```
-
-설치 가능한 버전 목록은 [GitHub Releases 페이지](https://github.com/OLSSOO-Inc/dvgateway-releases/releases)에서 확인할 수 있습니다.
-
-설치 후 열리는 포트:
-
-| 포트 | 용도 |
-|------|------|
-| **8080** | SDK API 서버 (AI 클라이언트 연결) |
-| **8081** | 웹 대시보드 (모니터링) |
-| **8092** | 미디어 서버 내부 WebSocket |
+이 문서의 예제에서 `http://localhost:8080` 은 **운영사가 알려준 게이트웨이 API 주소**로 바꿔 쓰면 됩니다.
 
 ---
 
@@ -298,7 +277,7 @@ asyncio.run(main())
 | 타입 지원 | TypeScript 완전 지원 | Python `typing` / `mypy` 지원 |
 | 로컬 어댑터 | 제한적 | ✅ whisper.cpp, Faster-Whisper, Qwen 등 |
 
-> **로컬 어댑터(whisper.cpp, Qwen 등)**는 Python SDK에서 더 풍부하게 지원됩니다. 자세한 설정은 [섹션 10](#10-어댑터별-상세-설정)을 참고하세요.
+> **로컬 어댑터(whisper.cpp, Qwen 등)**는 Python SDK에서 더 풍부하게 지원됩니다. 자세한 설정은 [04. 어댑터 상세 설정](04-adapter-reference.md)을 참고하세요.
 
 ---
 
@@ -332,14 +311,14 @@ const DEEPGRAM_KEY = process.env.DEEPGRAM_API_KEY!;
 
 ### 내 게이트웨이 API 키 확인하는 방법
 
-DVGateway 서버에 연결할 때 사용하는 **게이트웨이 API 키(`DV_API_KEY`)**를 확인하는 방법은 세 가지입니다.
+DVGateway 서버에 연결할 때 사용하는 **게이트웨이 API 키(`DV_API_KEY`)**를 확인하는 방법은 두 가지입니다.
 
 > 💡 게이트웨이 API 키(`DV_API_KEY`)는 Deepgram·OpenAI 등 AI 서비스 키와 **완전히 다른 키**입니다.
 > 게이트웨이 서버 자체에 인증하기 위한 키이므로 혼동하지 마세요.
 
 #### 방법 1. 대시보드에서 확인 (가장 간편)
 
-브라우저에서 `http://서버IP:8081` 에 접속한 뒤 **설정 → SDK API Key** 패널을 확인하세요.
+운영사가 알려준 대시보드 주소에 테넌트 계정으로 로그인한 뒤 **설정 → SDK API Key** 패널을 확인하세요.
 
 - 보안을 위해 키가 마스킹 표시됩니다: `dvgw_••••••••••••••••__abcd`
 - **복사** 버튼을 누르면 전체 키가 클립보드에 복사됩니다.
@@ -349,17 +328,17 @@ DVGateway 서버에 연결할 때 사용하는 **게이트웨이 API 키(`DV_API
 
 ```bash
 # 1) 기존 API 키로 JWT 토큰 발급
-TOKEN=$(curl -s -X POST http://서버IP:8080/api/v1/auth/token \
+TOKEN=$(curl -s -X POST http://게이트웨이주소:8080/api/v1/auth/token \
   -H "Content-Type: application/json" \
   -H "X-API-Key: 현재_API_키" \
   -d '{"apiKey": "현재_API_키"}' | jq -r '.token')
 
 # 2) SDK API 키 조회 (마스킹된 키 반환)
-curl -s http://서버IP:8080/api/v1/config/sdk-key \
+curl -s http://게이트웨이주소:8080/api/v1/config/sdk-key \
   -H "Authorization: Bearer $TOKEN"
 
 # 3) 키 재발급 (전체 키가 1회 표시됨)
-curl -s -X POST http://서버IP:8080/api/v1/config/sdk-key \
+curl -s -X POST http://게이트웨이주소:8080/api/v1/config/sdk-key \
   -H "Authorization: Bearer $TOKEN"
 ```
 

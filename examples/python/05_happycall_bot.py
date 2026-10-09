@@ -2,22 +2,16 @@
 Example 5: HappyCall Bot with Personalized TTS Greeting (Korean)
 
 A realistic outbound satisfaction call bot that:
-1. Reads customer info from custom_value_1/2/3 (set in Asterisk dialplan)
+1. Reads customer info from custom_value_1/2/3 (set on the number / call flow)
 2. Greets the customer by name with a TTS greeting before AI pipeline starts
 3. Injects order context into the LLM system prompt per call
 4. Handles the full STT -> LLM -> TTS conversation loop
 
-Dialplan variables (set via CRM Originate or dialplan Set()):
-  CUSTOM_VALUE_01 = customer name  (e.g. "홍길동")
-  CUSTOM_VALUE_02 = order ID       (e.g. "ORD-20260321-001")
-  CUSTOM_VALUE_03 = call purpose   (e.g. "happycall")
-
-Asterisk dialplan example:
-  [outbound-happycall]
-  exten => _X.,1,Stasis(dvgateway,mode=customer,did=${CALLERID(num)},\\
-    custom_value_01=${CUSTOM_VALUE_01},\\
-    custom_value_02=${CUSTOM_VALUE_02},\\
-    custom_value_03=${CUSTOM_VALUE_03})
+Custom values (your operator sets these on the number / call flow,
+or they are passed when your CRM originates the call):
+  custom_value_1 = customer name  (e.g. "홍길동")
+  custom_value_2 = order ID       (e.g. "ORD-20260321-001")
+  custom_value_3 = call purpose   (e.g. "happycall")
 
 Environment variables (.env):
   DV_BASE_URL=http://<gateway-host>:8080

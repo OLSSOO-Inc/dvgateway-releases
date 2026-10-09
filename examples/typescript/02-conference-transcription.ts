@@ -35,7 +35,7 @@ const stt = new DeepgramAdapter({
   endpointingMs: 500,
 });
 
-// ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+// ── 커스텀 값 (운영사 PBX 설정에서 전달) ──
 // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
 // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
 // session.customValue1, session.customValue2, session.customValue3 으로 접근 가능
@@ -118,7 +118,7 @@ process.on('SIGTERM', () => {
 // ─── 회의록 다운로드 (GET /api/v1/conferences/{confId}) ─────────────────────
 
 // 회의 진행 중에는 실시간 회의록, 끝난 뒤에는 게이트웨이 1.4.16.285+ 가 저장한 사본을 돌려준다.
-// ⚠️ 저장된 것이 없거나(발화 0건 · GW_MINUTES_PERSIST 미설정 — 기본 꺼짐) 구버전 게이트웨이면 404 로 실패한다.
+// ⚠️ 저장된 것이 없거나(발화 0건 · 운영사가 회의록 저장을 켜지 않음 — 기본 꺼짐) 구버전 게이트웨이면 404 로 실패한다.
 // 'txt' 는 게이트웨이 JSON 을 SDK 가 텍스트로 렌더링한 것이다.
 // const minutes = await gw.downloadMinutes('7001', 'txt');
 // console.log(minutes);

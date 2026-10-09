@@ -1,7 +1,7 @@
 # SMS 발송·수신 (SIP MESSAGE)
 
 > Dynamic VoIP 게이트웨이로 **문자(SMS)를 발송·수신**합니다. 발신은 SDK 한 줄 또는 REST 한 번,
-> 설정·이력은 웹 대시보드 "📩 SMS" 탭에서. 통신사(KCT/Xener IP-SMSC) 단말연동규격을 그대로 구현.
+> 설정·이력은 웹 대시보드 "📩 SMS" 탭에서.
 > **gateway 1.4.14.52+ / SDK 1.9.1+**
 
 전화 통화(AI 음성)와 별개로, 같은 게이트웨이에서 **문자 메시지**도 보낼 수 있습니다.
@@ -9,37 +9,23 @@
 - **발신** — 내선(대표번호)에서 휴대폰으로 SMS 전송. 동보(여러 명 동시) 최대 10명.
 - **수신** — 외부에서 온 SMS 를 실시간 이벤트 + 이력으로 수신.
 - **이력** — 발신/수신 내역, 전송 상태(전송/실패/수신) 조회.
-- **테넌트별 동작** — 테넌트마다 SMSC/발신 realm/트렁크를 따로 설정(다른 통신사도 가능).
+- **테넌트별 동작** — 테넌트마다 문자 라우팅을 따로 설정(다른 통신사도 가능).
 
 ---
 
-## 0. 이 기능을 쓰기 전에 (관리자 1회 설정)
+## 0. 이 기능을 쓰기 전에 (운영사 1회 설정)
 
-SMS 는 **관리자가 테넌트별 라우팅을 먼저 설정**해야 동작합니다. 설정 전에 발송하면 SDK/REST 가
-`412` 와 함께 **"관리자에게 문의하세요"** 안내를 돌려줍니다(코드 `sms_disabled` / `sms_unprovisioned`).
+SMS 는 **운영사(관리자)가 테넌트별 문자 라우팅을 먼저 설정**해야 동작합니다. 운영사에 요청하세요.
+설정 전에 발송하면 SDK/REST 가 `412` 와 함께 **"관리자에게 문의하세요"** 안내를 돌려줍니다(코드 `sms_disabled` / `sms_unprovisioned`).
 
-관리자가 대시보드 **⚙ 설정 → 📩 SMS → 라우팅 설정**에서 채울 값:
-
-| 항목 | 설명 | 예시 |
-|------|------|------|
-| SMS 활성화 | 이 테넌트에서 SMS 사용 | ✅ |
-| SMSC 도메인 | Request-URI 도메인(통신사 SMSC) | `smsc.catvphone.com` |
-| 발신 realm | To/From 도메인(가입자 도메인) | `xic001.catvphone.com` |
-| 트렁크 endpoint | 통신사 SSW 로 도달하는 PJSIP endpoint **이름** | `DKCT` |
-| 기본 회신번호 | 회신번호 폴백(선택) — 미지정 시 **발신 내선의 외부번호(external_cid)가 먼저** 쓰이고, 그것도 없을 때 이 값 사용 | (비움 가능) |
-| 인코딩 | 본문 인코딩 | `euc-kr`(기본) / `utf-8` |
-
-> PBX 트렁크(`outbound_proxy` 등) 설정과 AMI `message` 권한이 함께 필요합니다.
-> 상세: [docs/sms-integration.md](../sms-integration.md).
-
-발신자로 넣는 값은 **내선번호**(예 `1001`)입니다. 게이트웨이가 그 내선의 **실제 발신번호**(external
-CID → 테넌트 대표번호)로 자동 변환해 통신사에 보냅니다 — 내선번호 그대로는 통신사가 거부합니다.
+발신자로 넣는 값은 **내선번호**(예 `1001`)입니다. 게이트웨이가 그 내선의 **실제 발신번호**(내선의 외부
+발신번호 → 테넌트 대표번호)로 자동 변환해 통신사에 보냅니다 — 내선번호 그대로는 통신사가 거부합니다.
 
 ### 대시보드 발신 화면 (코드 없이)
 
 "📩 SMS" 탭 발신 화면은 다음을 제공합니다:
 - **템플릿** — 이 **테넌트에 서버 저장**되는 문구(기기/브라우저 공유). 저장/삭제, 선택 시 본문 자동 채움. (`GET/PUT /api/v1/sms/templates`)
-- **치환 변수** — `{repName}`(대표번호 이름)·`{repNumber}`(대표번호) 칩. 본문에 삽입하면 **발송 시 게이트웨이가 이 테넌트의 실제 값(cid_name/cid_number)으로 치환**. SMS 는 통화 컨텍스트가 없어 대표번호 계열만 지원.
+- **치환 변수** — `{repName}`(대표번호 이름)·`{repNumber}`(대표번호) 칩. 본문에 삽입하면 **발송 시 게이트웨이가 이 테넌트의 실제 대표 이름·번호로 치환**. SMS 는 통화 컨텍스트가 없어 대표번호 계열만 지원.
 - **특수문자/이모지 팔레트** — 클릭해 본문 커서 위치에 삽입(복사/붙여넣기 불필요). ⚠️ **이모지는 인코딩이 `utf-8` 인 테넌트에서만** 제공 — 기본 `euc-kr` 은 이모지를 표현할 수 없어(발송 실패) 팔레트에서 숨겨지고, 특수문자/장식도 EUC-KR 가능 글자만 노출된다. (키보드로 이모지를 직접 넣어 EUC-KR 로 보내면 "EUC-KR 로 보낼 수 없는 문자" 오류.)
 - **80바이트 제한** — 본문 최대 80바이트(EUC-KR). 카운터는 **치환 후** 길이(대표번호 실제 값으로 `{repName}`/`{repNumber}` 를 바꾼 뒤)로 표시·차단하여 서버 판정과 일치합니다. 초과 시 발송 전에 막고, 서버도 재검증(`sms_body_too_long`).
 - **템플릿 저장/수정** — 템플릿을 선택하면 본문 편집기에 채워집니다. 그 자리에서 바로 고친 뒤 **💾 수정 저장** 을 누르면 선택한 템플릿을 현재 본문으로 덮어씁니다(모달 없음). 새 이름으로 남기려면 **＋ 새로 저장**. 같은 이름 저장 시 덮어쓰기 확인(중복 방지). 같은 템플릿을 다시 선택하면 원본 본문으로 다시 불러옵니다.
@@ -68,7 +54,7 @@ console.log(res); // { id, messageId, status: 'delivered', recipients: [...] }
 ```
 
 > **사용자별 개인번호 발신** — `from` 에는 **내선번호**만 넣습니다. 게이트웨이가 그 내선의
-> 외부 CID(`external_cid` → 테넌트 대표번호)로 자동 변환해 보냅니다. 즉 사용자마다 자기 내선을
+> 외부 발신번호(→ 없으면 테넌트 대표번호)로 자동 변환해 보냅니다. 즉 사용자마다 자기 내선을
 > 넘기면 **각자의 개인 대표번호로 발신**됩니다. 모바일 앱(`api.accessToken`)은 **본인 내선만**
 > 발신 가능하며, 관리자가 그 seat 에 발신 권한을 켜야 합니다(기본 차단, `403 sms_not_allowed`).
 > 앱이 사용자 발신번호를 표시하려면 `GET /api/v1/sms/senders`(내선+외부 CID 목록)를 씁니다.
@@ -114,14 +100,14 @@ curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
 | `from` | ✅ | 발신 내선(또는 번호). ⚠️ 모바일 토큰은 **자기 내선만** |
 | `to[]` | ✅ | 수신 번호 배열 — **최대 10** |
 | `text` | ✅ | 본문(UTF-8 로 보내고 전송 시 EUC-KR 로 인코딩) |
-| `callback` |  | 회신번호. 생략 시 **① 발신 내선 실번호(external_cid) → ② 테넌트 기본 회신번호 → ③ 대표번호** 순. ⚠️ 미해석 원시 내선은 **쓰지 않습니다**(외부에서 걸 수 없는 번호) |
+| `callback` |  | 회신번호. 생략 시 **① 발신 내선 실번호 → ② 테넌트 기본 회신번호 → ③ 대표번호** 순. ⚠️ 미해석 원시 내선은 **쓰지 않습니다**(외부에서 걸 수 없는 번호) |
 | `priority` |  | `"0"` \| `"1"` \| `"2"` |
 | `subject` |  | 제목 |
 | `displayName` |  | 표시 이름 |
 | `reservedTime` |  | **예약전송** 시각 |
 | **`clientMsgId`** |  | ⭐ **멱등 키**(아래 1-2) — `Idempotency-Key` 헤더로 보내도 같은 뜻 |
 
-📌 본문의 `{repName}` · `{repNumber}` 는 **서버가 치환**합니다(테넌트 `cid_name`/`cid_number`).
+📌 본문의 `{repName}` · `{repNumber}` 는 **서버가 치환**합니다(테넌트 대표 이름·번호).
 ⚠️ **길이 검사는 치환 *뒤*** 에 합니다 — 템플릿은 짧아도 치환하면 넘칠 수 있습니다.
 
 ### 1-2. ⭐ 재시도 안전 — 멱등 키
@@ -145,8 +131,8 @@ curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
 | `409 idempotency_key_reused` | 같은 키인데 **내용이 다름**(수신자·본문·발신) — 키를 새로 |
 | `400 bad_idempotency_key` | 키 형식 오류(≤64자) |
 
-⚠️ 보존 **24시간** · **디스크 영속**(재시작 창의 이중 과금 방지) · 지문은 해시라 본문은 저장하지 않습니다.
-⚠️ 키를 **생략하면 종전 동작**(멱등 없음)입니다 — 구버전 클라이언트 호환.
+⚠️ 보존 **24시간** · 게이트웨이가 재시작돼도 유지됩니다 · 본문은 저장하지 않습니다.
+⚠️ 키를 **생략하면 멱등 처리 없이** 매번 발송합니다.
 
 ### 1-3. 오류 코드
 
@@ -159,9 +145,9 @@ curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
 | 403 | **`no_extension`** | 이 계정에 내선이 없음(모바일) |
 | 403 | `not_owner` | 자기 내선이 아님(모바일) |
 | 403 | **`sms_not_allowed`** | 그 seat 에 **발신 권한 없음** — 관리자가 켜야 함 |
-| 502 | — | 전송 실패(SMSC/AMI) |
-| 502 | **`ami_message_permission`** | 🔴 **1회성 PBX 설정 누락** — `manager.conf` 의 게이트웨이 AMI 사용자에 `message` write 권한 추가 후 `manager reload`. 개별 문자 문제가 아닙니다 |
-| 503 | — | **SMS 미구성** 또는 **AMI 미연결** |
+| 502 | — | 전송 실패(통신사/PBX 전송 단계) |
+| 502 | **`ami_message_permission`** | 🔴 **게이트웨이 측 1회성 설정 누락** — 운영사에 문의하세요. 개별 문자 문제가 아닙니다 |
+| 503 | — | **SMS 미구성** 또는 **PBX 연결 끊김** — 운영사에 문의 |
 
 ⚠️ **80바이트는 EUC-KR 기준**이라 한글 1자 = 2바이트입니다(한글 40자 안팎).
 
@@ -190,15 +176,12 @@ one = await gw.get_sms(page["records"][0]["id"])
 각 레코드 필드: `id, direction(out|in), messageId, from, to[], text, status, createdAt`.
 상태값: `submitted`(전송 중) · `delivered`(전송) · `failed`(실패) · `received`(수신).
 
-> 🔴 **`delivered` 는 "상대가 받았다"가 아닙니다**(gw `1.4.15.116` 정정).
+> 🔴 **`delivered` 는 "상대가 받았다"가 아닙니다.**
 >
-> Asterisk `res_pjsip_messaging` 은 MESSAGE 를 **내보낸 시점에** 성공을 돌려주고,
-> SMSC 의 최종 응답(200 / 4xx / **무응답**)은 그 값에 담기지 않습니다. 실측
-> (2026-08-10 온프렘)에서 SBC 가 MESSAGE 를 **한 번도 받아주지 않고 10회 재전송되도록
-> 침묵**했는데 화면은 `✓ 전송` 이었습니다 — *"보냈다는데 안 온다"* 의 직접 원인입니다.
+> 게이트웨이가 관측할 수 있는 범위는 **"통신사 방향으로 내보냈다"까지**입니다. 통신사의 최종 처리 결과는
+> 이 값에 담기지 않으므로, 화면에 `✓ 전송` 이 떠도 상대가 받지 못했을 수 있습니다.
 >
-> ⭐ 그래서 발송 응답에 **`deliveryConfirmed: false`** 를 함께 싣습니다. 지금
-> 게이트웨이가 관측할 수 있는 범위가 **"내보냈다"까지**라는 뜻이고, `status` 문자열은
+> ⭐ 그래서 발송 응답에 **`deliveryConfirmed: false`** 를 함께 싣습니다. `status` 문자열은
 > 호환 때문에 그대로 둡니다. **배달 확인이 필요한 업무라면 이 값을 보고 판단하십시오.**
 
 ### 이력 비우기 (관리자/테스트 정리)
@@ -218,12 +201,11 @@ await gw.delete_sms(all_tenants=True)        # 관리자: 전 테넌트(명시 �
 ```
 
 > ⚠️ **일괄 삭제뿐이다 — 단건 삭제는 없다.** `DELETE /api/v1/sms/{id}` 는 **405**
-> (`sms_single_delete_unsupported`)다. 종전에는 그 호출이 id 를 **무시하고 그 테넌트 이력
-> 전체**를(관리자 + `tenantId` 없음이면 **전 테넌트**를) 지웠다.
+> (`sms_single_delete_unsupported`)다.
 >
 > ⚠️ **관리자 토큰으로 `tenantId` 없이 부르면 400**(`tenant_or_all_required`)이다 —
 > 전 테넌트 삭제는 `allTenants: true`(REST `?all=1`)로 **명시해야** 한다. 테넌트 토큰은
-> 종전과 같다(자기 테넌트만, `all` 은 무시). 모바일 토큰은 종전대로 403.
+> 자기 테넌트만 지운다(`all` 은 무시). 모바일 토큰은 403.
 
 ---
 
@@ -236,12 +218,10 @@ await gw.delete_sms(all_tenants=True)        # 관리자: 전 테넌트(명시 �
 2. **이력** — `listSMS({ direction: 'in' })` 로 조회.
 3. **모바일 푸시(sms_received, gw 1.4.14.50+)** — 인바운드 SMS 의 **수신번호(To)를 수신 DID 로 가진
    모바일 사용자(seat)** 에게 자동 푸시. 라우팅은 수신전화(incoming_call)와 동일(수신 DID + 정책
-   all/flagged). 관리자가 대시보드 `💬 문자 수신 푸시` 마스터 + 테넌트 "문자(SMS) 수신" subtype 을
-   켜야 발송됩니다. `data={sender, sender_number, body, msgid, record_id, receiver_number}`.
+   all/flagged). 운영사가 문자 수신 푸시를 켜야 발송됩니다.
+   `data={sender, sender_number, body, msgid, record_id, receiver_number}`.
 
-> 수신은 PBX 다이얼플랜(`message_context` → `UserEvent`) 설정이 필요합니다(관리자).
-> 상세: [docs/sms-integration.md §4.2](../sms-integration.md),
-> 푸시 3단계 제어: [docs/push-notifications.md §10](../push-notifications.md).
+> 문자 수신은 운영사가 PBX 측 수신 설정을 마쳐야 동작합니다. 수신이 안 되면 운영사에 문의하세요.
 
 ### 사용자별 발신 권한
 
@@ -257,7 +237,8 @@ await gw.delete_sms(all_tenants=True)        # 관리자: 전 테넌트(명시 �
 
 ## 4. 테넌트 라우팅 설정 (SDK/REST)
 
-대시보드 대신 코드로도 설정할 수 있습니다.
+대시보드 대신 코드로도 설정할 수 있습니다. 설정값(SMSC 도메인·발신 realm·트렁크 이름)은 운영사·통신사에서 받습니다.
+아래 값은 예시입니다.
 
 ```typescript
 // 현재 설정 조회
@@ -265,9 +246,9 @@ const cfg = await gw.getSMSConfig();
 // 설정 저장 (테넌트 토큰=자기것, admin=?tenantId 또는 글로벌)
 await gw.setSMSConfig({
   enabled: true,
-  smscDomain: 'smsc.catvphone.com',
-  senderRealm: 'xic001.catvphone.com',
-  trunkEndpoint: 'DKCT',
+  smscDomain: 'smsc.example.net',
+  senderRealm: 'sub.example.net',
+  trunkEndpoint: 'TRUNK1',
   charset: 'euc-kr',
 });
 ```
@@ -276,9 +257,9 @@ await gw.setSMSConfig({
 cfg = await gw.get_sms_config()
 await gw.set_sms_config({
     "enabled": True,
-    "smscDomain": "smsc.catvphone.com",
-    "senderRealm": "xic001.catvphone.com",
-    "trunkEndpoint": "DKCT",
+    "smscDomain": "smsc.example.net",
+    "senderRealm": "sub.example.net",
+    "trunkEndpoint": "TRUNK1",
     "charset": "euc-kr",
 })
 ```
@@ -293,7 +274,7 @@ SMSC 도메인·realm·트렁크를 넣으면 됩니다. 코드는 통신사 무
 - **테넌트 토큰**(일반 SDK 사용자): 자기 테넌트의 SMS 만 발송·조회. `tenantId` 를 넘겨도 무시되고,
   다른 테넌트를 지정하면 **403**.
 - **모바일**(`api.accessToken`): **본인 내선으로만** 발신 가능(다른 내선 시도 시 403).
-- **Admin 토큰**: `tenantId`(= PBX `path`)로 대상 테넌트 지정(설정은 미지정 시 글로벌).
+- **Admin 토큰**: `tenantId`(16-hex 테넌트 식별자)로 대상 테넌트 지정(설정은 미지정 시 글로벌).
 
 ---
 
@@ -308,8 +289,8 @@ SMSC 도메인·realm·트렁크를 넣으면 됩니다. 코드는 통신사 무
 | `403 not_owner` | 모바일이 본인 아닌 내선으로 발신 | 본인 내선으로 |
 | `403 sms_not_allowed` | 이 사용자(seat)에 SMS 발신 권한 없음 | 관리자: seat "SMS 발신" 토글 또는 테넌트 발신 정책 허용 |
 | `400 bad_from`/`bad_to` | 번호 형식 오류(숫자 아님) | 숫자만(예 `01012345678`) |
-| `502 ami_message_permission` | 게이트웨이 AMI `message` 권한 없음 | 관리자: `manager.conf` 에 `write=…,message` + 재시작 |
-| `502` 기타 | 통신사(SSW)가 거부 | 발신번호가 통신사에 등록됐는지, 트렁크 라우팅 확인 |
+| `502 ami_message_permission` | 게이트웨이 측 1회성 설정 누락 | 운영사에 문의 |
+| `502` 기타 | 통신사가 거부 | 발신번호가 통신사에 등록됐는지 운영사에 확인 |
 
 SDK 는 이 응답을 예외로 던지므로, 메시지를 그대로 사용자에게 보여주고 **관리자 문의**를 안내하면
 됩니다. 게이트웨이가 이미 한국어 안내 문구를 담아 줍니다.
@@ -329,5 +310,4 @@ try {
 
 - **AI 콤보 예제** — 영업시간 외 AI 예약 접수 + 확인 문자 자동 발송: [TS 09](examples/typescript/09-ai-sms-confirmation.ts) · [PY 08](examples/python/08_ai_sms_confirmation.py)
 - **활용 레시피** — 모니터링·cron·n8n 에서 알림 문자 보내기(사내 문자 게이트웨이): [22-sms-alert-gateway.md](22-sms-alert-gateway.md)
-- 게이트웨이/PBX 설정·다이얼플랜·트러블슈팅: [docs/sms-integration.md](../sms-integration.md)
-- 규격: KCT/Xener IP-SMSC 단말연동규격(SIP MESSAGE). 본문 인코딩 EUC-KR(실측 검증).
+- 규격: SIP MESSAGE 기반. 본문 인코딩 EUC-KR(기본).

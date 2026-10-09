@@ -36,8 +36,8 @@
 │   │                 │    │                 │    │  (TS/Python)  │  │
 │   │  · SIP Trunk    │    │  · 오디오 중계   │    │               │  │
 │   │  · 내선 관리     │    │  · 세션 관리     │    │  · 인증/보안   │  │
-│   │  · ConfBridge   │    │  · CDR/통계     │    │  · 파이프라인   │  │
-│   │  · 다이얼플랜    │    │  · 멀티테넌트    │    │  · 어댑터      │  │
+│   │  · 컨퍼런스      │    │  · CDR/통계     │    │  · 파이프라인   │  │
+│   │  · 통화 라우팅   │    │  · 멀티테넌트    │    │  · 어댑터      │  │
 │   └─────────────────┘    └─────────────────┘    └───────┬───────┘  │
 │                                                         │          │
 │                            REST API / WebSocket          │          │
@@ -74,7 +74,7 @@
 - 해외 콜센터 BPO 업체
 
 **B2B 고객이 받는 것:**
-- Dynamic VoIP 클라우드 PBX (SIP Trunk + 내선 + 다이얼플랜)
+- Dynamic VoIP 클라우드 PBX (SIP Trunk + 내선 + 통화 라우팅)
 - DVGateway 미디어 게이트웨이 (실시간 오디오 중계)
 - DVGateway SDK (TypeScript + Python)
 - 기술 문서 + 예제 코드 8종
@@ -140,34 +140,17 @@
 ### 전체 데이터 흐름
 
 ```
-고객 전화
+고객 전화 (전화망 / SIP Trunk)
     │
     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Dynamic VoIP (Cloud PBX)                                   │
+│  Dynamic VoIP (Cloud PBX) + DVGateway                       │
 │                                                             │
-│  SIP Trunk ──▶ 다이얼플랜 ──▶ Stasis(dvgateway)            │
-│                                     │                       │
-│  AMI (관리)  ◀──────────────────────┤                       │
-│  ARI (제어)  ◀──────────────────────┤                       │
-│  ExternalMedia (오디오) ────────────▶│                       │
-└─────────────────────────────────────┼───────────────────────┘
-                                      │ 16kHz PCM 오디오 (WebSocket)
-                                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│  DVGateway (Media Gateway)                                  │
+│  · 실시간 통화 오디오 중계 (16kHz PCM)                       │
+│  · 통화 이벤트 · TTS 재생 · 통화 제어                        │
+│  · CDR · 대시보드 · 멀티테넌트 격리                           │
 │                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐ │
-│  │ 오디오    │  │ 세션     │  │ TTS      │  │ 대시보드    │ │
-│  │ 수신/변환 │  │ 레지스트리│  │ 주입/재생 │  │ 실시간     │ │
-│  │ AGC/RMS  │  │ 멀티테넌트│  │ Fade효과  │  │ 모니터링   │ │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘ │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐ │
-│  │ CDR      │  │ 라이선스  │  │ Comfort  │  │ YouTube    │ │
-│  │ 통화기록  │  │ 관리     │  │ Noise    │  │ RTMP 스트림│ │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘ │
-│                                                             │
-│  REST API (:8080)  ·  WebSocket (:8080)  ·  Dashboard (:8081) │
+│  REST API  ·  WebSocket                                     │
 └─────────────────────────────┬───────────────────────────────┘
                               │ REST API / WebSocket
                               ▼
@@ -307,13 +290,11 @@ AI 봇: "주문하신 상품은 내일 도착 예정입니다."
 
 | 항목 | 사양 |
 |------|------|
-| **언어** | Go 1.26 (고성능, 수백 동시 콜 처리) |
 | **오디오** | 16kHz 16-bit PCM (slin16), μ-law G.711 |
-| **프로토콜** | WebSocket, REST API, AMI, ARI |
+| **프로토콜** | WebSocket, REST API |
 | **보안** | JWT 테넌트 격리, API Key 인증, HMAC 서명, 감사 로그 |
 | **SDK** | TypeScript (npm), Python (PyPI) |
-| **지원 OS** | Debian 12+, Ubuntu 22.04+ (amd64/arm64) |
-| **설치** | 원라인 설치 스크립트 (30초) |
+| **설치·운영** | 운영사 제공 (클라우드 또는 사내 설치) |
 
 ### 연동 가능 AI 서비스
 
@@ -395,7 +376,7 @@ await gw.redirect(session.linked_id, "1001")
    └── 요구사항 분석 → 테스트 환경 제공 → PoC 검증
 
 2단계: 환경 구축 (1일)
-   └── Dynamic VoIP 설치 → DVGateway 설치 → SDK 연동
+   └── 운영사가 Dynamic VoIP·DVGateway 환경 구성 → 접속 정보·API 키 발급 → SDK 연동
 
 3단계: AI 봇 개발 (1-2주)
    └── SDK 예제 기반 커스터마이징 → AI 프로바이더 연동 → 테스트
@@ -413,7 +394,7 @@ await gw.redirect(session.linked_id, "1001")
 
 - **회사**: OLSSOO Inc.
 - **제품**: Dynamic VoIP + DVGateway
-- **GitHub**: [OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway](https://github.com/OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway)
+- **GitHub**: [OLSSOO-Inc/dvgateway-releases](https://github.com/OLSSOO-Inc/dvgateway-releases)
 
 ---
 

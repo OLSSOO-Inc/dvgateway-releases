@@ -50,7 +50,7 @@ async def main() -> None:
             return
 
         # 최종 발화 출력
-        # 참고: session.custom_value_1/2/3 으로 다이얼플랜 커스텀 값 접근 가능
+        # 참고: session.custom_value_1/2/3 으로 운영사가 설정한 커스텀 값 접근 가능
         # 예: 화자 이름 매핑에 custom_value_1 (고객명) 활용
         print(f"\n[{session.linked_id}] {result.speaker or '알 수 없음'}: \"{result.text}\"")
 

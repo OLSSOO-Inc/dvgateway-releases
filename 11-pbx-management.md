@@ -11,15 +11,12 @@ DVGateway는 모든 PBX 관리 API에서 **테넌트 격리**를 보장합니다
 - **callinfo WebSocket**: 테넌트 클라이언트는 자기 테넌트의 통화 이벤트만 수신
 - **오디오 스트림**: 다른 테넌트의 `linkedId`로 스트림 구독 시 403 차단
 - **캠페인 이벤트**: 테넌트별로 필터링된 이벤트만 전달
-- **Admin** (tenantID=""): 모든 테넌트의 데이터를 볼 수 있음
+- **Admin 토큰**: 모든 테넌트의 데이터를 볼 수 있음
 
 ### 서버 식별 (멀티서버)
 
-```
-GW_SERVER_ID=server-01   # 환경변수 (미설정 시 hostname 자동 사용)
-```
-
-모든 이벤트와 CDR에 `serverId` 필드가 포함됩니다:
+게이트웨이가 여러 대인 경우, 모든 이벤트와 CDR에 그 이벤트를 만든 게이트웨이의 `serverId` 필드가 포함됩니다
+(값은 운영사가 정합니다):
 
 ```json
 {"event":"call:new", "serverId":"server-01", "tenantId":"tenant-a", ...}
@@ -33,47 +30,47 @@ GW_SERVER_ID=server-01   # 환경변수 (미설정 시 hostname 자동 사용)
 
 ```typescript
 // 전체 규칙 조회 (CFI/CFB/CFN/CFU + DND/PEA)
-const rules = await gw.getDiversions('45144801', 'tenant-id');
+const rules = await gw.getDiversions('12345601', 'tenant-id');
 
 // CFI 즉시 착신전환 활성화
-await gw.setDiversion('45144801', 'CFI', {
+await gw.setDiversion('12345601', 'CFI', {
   enable: 'yes',
   destination: '01012345678',
 }, 'tenant-id');
 
 // 비활성화 (번호 유지)
-await gw.setDiversion('45144801', 'CFI', { enable: 'no' }, 'tenant-id');
+await gw.setDiversion('12345601', 'CFI', { enable: 'no' }, 'tenant-id');
 
 // 완전 해제 (번호 삭제)
-await gw.deleteDiversion('45144801', 'CFI', 'tenant-id');
+await gw.deleteDiversion('12345601', 'CFI', 'tenant-id');
 
 // 방해금지(DND) 켜기 / 끄기 — destination 없는 토글
-await gw.setDiversion('45144801', 'DND', { enable: 'yes' }, 'tenant-id');
-await gw.setDiversion('45144801', 'DND', { enable: 'no' }, 'tenant-id');
+await gw.setDiversion('12345601', 'DND', { enable: 'yes' }, 'tenant-id');
+await gw.setDiversion('12345601', 'DND', { enable: 'no' }, 'tenant-id');
 
-// 개인비서(PEA) 켜기 — 착신전환이 있어도 개인비서가 먼저 수신
-await gw.setDiversion('45144801', 'PEA', { enable: 'yes' }, 'tenant-id');
+// 개인비서(PEA) 켜기 — CFI 가 꺼져 있으면 벨이 울리기 전에 개인비서가 먼저 수신
+await gw.setDiversion('12345601', 'PEA', { enable: 'yes' }, 'tenant-id');
 ```
 
 ### Python
 
 ```python
 # 전체 규칙 조회
-rules = await gw.get_diversions("45144801", tenant_id="tenant-id")
+rules = await gw.get_diversions("12345601", tenant_id="tenant-id")
 
 # CFI 즉시 착신전환 활성화
-await gw.set_diversion("45144801", "CFI",
+await gw.set_diversion("12345601", "CFI",
     enable="yes", destination="01012345678", tenant_id="tenant-id")
 
 # 비활성화
-await gw.set_diversion("45144801", "CFI", enable="no", tenant_id="tenant-id")
+await gw.set_diversion("12345601", "CFI", enable="no", tenant_id="tenant-id")
 
 # 완전 해제
-await gw.delete_diversion("45144801", "CFI", tenant_id="tenant-id")
+await gw.delete_diversion("12345601", "CFI", tenant_id="tenant-id")
 
 # 방해금지(DND) / 개인비서(PEA) 토글
-await gw.set_diversion("45144801", "DND", enable="yes", tenant_id="tenant-id")
-await gw.set_diversion("45144801", "PEA", enable="yes", tenant_id="tenant-id")
+await gw.set_diversion("12345601", "DND", enable="yes", tenant_id="tenant-id")
+await gw.set_diversion("12345601", "PEA", enable="yes", tenant_id="tenant-id")
 ```
 
 ### 착신전환 / 부가서비스 타입 (`DiversionType`)
@@ -91,8 +88,9 @@ await gw.set_diversion("45144801", "PEA", enable="yes", tenant_id="tenant-id")
 >
 > **DND·PEA**는 destination 없는 on/off 토글입니다 (`{ enable }` 만 의미 있음).
 >
-> 🔔 **개인비서(PEA) 우선**: PEA를 켜면 **착신전환이 설정되어 있어도 개인비서가 먼저
-> 전화를 받습니다.** 우선순위는 PBX 다이얼플랜이 결정하며 SDK는 플래그만 설정합니다.
+> 🔔 **개인비서(PEA)와 착신전환의 우선순위**: 즉시 착신전환(**CFI**)이 켜져 있으면 CFI 가 우선하며
+> PEA 는 동작하지 않습니다. CFI 가 꺼져 있으면 벨이 울리기 전에 **개인비서가 먼저 전화를 받으므로**
+> 조건부 착신전환(CFB/CFN/CFU)에는 도달하지 않습니다. 우선순위는 PBX 가 판단하며 SDK는 켜짐/꺼짐만 설정합니다.
 
 ---
 
@@ -102,20 +100,20 @@ await gw.set_diversion("45144801", "PEA", enable="yes", tenant_id="tenant-id")
 
 ```typescript
 // 조회
-const cid = await gw.getCallerID('45144800');
+const cid = await gw.getCallerID('12345600');
 console.log(cid.externalCid);
-// { name: "OLSSOO Inc.", number: "16682471", raw: '"OLSSOO Inc." <16682471>' }
+// { name: "Example Inc.", number: "0212345678", raw: '"Example Inc." <0212345678>' }
 
 // 이름만 변경 + PBX 즉시 적용
-await gw.setCallerID('45144800', { name: '홍길동', applyChanges: true });
+await gw.setCallerID('12345600', { name: '홍길동', applyChanges: true });
 
 // 번호만 변경 + PBX 즉시 적용
-await gw.setCallerID('45144800', { number: '0212345678', applyChanges: true });
+await gw.setCallerID('12345600', { number: '0212345678', applyChanges: true });
 
 // 이름 + 번호 동시 변경 + PBX 즉시 적용
-await gw.setCallerID('45144800', {
-  name: 'OLSSOO Inc.',
-  number: '16682471',
+await gw.setCallerID('12345600', {
+  name: 'Example Inc.',
+  number: '0212345678',
   applyChanges: true,
 });
 ```
@@ -124,14 +122,14 @@ await gw.setCallerID('45144800', {
 
 ```python
 # 조회
-cid = await gw.get_caller_id("45144800")
+cid = await gw.get_caller_id("12345600")
 
 # 이름 + 번호 변경 + PBX 즉시 적용
-await gw.set_caller_id("45144800",
-    name="OLSSOO Inc.", number="16682471", apply_changes=True)
+await gw.set_caller_id("12345600",
+    name="Example Inc.", number="0212345678", apply_changes=True)
 ```
 
-> `applyChanges: true` → DB 변경 + PBX 설정 재적용을 한번의 호출로 처리
+> `applyChanges: true` → 변경 + PBX 설정 재적용을 한번의 호출로 처리
 
 ---
 
@@ -141,10 +139,10 @@ await gw.set_caller_id("45144800",
 
 ```typescript
 await gw.clickToCall({
-  caller: '45144801',        // 내 단말번호
+  caller: '12345601',        // 내 단말번호
   callee: '01012345678',     // 전화 걸 번호
-  cidName: 'OLSSOO',         // 발신자 이름
-  cidNumber: '16682471',     // 발신자 번호
+  cidName: 'Example',         // 발신자 이름
+  cidNumber: '0212345678',     // 발신자 번호
   customValue1: '홍길동',     // 커스텀 변수 (AI 봇에서 활용)
   customValue2: 'ORD-001',
   customValue3: '해피콜',
@@ -155,10 +153,10 @@ await gw.clickToCall({
 
 ```python
 await gw.click_to_call(
-    caller="45144801",
+    caller="12345601",
     callee="01012345678",
-    cid_name="OLSSOO",
-    cid_number="16682471",
+    cid_name="Example",
+    cid_number="0212345678",
     custom_value_1="홍길동",
     custom_value_2="ORD-001",
     custom_value_3="해피콜",
@@ -185,9 +183,9 @@ await gw.click_to_call(
 const campaign = await gw.createCampaign({
   name: '고객 안내 전화',
   type: 'scheduled',
-  caller: '45144801',
-  cidName: 'OLSSOO',
-  cidNumber: '16682471',
+  caller: '12345601',
+  cidName: 'Example',
+  cidNumber: '0212345678',
   schedule: {
     type: 'once',
     at: '2026-03-30T14:00:00+09:00',
@@ -205,9 +203,9 @@ const campaign = await gw.createCampaign({
 const campaign = await gw.createCampaign({
   name: '3월 해피콜',
   type: 'bulk',
-  caller: '45144801',
-  cidName: 'OLSSOO 해피콜',
-  cidNumber: '16682471',
+  caller: '12345601',
+  cidName: 'Example 해피콜',
+  cidNumber: '0212345678',
   schedule: {
     type: 'once',
     at: '2026-03-31T09:00:00+09:00',
@@ -243,7 +241,7 @@ const campaign = await gw.createCampaign({
 const campaign = await gw.createCampaign({
   name: '주간 해피콜',
   type: 'recurring',
-  caller: '45144801',
+  caller: '12345601',
   schedule: {
     type: 'cron',
     cron: '0 9 * * 1',
@@ -375,7 +373,7 @@ async def on_event(event):
         session = event.session
         customer = session.custom_value_1 or "고객"
         await gw.say(session.linked_id,
-            f"안녕하세요 {customer}님, OLSSOO입니다.", tts)
+            f"안녕하세요 {customer}님, 예시상사입니다.", tts)
 
 gw.on_call_event(on_event)
 
@@ -383,9 +381,9 @@ gw.on_call_event(on_event)
 campaign = await gw.create_campaign({
     "name": "해피콜 테스트",
     "type": "bulk",
-    "caller": "45144801",
-    "cidName": "OLSSOO",
-    "cidNumber": "16682471",
+    "caller": "12345601",
+    "cidName": "Example",
+    "cidNumber": "0212345678",
     "bulk": {"concurrency": 3, "intervalSec": 3, "retryCount": 1},
     "targets": [
         {"callee": "01012345678", "customValue1": "홍길동"},
@@ -471,32 +469,32 @@ await asyncio.sleep(3600)
 
 ```typescript
 // 조회
-const config = await gw.getEarlyMedia('07045144801', 'tenant-id');
+const config = await gw.getEarlyMedia('07012345601', 'tenant-id');
 
 // 음원 URL + 활성화 (MP3 → 자동 WAV 변환)
-await gw.setEarlyMedia('07045144801', {
+await gw.setEarlyMedia('07012345601', {
   enabled: 'yes',
-  audioUrl: 'https://www.makecall.io/greeting.mp3',
+  audioUrl: 'https://example.com/greeting.mp3',
 }, 'tenant-id');
 
-// TTS 텍스트로 설정 (대시보드 프로바이더 API 키 자동 사용)
-await gw.setEarlyMedia('07045144801', {
+// TTS 텍스트로 설정 (게이트웨이에 등록된 프로바이더 API 키 자동 사용)
+await gw.setEarlyMedia('07012345601', {
   enabled: 'yes',
   tts: {
     text: 'VIP 고객님, 잠시만 기다려 주세요.',
-    provider: 'elevenlabs',   // optional, 미지정 시 dashboard primary
+    provider: 'elevenlabs',   // optional, 미지정 시 게이트웨이 기본(1순위) 프로바이더
     voice: 'custom-voice-id',  // optional
   },
 }, 'tenant-id');
 
 // 비활성화만 (음원 유지)
-await gw.setEarlyMedia('07045144801', { enabled: 'no' }, 'tenant-id');
+await gw.setEarlyMedia('07012345601', { enabled: 'no' }, 'tenant-id');
 
 // 다시 활성화
-await gw.setEarlyMedia('07045144801', { enabled: 'yes' }, 'tenant-id');
+await gw.setEarlyMedia('07012345601', { enabled: 'yes' }, 'tenant-id');
 
 // 음원만 교체
-await gw.setEarlyMedia('07045144801', {
+await gw.setEarlyMedia('07012345601', {
   audioUrl: 'https://cdn.example.com/new-greeting.mp3',
 }, 'tenant-id');
 ```
@@ -505,16 +503,16 @@ await gw.setEarlyMedia('07045144801', {
 
 ```python
 # 조회
-config = await gw.get_early_media("07045144801", tenant_id="tenant-id")
+config = await gw.get_early_media("07012345601", tenant_id="tenant-id")
 
 # 음원 URL + 활성화
-await gw.set_early_media("07045144801",
+await gw.set_early_media("07012345601",
     enabled="yes",
-    audio_url="https://www.makecall.io/greeting.mp3",
+    audio_url="https://example.com/greeting.mp3",
     tenant_id="tenant-id")
 
 # TTS 텍스트로 설정
-await gw.set_early_media("07045144801",
+await gw.set_early_media("07012345601",
     enabled="yes",
     tts={
         "text": "VIP 고객님, 잠시만 기다려 주세요.",
@@ -523,10 +521,10 @@ await gw.set_early_media("07045144801",
     tenant_id="tenant-id")
 
 # 비활성화만 (음원 유지)
-await gw.set_early_media("07045144801", enabled="no", tenant_id="tenant-id")
+await gw.set_early_media("07012345601", enabled="no", tenant_id="tenant-id")
 
 # 다시 활성화
-await gw.set_early_media("07045144801", enabled="yes", tenant_id="tenant-id")
+await gw.set_early_media("07012345601", enabled="yes", tenant_id="tenant-id")
 ```
 
 ---
@@ -535,9 +533,9 @@ await gw.set_early_media("07045144801", enabled="yes", tenant_id="tenant-id")
 
 수백 개 DID에 **동일한 안내음**을 일괄 적용하고 싶을 때, 각 DID마다 설정할 필요 없이 **한 번만** 테넌트 기본값을 저장하면 됩니다. 특정 DID에만 다른 안내음이 필요하면 그 DID에만 개별 설정 — 개별 설정이 기본값을 자동으로 오버라이드합니다.
 
-#### 다이얼플랜 폴백 순서
+#### 폴백 순서
 
-`[dvgateway-pa-noa]` 컨텍스트는 인바운드 통화마다 다음 순서로 확인합니다:
+인바운드 통화마다 다음 순서로 확인합니다:
 
 ```
 1. 해당 DID의 개별 설정 enabled="yes"  →  Per-DID 프로파일 사용
@@ -630,7 +628,7 @@ async function provisionTenant(tenantId: string, brandName: string) {
   }, tenantId);
 
   // 2. VIP DID에만 특별 안내음
-  await gw.setEarlyMedia('07045144801', {
+  await gw.setEarlyMedia('07012345601', {
     enabled: 'yes',
     tts: { text: `${brandName} VIP 고객센터입니다. 최우선으로 응대해 드립니다.` },
   }, tenantId);
@@ -639,17 +637,10 @@ async function provisionTenant(tenantId: string, brandName: string) {
 }
 ```
 
-### 6.3 저장 경로 & 주의사항
+### 6.3 주의사항
 
-| 항목 | Per-DID | 기본값 (`_default`) |
-|------|---------|---------------------|
-| 파일 경로 | `/var/spool/asterisk/{tenantId}/pa/{DID}/pamsg.wav` | `/var/spool/asterisk/{tenantId}/pa/_default/pamsg.wav` |
-| AstDB 키 | `/{tenantId}/earlymedia/{DID}/*` | `/{tenantId}/earlymedia/_default/*` |
-| 변환 방식 | 저장 시 1회 ffmpeg 변환 (8kHz mono WAV) | 동일 |
-| 다이얼플랜 | `[dvgateway-pa-noa]` 가 자동 폴백 처리 | 동일 |
-
-- 음원은 MP3/OGG/FLAC/WAV 등 어떤 형식이든 **저장 시점에 1회 변환** — 통화마다 재다운로드하지 않음
-- TTS 메타데이터 (`text`/`provider`/`voice`)는 AstDB에 저장되어 GET 응답에 포함
+- 음원은 MP3/OGG/FLAC/WAV 등 어떤 형식이든 **저장 시점에 1회 변환**(8kHz mono WAV) — 통화마다 재다운로드하지 않음
+- TTS 메타데이터 (`text`/`provider`/`voice`)는 서버에 저장되어 GET 응답에 포함
 - `enabled="no"` 로 설정해도 `ttsText` / `audioUrl` 값은 유지 (재활성화 시 그대로 재사용)
 - `_default` 는 **예약어** — 실제 전화번호로는 사용 불가 (밑줄 접두사로 숫자 충돌 방지)
 
@@ -665,7 +656,7 @@ DVGateway는 **글로벌(라이선스)** 및 **테넌트별** 동시통화 제�
 | 레벨 | 담당 | 이유 |
 |:----:|:----:|------|
 | 글로벌 | DVGateway (라이선스) | 인프라 보호 — 서버 과부하 방지 |
-| 테넌트별 | DVGateway (TENANT_LIMITS) | 인프라 보호 — 테넌트 간 공정 배분 |
+| 테넌트별 | DVGateway (운영사 설정) | 인프라 보호 — 테넌트 간 공정 배분 |
 | **DID별** | **SDK 사용자** | **비즈니스 정책** — 고객 요금제, 채널 할당, 초과 시 처리 로직 |
 
 DID별 제한을 DVGateway가 하지 않는 이유:
@@ -696,9 +687,9 @@ tts = GeminiTtsAdapter(api_key="AIza_xxx")
 # 요금제에 따라 DID별 최대 동시통화 수를 설정합니다.
 # 실제로는 DB나 설정 파일에서 로드합니다.
 did_limits = {
-    "07045144801": 3,    # 기본 요금제: 3채널
-    "07045144802": 5,    # 비즈니스 요금제: 5채널
-    "07045144803": 10,   # 엔터프라이즈 요금제: 10채널
+    "07012345601": 3,    # 기본 요금제: 3채널
+    "07012345602": 5,    # 비즈니스 요금제: 5채널
+    "07012345603": 10,   # 엔터프라이즈 요금제: 10채널
 }
 DEFAULT_DID_LIMIT = 1    # 미등록 DID 기본값
 
@@ -766,20 +757,20 @@ asyncio.run(main())
 ### 실행 결과 예시
 
 ```
-✅ [07045144801] 통화 수락 (1/3) — 01012345678
-✅ [07045144801] 통화 수락 (2/3) — 01098765432
-✅ [07045144801] 통화 수락 (3/3) — 01055551234
-⛔ [07045144801] 동시통화 초과 (3/3) — 거부: 01033334444
-📴 [07045144801] 통화 종료 (2/3) — 45초
-✅ [07045144801] 통화 수락 (3/3) — 01033334444
+✅ [07012345601] 통화 수락 (1/3) — 01012345678
+✅ [07012345601] 통화 수락 (2/3) — 01098765432
+✅ [07012345601] 통화 수락 (3/3) — 01055551234
+⛔ [07012345601] 동시통화 초과 (3/3) — 거부: 01033334444
+📴 [07012345601] 통화 종료 (2/3) — 45초
+✅ [07012345601] 통화 수락 (3/3) — 01033334444
 ```
 
 ### TypeScript 구현
 
 ```typescript
 const didLimits: Record<string, number> = {
-  '07045144801': 3,
-  '07045144802': 5,
+  '07012345601': 3,
+  '07012345602': 5,
 };
 const DEFAULT_DID_LIMIT = 1;
 const didActive = new Map<string, Set<string>>();
@@ -885,29 +876,22 @@ async def on_call_ended(linked_id, duration):
                 break
 ```
 
-### 고급: DB 기반 DID 제한 관리
+### 고급: 외부 저장소 기반 DID 제한 관리
 
-실제 서비스에서는 DID별 제한을 DB에서 관리합니다:
+실제 서비스에서는 DID별 제한을 여러분의 DB나 설정 파일에서 관리합니다:
 
 ```python
-# DVGateway 외부 DB API를 활용한 DID 제한 조회
-async def load_did_limits():
-    """ombutel DB에서 DID별 채널 수 로드"""
-    result = await gw._http.post("/api/v1/db/query", {
-        "table": "ombu_extensions",
-        "limit": 1000,
-    })
-    limits = {}
-    for row in result.data.get("rows", []):
-        ext = str(row.get("extension", ""))
-        # max_channels 컬럼이 있다고 가정
-        max_ch = row.get("max_channels", 1)
-        did = f"070{ext}"
-        limits[did] = max_ch
-    return limits
+import json
+
+def load_did_limits(path: str = "did_limits.json") -> dict[str, int]:
+    """여러분의 설정 파일(또는 DB)에서 DID별 채널 수 로드
+    예: {"07012345601": 3, "07012345602": 5}
+    """
+    with open(path, encoding="utf-8") as f:
+        return {str(k): int(v) for k, v in json.load(f).items()}
 
 # 시작 시 로드
-did_limits = asyncio.run(load_did_limits())
+did_limits = load_did_limits()
 ```
 
 ### 동시통화 제한 아키텍처 요약
@@ -919,7 +903,7 @@ did_limits = asyncio.run(load_did_limits())
 │  1단계: 글로벌 제한 (라이선스)                              │
 │     └── starter:1  basic:10  standard:50  pro:100       │
 │                                                         │
-│  2단계: 테넌트별 제한 (TENANT_LIMITS)                      │
+│  2단계: 테넌트별 제한 (운영사 설정)                        │
 │     └── tenantA:20  tenantB:50                          │
 │                                                         │
 │  통과 → call:new 이벤트 발행 → SDK 봇                      │
@@ -929,7 +913,7 @@ did_limits = asyncio.run(load_did_limits())
 │  SDK 봇 (비즈니스 정책)                                    │
 │                                                         │
 │  3단계: DID별 제한 (SDK 사용자 구현)                        │
-│     └── 07045144801:3  07045144802:5  07045144803:10    │
+│     └── 07012345601:3  07012345602:5  07012345603:10    │
 │                                                         │
 │  초과 시 처리:                                             │
 │     ├── 즉시 거부 (TTS 안내 → hangup)                      │
@@ -941,5 +925,5 @@ did_limits = asyncio.run(load_did_limits())
 
 ---
 
-> 상세 REST API 문서: [docs/pbx-management-api.md](../pbx-management-api.md)
-> 퀵 매뉴얼: [docs/pbx-quick-reference.md](../pbx-quick-reference.md)
+> 상세 REST API 문서: [docs/pbx-management-api.md](pbx-management-api.md)
+> 퀵 매뉴얼: [docs/pbx-quick-reference.md](pbx-quick-reference.md)

@@ -14,8 +14,6 @@ DVGateway를 네이버웍스에 연결하는 방법은 **두 축**이며, 보완
 두 축이 합쳐지면 **WORKS 안에서 통화 업무가 닫힙니다**: 알림은 봇으로 받고, 거기서 미니앱을 열어
 클릭투콜·팩스를 바로 수행합니다.
 
-> 설계·아키텍처 전체 배경은 [docs/woff-naverworks-integration.md](https://github.com/OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway/blob/master/docs/woff-naverworks-integration.md) 를 참고하세요.
-
 ---
 
 ## ① 봇 알림 — 통화·팩스 알림을 WORKS 메시지로
@@ -39,16 +37,16 @@ DVGateway를 네이버웍스에 연결하는 방법은 **두 축**이며, 보완
 | `POST /api/v1/config/lineworks/test` | 토큰 발급 + 본인 이메일로 실제 메시지 발송 테스트 |
 | `POST /api/v1/config/lineworks/create-bot` | 봇 자동 등록 + 도메인 추가 → `botId` 영속 |
 
-> 자격증명은 **테넌트별**로 저장됩니다(`/etc/dvgateway/lineworks/{tenantId}.json`). `JWT signature is not
-> valid` 오류는 대개 그 테넌트의 **Private Key 불일치**입니다(코드 버그 아님).
+> 자격증명은 **테넌트별**로 저장됩니다. `JWT signature is not valid` 오류는 대개 그 테넌트에
+> 입력한 **Private Key 불일치**입니다 — Developer Console 에서 발급한 키를 다시 붙여넣으세요.
 
 ---
 
 ## ② WOFF 미니앱 — WORKS 안 통화/팩스 웹 UI
 
 **WOFF(WORKS Front-end Framework)** = WORKS 앱 웹뷰 안에서 도는 미니앱(LINE의 LIFF에 해당).
-게이트웨이가 미니앱 HTML을 **API 서버(:8080)의 `/woff`** 로 직접 서빙하고, WORKS SSO Access Token을
-seat 인증으로 바꿔 **클릭투콜·팩스·통화이력·프레즌스**를 제공합니다(Firebase 비의존).
+게이트웨이가 미니앱 HTML을 **API 주소의 `/woff`** 로 직접 서빙하고, WORKS SSO Access Token을
+게이트웨이 사용자 인증으로 바꿔 **클릭투콜·팩스·통화이력·프레즌스**를 제공합니다.
 
 ### 설정
 
@@ -57,8 +55,8 @@ seat 인증으로 바꿔 **클릭투콜·팩스·통화이력·프레즌스**를
    - **인증 활성화** 토글
    - **사용자 검증 URL** `https://www.worksapis.com/v1.0/users/me` (공공기관 `gov.worksapis.com`)
    - **woffId**, **공개 베이스 URL**(Endpoint 안내용), (선택) **redirect verification** Secret Key
-3. WORKS 콘솔 OAuth Scope에 `user.read` 필요. nginx로 TLS 종단 + `/woff`·`/api` → :8080 프록시
-   ([docs/woff-nginx.md](https://github.com/OLSSOO-Inc/AI-Ready-Real-Time-Voice-Media-Gateway/blob/master/docs/woff-nginx.md)).
+3. WORKS 콘솔 OAuth Scope에 `user.read` 필요. WORKS Endpoint URL은 **https** 여야 하며, 게이트웨이
+   공개 주소의 TLS 구성은 운영사가 합니다(공개 https 주소를 운영사에 확인하세요).
 
 ### REST API
 
@@ -68,23 +66,7 @@ seat 인증으로 바꿔 **클릭투콜·팩스·통화이력·프레즌스**를
 | `POST /api/v1/woff/auth` | WORKS Access Token → seat 인증 → 모바일 `api.accessToken` 발급 |
 | `GET /api/v1/woff/clientconfig` | 미니앱 공개 설정(`woff.init`용, 인증 전) |
 | `GET/PUT/POST /api/v1/config/woff` | WOFF 설정 (admin 전용, hot-reload, secretKey 미반환) |
-| `POST /api/v1/config/woff/test` | WORKS 토큰 검증 + seat 매칭 확인(실제 mint 안 함) |
+| `POST /api/v1/config/woff/test` | WORKS 토큰 검증 + 사용자 매칭 확인(토큰 발급은 하지 않음) |
 
 > 봇 버튼·QR·딥링크는 **순수 WORKS 런치 URL**(`woff.worksmobile.com/woff/{woffId}`)만 써야 합니다 —
 > Endpoint URL 직접 링크나 `?tenantId=` 같은 쿼리를 붙이면 WORKS가 토큰을 안 붙여 "로그인 필요"가 됩니다.
-
----
-
-## 관련 환경변수 (부팅 시드)
-
-운영 중에는 위 대시보드/REST로 hot-reload 하므로 env는 첫 부팅 시드용입니다.
-
-| 변수 | 설명 |
-|------|------|
-| `GW_WOFF_ENABLED` | WOFF 인증 브리지 활성화(기본 true) |
-| `GW_WOFF_USERINFO_URL` | WORKS 사용자 검증 엔드포인트(미설정 시 503) |
-| `GW_WOFF_ID` | 미니앱 `woff.init`에 쓸 woffId |
-| `GW_WOFF_PUBLIC_BASE_URL` | 공개 베이스 URL(Endpoint 안내) |
-| `GW_WOFF_REDIRECT_VERIFY` / `GW_WOFF_SECRET_KEY` | redirect verification(HMAC, opt-in) |
-
-LINE WORKS 봇 자격증명은 env가 아니라 대시보드/`…/config/lineworks`로만 관리합니다(테넌트별 파일 영속).

@@ -53,15 +53,15 @@
 간단한 코드 한 번에 동작합니다.
 
 ```javascript
-const gw = new DVGatewayClient({ baseUrl, auth: { apiKey } });
-gw.pipeline()
-  .stt(deepgramAdapter)
-  .llm(claudeAdapter, { systemPrompt: '...' })  // 1단계 시나리오
-  .tts(elevenLabsAdapter, { voice: '...' })     // 2단계 음성
+const gw = new DVGatewayClient({ baseUrl, auth: { type: 'apiKey', apiKey } });
+await gw.pipeline()
+  .stt(deepgramAdapter)   // 음성 인식
+  .llm(claudeAdapter)     // 1단계 시나리오를 systemPrompt 로 넣은 LLM 어댑터
+  .tts(elevenLabsAdapter) // 2단계에서 고른 음성(voiceId)
   .start();
 ```
 
-### 4단계 — 전화번호 연결 (통신사 작업)
+### 4단계 — 전화번호 연결 (통신사·운영사 작업)
 - 기존 사무실 전화번호를 그대로 사용 가능
 - 평일 야간/주말에만 AI로 자동 전환되도록 시간대별 라우팅도 가능
 
@@ -94,10 +94,10 @@ gw.pipeline()
 ## 🚀 다음 단계
 
 - 도입 검토 단계 → 영업팀 문의로 데모 통화 받아보기
-- 기술 구현 → 개발자에게 [docs/sdk-guide/03-pipeline-patterns.md](../sdk-guide/03-pipeline-patterns.md) 전달
-- 비용 최적화 → [docs/sdk-guide/07-cost-optimization.md](../sdk-guide/07-cost-optimization.md)
+- 기술 구현 → 개발자에게 [docs/sdk-guide/03-pipeline-patterns.md](../03-pipeline-patterns.md) 전달
+- 비용 최적화 → [docs/sdk-guide/07-cost-optimization.md](../07-cost-optimization.md)
 - 다른 가이드 → [README.md](README.md)
 
 ---
 
-_본 문서는 비전공자 이해를 돕기 위해 작성된 마케팅·세일즈 자료입니다. 실제 도입 시 기술 검토는 [기술 문서](../sdk-guide/)를 참조하세요._
+_본 문서는 비전공자 이해를 돕기 위해 작성된 마케팅·세일즈 자료입니다. 실제 도입 시 기술 검토는 [기술 문서](../README.md)를 참조하세요._

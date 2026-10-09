@@ -40,7 +40,7 @@ gw.onCallEvent(async (event) => {
     const { session } = event;
     console.log(
       `📞 [${session.linkedId}] 새 콜: ${session.caller}\n` +
-      // ── 커스텀 값 (Dynamic VoIP 다이얼플랜에서 전달) ──
+      // ── 커스텀 값 (운영사 PBX 설정에서 전달) ──
       // Dialplan: Set(__CUSTOM_VALUE_01=${customer_name})
       // 용도 예시: 고객명, 주문번호, 통화 목적 등 CRM 연동 데이터
       `   커스텀값1   : ${session.customValue1 ?? '없음'}\n` +
@@ -129,7 +129,7 @@ gw.onCallEvent(async (event) => {
 
     // 세션 메타데이터: 게이트웨이에는 세션 메타데이터를 갱신하는 API 가 없다
     // (updateSessionMeta() 는 DVGatewayUnsupportedError 를 던진다 — 호출하지 말 것).
-    // CRM 연동 값은 다이얼플랜 Stasis 인자 custom_value_01~03 으로 넘기면
+    // CRM 연동 값은 운영사 PBX 설정의 custom_value_01~03 으로 넘기면
     // session.customValue1~3 으로 들어온다.
   }
 

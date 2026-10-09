@@ -11,39 +11,25 @@
 | 언어 | 패키지 | 설치 |
 |------|--------|------|
 | TypeScript | `dvgateway-sdk` + `dvgateway-adapters` | `npm install dvgateway-sdk dvgateway-adapters` |
-| Python | `dvgateway` (PyPI 이름 · 저장소 폴더는 `packages/dvgateway-python`) | `pip install dvgateway` |
+| Python | `dvgateway` | `pip install dvgateway` |
 
 ### 버전 호환성 및 알려진 이슈
 
 | 버전 | 상태 | 비고 |
 |------|------|------|
-| `1.3.5` | ✅ 안정 | 권장 안정 버전 (마지막으로 검증된 릴리즈) |
-| `1.3.6` | ⚠️ | 중간 릴리즈 |
-| `1.3.7` | ❌ 버그 | `OpenAIRealtimeAdapter` 오디오 입력 타입 불일치 — S2S 세션에서 오디오가 조용히 끊김 |
-| `1.3.8` ~ `1.5.2` | ✅ 수정 | v1.3.7의 audio_in 타입 불일치 및 background task 사일런트 실패 수정 |
-| `1.5.3` | ✅ 안정 | `channel:state` 이벤트 추가 — outbound click-to-call B-leg 응답 감지 (`gw.on_channel_state` / `gw.onChannelState`). **게이트웨이 v1.3.9.1+ 필요** (AMI Newstate / DialEnd publish 지원) |
-| `1.6.0+` | ✅ 신규 | `audio:playback` 이벤트 추가 — `play_audio()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `play_audio()`/`playAudio()` 가 `playback_id`/`playbackId` 반환. **게이트웨이 v1.3.9.2+ 필요** (`PublishAudioPlayback` publish 지원) |
-| `1.6.1+` | ✅ 신규 | `tts:playback` 이벤트 추가 — `inject_tts()` 라이프사이클 (start / complete / canceled / failed) 명시 신호. `phase="canceled"` 의 `error_reason` 으로 선점 (`preempted`) / barge-in (`barge_in`) / 통화 종료 (`hangup`) / 사용자 요청 (`user_request`) 구분 가능. `inject_tts()` / `injectTts()` / `say()` 가 `InjectTtsResult { inject_id }` 반환. **게이트웨이 v1.3.9.3+ 필요** (`PublishTTSPlayback` publish 지원) |
-| `1.6.2+` | ✅ 신규 | **VoiceFlow + 온디맨드 오디오** — `gw.flow()` 빌더 (stage 그래프 기반 IVR 런타임), `attachAudio()`/`detachAudio()`/`getAudioStatus()` 신규 메서드 추가. 다이얼플랜에서 `Stasis(dvgateway, flow=true, ...)`로 진입한 통화는 ExternalMedia/Bridge가 자동 생성되지 않고 holding 상태로 시작 → SDK가 stage onEnter/onExit 시점에 명시적으로 attach/detach. DTMF 메뉴 단계에서 STT/TTS 비용 0, 통화 중 단계별로 Asterisk 채널 수 동적 변동 가능. `flow=true` 미지정 통화는 기존 동작 그대로(회귀 영향 0). **게이트웨이 v1.3.9.4+ 필요** (`flow` Stasis arg + `/api/v1/audio/{linkedId}` 엔드포인트 + `audio:attached`/`audio:detached` 대시보드 이벤트 지원). 자세한 내용은 [VoiceFlow 섹션](#voiceflow--stage-그래프-ivr-자동화-gateway-1394) 참조 |
-| `1.7.0+` | ⚠️ **실제로는 1.9.4 부터** | `call:rejected` 이벤트 — ⚠️ **1.7.0~1.9.3 은 이 이벤트를 파싱하지 않고 버렸다**(문서만 있고 구현이 없었다 · 2026-09-29 확인). 받으려면 **SDK 1.9.4+**. 라이선스 전역 한도 또는 테넌트 동시통화 한도(`TENANT_LIMITS`) 도달 시 SDK가 거부 사실을 명시 신호로 수신. `reason`(`license_global`/`tenant_limit`), `currentActive`, `limit` 포함. **게이트웨이 v1.4.4.0+ 필요** (`PublishCallRejected` + `/api/v1/config/tenant-limits` hot-reload API 지원) |
-| `1.9.0+` | ✅ 신규 | **녹취 타임라인 실측 정렬** — ① `tts:playback` 에 `phase="playout"` 추가(첫 실오디오 프레임의 Asterisk write 순간 = 실재생 시작 실측 앵커), ② `recording:started` 이벤트 추가(`gw.onRecordingStarted` / `gw.on_recording_started` — PBX 녹취 파일 절대 원점 t=0, AMI MixMonitorStart 실측). 이벤트 `timestamp` 가 클라이언트 수신 시각이 아닌 **게이트웨이 스탬프 `ts`** 로 매핑되도록 개선(모든 callinfo 이벤트, WS 전달 지터 제거). 마커 위치 = playout ts − recording ts. **게이트웨이 v1.4.14.17+ 필요** (구버전 게이트웨이에서는 두 이벤트가 발사되지 않을 뿐 오류 없음) |
-| `1.9.3+` | ✅ 신규 | **STT 보정 전 원문 병행 출력** — `TranscriptResult.rawText`(문장) · `TranscriptWord.rawWord`(단어, Python 은 `raw_text`/`raw_word`) 추가. `text`/`word` 는 **표시용 보정본 그대로 유지**(필드를 더하기만 함 → 기존 코드 회귀 0). Deepgram 이 같은 응답에 원문·보정본을 함께 주므로 **추가 호출·추가 과금 0** → **기본 켜짐**. **스위치 3층**(모두 기본 켜짐, 서로 독립): SDK 어댑터 `rawTranscript:false`(Python `raw_transcript=False`) · 게이트웨이 env `GW_STT_RAW_TEXT=false` · 테넌트별 apikeys `{"rawText":false}`(**tri-state** — 미지정=글로벌 상속, false=그 테넌트만 끔, true=글로벌이 꺼져도 켬). 끄면 재구성 자체를 **건너뛴다**(만들고 버리지 않음). ⚠️ **`text` 대체 금지** — 단어 공백 join 근사라 띄어쓰기·숫자 표기가 다름(한국어는 띄어쓰기가 보정 대상). 진단용(오인식 vs 보정기 개입 구분). ⚠️ **켜져 있어도 보정이 없었으면 필드 자체가 없음**(`smartFormat:false`+`punctuate:false` → 원문==보정본) — 부재는 오류가 아니므로 `if (result.rawText)` 로 확인할 것. ⚠️ **배치(통화요약) 경로 미적용**(`utterances[]` 에 `words[]` 가 없음 — 실시간 스트리밍 전용). 게이트웨이는 `stt:result` 에 `rawText`(omitempty) 동봉(**v1.4.15.223+**, 구버전은 키가 없을 뿐 오류 없음) |
-| `1.9.4+` | ✅ 신규 | **안전성 보강** — ① **SMS·클릭투콜 중복 방지 키 자동 부착**(`clientMsgId`) — SDK 는 POST 도 502/503/504·타임아웃에서 재시도하는데 종전엔 키가 없어 **재시도가 중복 발송·중복 과금**이 될 수 있었다(같은 호출의 재시도는 같은 키 → 게이트웨이가 첫 응답을 돌려줌 · `idempotentReplay:true`) ② **401 → 토큰 폐기 후 1회 재시도**(HTTP·WebSocket 모두 — 게이트웨이 재시작으로 서명 키가 바뀌어도 스스로 복구) ③ **`Retry-After` 따르기**(16초 이하면 기다렸다 재시도, 그보다 길면 재시도하지 않고 돌려줌 — 분당 한도·비용 상한에 다시 부딪히지 않게) ④ **`throwOnHttpError` / `throw_on_http_error`**(기본 꺼짐) — 켜면 400·403·429 등을 `DVGatewayHttpError{status, code, action, retryAfterMs}` 로 던진다. 끈 상태(기본)는 종전처럼 오류 본문을 결과로 돌려주되 **경고 로그**를 남긴다 ⑤ **빠져 있던 이벤트 수신**: `call:rejected` · `call:ringing` · `stt:result`(`rawText` 포함) · `sms:received` · `warm_transfer:bridged` ⑥ `call:new` 세션에 `callDirection` · `orgId`/`orgSource`(3-상태) ⑦ warm transfer 결과에 `dualStreamIn`/`dualStreamOut`/`dualStreamSkipReason`/`dualStreamErrorDetail` ⑧ Python `@gw.on("call:new")` **데코레이터 형태 지원**(가이드 예제가 이 형태였는데 종전엔 `TypeError`). ⚠️ 동작 변화: 429 에 긴 `Retry-After` 가 오면 종전(1·2·4초 재시도)과 달리 **즉시 돌려준다** |
-| `1.9.5` | ✅ 배포 정정 | 코드 무변경. ① npm `dvgateway-adapters` 의 `peerDependencies` 가 저장소 안에서만 통하는 `file:../dvgateway-sdk` 로 배포되고 있었다(1.9.4 이하 전부) → **`^1.9.0`** 으로 정정(로컬 개발 연결은 `devDependencies` 로 옮김) ② Python 설치 이름 정정 — PyPI 패키지는 **`dvgateway`** 다(문서의 `pip install dvgateway-python` 은 PyPI 에 없는 이름이라 설치가 실패했다) |
-| `1.9.6` | ✅ 신규 | `deleteSMS({allTenants})` / `delete_sms(all_tenants=)` — 관리자가 **전 테넌트** SMS 이력을 지우려면 명시해야 한다(gw 1.4.16.282+ 는 `tenantId` 도 `all` 도 없으면 400). 테넌트 토큰은 영향 없음 |
-| `1.9.7` | ⚠️ 동작 정정 | **게이트웨이에 없는 경로를 부르던 메서드 정리** — ① `updateSessionMeta()`/`update_session_meta()` · `submitTranscript()`/`submit_transcript()` 는 게이트웨이가 **한 번도 등록한 적 없는** 경로(`PUT /api/v1/sessions/{id}/meta` · `POST /api/v1/minutes/{id}/transcript`)를 불러 **언제나 404** 였다 ⇒ 이제 **요청을 보내지 않고** `DVGatewayUnsupportedError`(`code:"not_supported_by_gateway"` · `sdkMethod`/`sdk_method` · `alternative`)를 던진다(`@deprecated` · Python 은 `DeprecationWarning` 도). `autoSubmitTranscripts()`/`auto_submit_transcripts()` 는 **no-op 콜백 + 경고 1회**(파이프라인 배선을 깨지 않게 던지지 않는다) ② `downloadMinutes()`/`download_minutes()` 는 실제 경로 **`GET /api/v1/conferences/{confId}`** 를 부른다 — 회의 **진행 중에는 실시간 회의록**, **끝난 뒤에는 게이트웨이 1.4.16.285+ 의 저장본**(저장된 것이 없거나 구버전이면 404 · 구버전 테넌트 토큰은 403) · 게이트웨이는 JSON 만 주므로 `'txt'` 는 **SDK 가 렌더링**한다 ③ `listSessions()`/`list_sessions()` 가 게이트웨이 응답(`{calls, conferences}`)을 읽는다 — 종전엔 없는 `sessions` 키를 읽어 **언제나 빈 목록**이었다(회의 참여자는 `confId` 가 붙은 세션으로 포함 · `sessions` 키도 계속 수용). ⚠️ **동작 변화**: 세 메서드를 `await` 하던 코드는 종전에도 404 로 실패했으므로 새로 깨지는 경로는 없지만 **예외 타입이 바뀐다**(`Error`/`RuntimeError` → `DVGatewayUnsupportedError`) |
-
-**v1.3.7 버그 상세:**
-- `OpenAIRealtimeAdapter._pipe_audio_in()`이 `chunk.samples` (AudioChunk)를 기대하지만, 실제로는 `bytes`가 전달되는 경우가 있어 `AttributeError`로 background task가 사일런트 종료됨
-- `on_error` 콜백으로 예외가 전파되지 않아 진단이 어려움
-
-**워크어라운드 (v1.3.8 릴리즈 전):**
-```bash
-# Python: 이전 안정 버전 고정
-pip install dvgateway==1.3.5
-```
-
-v1.3.8부터는 `_pipe_audio_in`이 `bytes` / `bytearray` / `memoryview` / `AudioChunk`를 모두 받아들이며, task 예외가 `on_error` 핸들러 또는 stderr로 표면화됩니다.
+| `1.3.5` | ✅ 안정 | 1.3.x 대의 마지막 안정 버전 |
+| `1.3.7` | ❌ 버그 | `OpenAIRealtimeAdapter` 오디오 입력 타입 불일치 — S2S 세션에서 오디오가 조용히 끊김. **1.3.8 이상을 쓸 것** |
+| `1.3.8+` | ✅ 수정 | 오디오 입력이 `bytes` / `bytearray` / `memoryview` / `AudioChunk` 모두 수용, 백그라운드 작업 예외가 `on_error` 핸들러 또는 stderr 로 표면화 |
+| `1.5.3+` | ✅ 신규 | `channel:state` 이벤트 — outbound click-to-call B-leg 응답 감지 (`gw.on_channel_state` / `gw.onChannelState`). **게이트웨이 v1.3.9.1+ 필요** |
+| `1.6.0+` | ✅ 신규 | `audio:playback` 이벤트 — `play_audio()` 라이프사이클 (start / complete / canceled / failed). `play_audio()`/`playAudio()` 가 `playback_id`/`playbackId` 반환. **게이트웨이 v1.3.9.2+ 필요** |
+| `1.6.1+` | ✅ 신규 | `tts:playback` 이벤트 — `inject_tts()` 라이프사이클. `phase="canceled"` 의 `error_reason` 으로 선점(`preempted`) / barge-in(`barge_in`) / 통화 종료(`hangup`) / 사용자 요청(`user_request`) 구분. `inject_tts()` / `injectTts()` / `say()` 가 `InjectTtsResult { inject_id }` 반환. **게이트웨이 v1.3.9.3+ 필요** |
+| `1.6.2+` | ✅ 신규 | **VoiceFlow + 온디맨드 오디오** — `gw.flow()` 빌더 (stage 그래프 기반 IVR 런타임), `attachAudio()`/`detachAudio()`/`getAudioStatus()`. flow 모드로 연결된 통화는 오디오 스트림 없이 대기 상태로 시작하고 SDK 가 단계별로 attach/detach 한다. flow 모드가 아닌 통화는 기존 동작 그대로. **게이트웨이 v1.3.9.4+ 필요**. [VoiceFlow 섹션](#voiceflow--stage-그래프-ivr-자동화-gateway-1394) 참조 |
+| `1.9.0+` | ✅ 신규 | **녹취 타임라인 정렬** — ① `tts:playback` 에 `phase="playout"` 추가(실제 재생 시작 시점), ② `recording:started` 이벤트 추가(`gw.onRecordingStarted` / `gw.on_recording_started` — 녹취 파일의 t=0). 이벤트 `timestamp` 가 게이트웨이 스탬프 `ts` 로 매핑된다. 마커 위치 = playout ts − recording ts. **게이트웨이 v1.4.14.17+ 필요** (구버전에서는 두 이벤트가 오지 않을 뿐 오류 없음) |
+| `1.9.3+` | ✅ 신규 | **STT 보정 전 원문 병행 출력** — `TranscriptResult.rawText`(문장) · `TranscriptWord.rawWord`(단어, Python 은 `raw_text`/`raw_word`). `text`/`word` 는 표시용 보정본 그대로. 추가 호출·추가 과금 없음 → **기본 켜짐**. 어댑터에서 `rawTranscript:false`(Python `raw_transcript=False`) 로 끌 수 있다. 게이트웨이 측 원문 동봉은 운영사(관리자) 설정을 따른다. ⚠️ **`text` 대체 금지** — 단어 공백 join 근사라 띄어쓰기·숫자 표기가 다르다. 진단용(오인식 vs 보정 개입 구분). ⚠️ 보정이 없었으면 필드 자체가 없다 — `if (result.rawText)` 로 확인. ⚠️ 실시간 스트리밍 전용(통화요약 배치 경로 미적용). 게이트웨이 `stt:result` 의 `rawText` 는 **v1.4.15.223+** |
+| `1.9.4+` | ✅ 신규 | **안전성 보강** — ① **SMS·클릭투콜 중복 방지 키 자동 부착**(`clientMsgId`) — 같은 호출의 재시도는 같은 키를 써서 게이트웨이가 첫 응답을 돌려준다(`idempotentReplay:true`) ② **401 → 토큰 폐기 후 1회 재시도**(HTTP·WebSocket 모두) ③ **`Retry-After` 따르기**(16초 이하면 기다렸다 재시도, 그보다 길면 즉시 돌려줌) ④ **`throwOnHttpError` / `throw_on_http_error`**(기본 꺼짐) — 켜면 400·403·429 등을 `DVGatewayHttpError{status, code, action, retryAfterMs}` 로 던진다. 끈 상태는 오류 본문을 결과로 돌려주고 경고 로그를 남긴다 ⑤ 이벤트 수신: `call:rejected`(동시통화 한도 거부 — `reason`·`currentActive`·`limit`, 게이트웨이 v1.4.4.0+) · `call:ringing` · `stt:result`(`rawText` 포함) · `sms:received` · `warm_transfer:bridged` ⑥ `call:new` 세션에 `callDirection` · `orgId`/`orgSource`(3-상태) ⑦ warm transfer 결과에 `dualStreamIn`/`dualStreamOut`/`dualStreamSkipReason`/`dualStreamErrorDetail` ⑧ Python `@gw.on("call:new")` 데코레이터 형태 지원 |
+| `1.9.5` | ✅ 배포 정정 | 코드 무변경. npm `dvgateway-adapters` 의 `peerDependencies` 를 `^1.9.0` 으로 정정. Python 설치 이름은 **`dvgateway`** (`pip install dvgateway`) |
+| `1.9.6` | ✅ 신규 | `deleteSMS({allTenants})` / `delete_sms(all_tenants=)` — 관리자가 **전 테넌트** SMS 이력을 지우려면 명시해야 한다(`tenantId` 도 `all` 도 없으면 400). 테넌트 토큰은 영향 없음 |
+| `1.9.7` | ⚠️ 동작 정정 | ① `updateSessionMeta()`/`update_session_meta()` · `submitTranscript()`/`submit_transcript()` 는 게이트웨이에 해당 API 가 없어 **요청을 보내지 않고** `DVGatewayUnsupportedError`(`code:"not_supported_by_gateway"` · `sdkMethod`/`sdk_method` · `alternative`)를 던진다(`@deprecated` · Python 은 `DeprecationWarning` 도). `autoSubmitTranscripts()`/`auto_submit_transcripts()` 는 **no-op 콜백 + 경고 1회** ② `downloadMinutes()`/`download_minutes()` 는 **`GET /api/v1/conferences/{confId}`** 를 부른다 — 회의 진행 중에는 실시간 회의록, 끝난 뒤에는 저장본(게이트웨이 1.4.16.285+ · 저장본이 없거나 구버전이면 404). `'txt'` 는 SDK 가 렌더링한다 ③ `listSessions()`/`list_sessions()` 가 게이트웨이 응답(`{calls, conferences}`)을 읽는다(회의 참여자는 `confId` 가 붙은 세션으로 포함). ⚠️ 위 메서드를 쓰던 코드는 예외 타입이 `DVGatewayUnsupportedError` 로 바뀐다 |
 
 ---
 
@@ -69,7 +55,7 @@ gw = DVGatewayClient(
 
 > **오류 처리 (SDK 1.9.4+)**: 새 코드는 `throwOnHttpError: true`(TS) / `throw_on_http_error=True`(Python) 를 켜라.
 > 켜면 게이트웨이의 400·403·404·412·429·5xx 가 `DVGatewayHttpError` 로 던져지고 `status`·`code`(예: `cost_rate_limited`, `sms_disabled`)·`action`(401 의 `refresh`/`reprovision`)·`retryAfterMs` 를 싣는다.
-> 기본값(꺼짐)은 종전 동작 — **오류 본문이 성공 결과처럼 반환**되고 경고 로그만 남는다. 다음 마이너 버전에서 기본값을 켤 예정이다.
+> 기본값(꺼짐)에서는 **오류 본문이 성공 결과처럼 반환**되고 경고 로그만 남는다. 다음 마이너 버전에서 기본값을 켤 예정이다.
 
 ---
 
@@ -94,21 +80,17 @@ await gw.pipeline().stt(stt).llm(llm).tts(tts).start()
 
 `gw.pipeline()`은 **항상 켜진 풀-듀플렉스 AI 대화**를 가정합니다. 반면 IVR / 메뉴 / 폼 입력 / "DTMF로 분기 → 단계별 AI 호출" 같은 시나리오는 단계마다 필요한 자원이 다릅니다 — 메뉴 안내 단계는 TTS만, 콜백 번호 수집 단계는 DTMF만, AI 상담 단계만 풀-듀플렉스.
 
-이 비대칭 자원 사용을 게이트웨이가 **런타임에** 알 수 있도록 다이얼플랜에서 `flow=true`로 진입시키면, 게이트웨이는 ExternalMedia/Bridge를 자동 생성하지 않고 통화를 holding 상태로 둡니다. SDK가 stage onEnter/onExit 시점에 명시적으로 `attachAudio`/`detachAudio` REST 호출을 보내면 그때만 ExternalMedia가 만들어졌다 사라집니다 — Asterisk 채널 수와 미디어 게이트웨이 처리 비용 모두 단계별로 최소화됩니다.
+통화가 **flow 모드**로 들어오면 게이트웨이는 오디오 스트림을 자동으로 붙이지 않고 통화를 대기(holding) 상태로 둡니다. SDK가 stage onEnter/onExit 시점에 `attachAudio`/`detachAudio` 를 호출할 때만 오디오 스트림이 붙었다 떨어집니다 — 단계별로 필요한 만큼만 자원과 비용을 씁니다.
 
-### 다이얼플랜 진입
+### flow 모드 진입
 
-```asterisk
-exten => s,1,Stasis(dvgateway,flow=true,tenantid=acme,callernum=${CALLERID(num)},callednum=${EXTEN})
-```
-
-`flow=true`를 빼면 기존 동작(StasisStart 시 즉시 ExternalMedia 생성)이 그대로 유지됩니다 — **기존 통화 회귀 영향 0**.
+번호를 flow 모드로 연결하는 것은 운영사(관리자)가 합니다. 운영사에 "이 번호를 VoiceFlow(flow 모드)로 연결해 달라"고 요청하세요. flow 모드가 아닌 통화는 시작부터 양방향 오디오가 붙는 기존 동작 그대로입니다.
 
 ### 단계 audio 모드
 
 | 모드 | REST `dir` | 게이트웨이 동작 | 사용처 |
 |------|-----------|---------------|--------|
-| `'none'` | (없음) | ExternalMedia 분리 — 채널은 holding bridge | DTMF 메뉴 대기 / 폼 입력 / 슬립 |
+| `'none'` | (없음) | 오디오 분리 — 통화는 대기 상태 유지 | DTMF 메뉴 대기 / 폼 입력 / 슬립 |
 | `'tts-only'` | `out` | gateway → caller 단방향 | 안내 멘트 재생 (STT 비용 0) |
 | `'stt-only'` | `in` | caller → gateway 단방향 | 발화 녹취만 |
 | `'full'` | `both` | 양방향 (기본 AI 대화) | LLM 상담 단계 |
@@ -233,28 +215,28 @@ async def on_bye(ctx):
 한 게이트웨이에 여러 voice flow를 등록할 경우 DID로 라우팅:
 
 ```typescript
-gw.flow().forDid('07045144801').stage('vip-greet', {...}).startStage('vip-greet').start();
-gw.flow().forDid('07045144802').stage('main-greet', {...}).startStage('main-greet').start();
+gw.flow().forDid('07012345601').stage('vip-greet', {...}).startStage('vip-greet').start();
+gw.flow().forDid('07012345602').stage('main-greet', {...}).startStage('main-greet').start();
 ```
 
-미지정 시 **첫 매칭 flow**가 모든 flow=true 통화를 받습니다.
+미지정 시 **첫 매칭 flow**가 모든 flow 모드 통화를 받습니다.
 
 ### 게이트웨이 자원 비교
 
-| 시나리오 | flow=true 사용 | 미사용 (기존) |
+| 시나리오 | flow 모드 | 일반 모드 |
 |---------|--------------|--------------|
-| DTMF 메뉴 1단계 | ExternalMedia/Bridge **없음** | ExternalMedia/Bridge 즉시 생성 |
-| TTS 안내 단계 | ExternalMedia 1개 (`out` 방향) | ExternalMedia 1개 (양방향) |
-| AI 상담 단계 | ExternalMedia 1개 (`both`) | 동일 |
-| 콜백 번호 수집 | ExternalMedia **분리** | 그대로 유지 |
-| Asterisk 채널 수 | 단계별 변동 | 통화 시작~종료 내내 고정 |
+| DTMF 메뉴 1단계 | 오디오 스트림 **없음** | 오디오 스트림 즉시 연결 |
+| TTS 안내 단계 | 오디오 스트림 1개 (`out` 방향) | 오디오 스트림 1개 (양방향) |
+| AI 상담 단계 | 오디오 스트림 1개 (`both`) | 동일 |
+| 콜백 번호 수집 | 오디오 스트림 **분리** | 그대로 유지 |
+| 사용 자원 | 단계별 변동 | 통화 시작~종료 내내 고정 |
 
 ### 직접 attach/detach (flow 빌더 없이)
 
 VoiceFlow가 표현하지 못하는 동적 시나리오는 직접 호출:
 
 ```typescript
-// flow=true 통화에 임시 안내 후 다시 detach
+// flow 모드 통화에 임시 안내 후 다시 detach
 await gw.attachAudio(linkedId, 'out');
 await gw.say(linkedId, '잠시만요', tts);
 await gw.detachAudio(linkedId);
@@ -264,12 +246,12 @@ const s = await gw.getAudioStatus(linkedId);
 // { flowMode: true, attached: false, extMediaId: '', bridgeId: 'dv-spy-...' }
 ```
 
-`flowMode === false`인 통화는 attach/detach가 의미 없습니다 (이미 StasisStart 시점에 양방향 부착됨) — `attachAudio`는 404를 반환합니다.
+`flowMode === false`인 통화는 attach/detach가 의미 없습니다 (통화 시작부터 양방향 부착됨) — `attachAudio`는 404를 반환합니다.
 
 ### 언제 VoiceFlow를 쓰지 말아야 하는가
 
 - **항상 풀-듀플렉스 AI 대화**: `gw.pipeline()` 단독으로 충분. flow는 오버킬.
-- **Click-to-call 발신**: 통화 시작부터 양방향 필요. flow=true 의미 없음.
+- **Click-to-call 발신**: 통화 시작부터 양방향 필요. flow 모드 의미 없음.
 - **회의 (ConfBridge)**: 다중 참여자 모델은 flow와 호환 안 됨.
 
 ---
@@ -282,133 +264,103 @@ const s = await gw.getAudioStatus(linkedId);
 | `hangup(linkedId)` | `hangup(linked_id)` | 통화 종료 |
 | `redirect(linkedId, dest)` | `redirect(linked_id, dest)` | 통화 전환 |
 | `warmTransfer({linkedId, destination, ...})` | `warm_transfer(linked_id, destination, ...)` | 웜 트랜스퍼 — 내선/외부 PSTN, whisper 재생 (SDK 측 `TtsAdapter` 또는 gateway TTS), outbound CID/accountcode, mixed audio capture (1.6.6+), `whisper_skip_reason` 진단 코드 (1.6.9+) |
-| **`attachAudio(linkedId, dir?)`** | **`attach_audio(linked_id, dir)`** | **통화 중 오디오 스트리밍 부착 (flow=true 통화 전용, gateway 1.3.9.4+)** |
-| **`detachAudio(linkedId)`** | **`detach_audio(linked_id)`** | **오디오 분리 — 통화는 holding bridge에 유지** |
+| **`attachAudio(linkedId, dir?)`** | **`attach_audio(linked_id, dir)`** | **통화 중 오디오 스트리밍 부착 (flow 모드 통화 전용, gateway 1.3.9.4+)** |
+| **`detachAudio(linkedId)`** | **`detach_audio(linked_id)`** | **오디오 분리 — 통화는 대기 상태로 유지** |
 | **`getAudioStatus(linkedId)`** | **`get_audio_status(linked_id)`** | **현재 오디오 attach 상태 조회 (flowMode/attached/extMediaId/bridgeId)** |
 | **`flow()`** | **`flow()`** | **VoiceFlow 빌더 — stage 그래프 기반 IVR 자동화 (아래 섹션 참조)** |
 
 ### 앱 푸시/알림 (모바일 FCM, gateway 1.4.8.0+)
-> **모바일 단말용 SDK 설계 카탈로그**(어떤 기능을 단말 SDK로 제공 가능한지 + 보안 경계 + 로드맵): [docs/dvg-mobile-sdk-catalog.md](../docs/dvg-mobile-sdk-catalog.md). TS/Python SDK는 백엔드(신뢰) SDK이므로 단말에 그대로 올리지 않는다(정적 API 키·AI 프로바이더 키 노출 금지).
+> TS/Python SDK 는 백엔드(신뢰) SDK 이므로 모바일 단말에 그대로 올리지 않는다(정적 API 키·AI 프로바이더 키 노출 금지).
 
-연동된 모바일 앱(예: makecall) 사용자에게 푸시 전송. gateway가 `extension → userId → fcm_token`(앱 온보딩으로 생성된 매핑)으로 라우팅해 FCM 릴레이(Cloud Function)에 HMAC 서명 전달. 모든 이벤트는 `dvg_event{subtype}` 단일 스키마. 테넌트는 서버가 JWT에서 강제. gateway에 릴레이 미설정 시 503.
+연동된 모바일 앱 사용자에게 푸시를 보낸다. 게이트웨이가 `extension`(또는 email)으로 수신 단말을 찾아 전달한다. 모든 이벤트는 `dvg_event{subtype}` 단일 스키마. 테넌트는 서버가 JWT 에서 강제한다. 게이트웨이에 푸시 전송이 구성되지 않았으면 503 — 운영사(관리자)에 문의하세요.
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | **`pushToExtension({extension, subtype, title?, body?, linkedId?, did?, caller?, callerName?, data?})`** | **`push_to_extension(...)`** | **범용 푸시(extension 라우팅). 임의 subtype + data(문자열 맵). did/caller/callerName 은 외부수신 표시·라우팅 필드(선택)** |
-| **`pushToUser({email, subtype, title?, body?, linkedId?, did?, caller?, callerName?, data?})`** (gateway 1.4.9.0+) | **`push_to_user(...)`** | **email 라우팅 푸시 — extension 이 아직 없는(email-우선 신규) 사용자용. 릴레이가 email→userId→fcm_token. 일반 알림·외부수신 표시에 사용** |
 | **`notifyCallSummary(linkedId, {extension, summaryUrl?, transcriptUrl?, audioUrl?, ...})`** | **`notify_call_summary(...)`** | **통화 종료 후 결과 링크 푸시(subtype=`call_summary`). 최소 1개 URL 필수. 짧은 만료 서명 URL 권장. 앱은 통화이력에 "요약 보기/녹취 듣기"로 노출** |
 | **`notifyMissedCall({extension, callerNumber?, callerName?, linkedId?})`** | **`notify_missed_call(...)`** | **부재중 알림(subtype=`missed_call`)** |
 
-> REST: `POST /api/v1/push/extension`, **`POST /api/v1/push/user`** (email 라우팅), `POST /api/v1/push/call-summary/{linkedId}`. 모든 푸시는 `did`(대표번호)/`caller`/`callerName` 를 **extension 유무와 무관하게** 실어 보낼 수 있다 — 외부수신(DVG/IVR/AI 선수신)은 단말 extension 없이 **대표번호(DID)** 로 라우팅·표시되므로(앱 수신 Function 이 accountCode 매칭), self-enroll 후 extension 이 없어도 외부수신/부재중/요약/일반알림은 즉시 동작한다. 단말이 직접 ring 되는 `incoming_softphone` 만 extension 전제. tenantId 는 JWT 강제(본문 신뢰 금지). 페이로드·서명 규약은 [docs/warm-transfer-push-contract.md](../docs/warm-transfer-push-contract.md)·[docs/dvg-mobile-roadmap.md](../docs/dvg-mobile-roadmap.md). 수신 측(Function + 앱 라우팅)은 makecall 레포에서 구현.
+> REST: `POST /api/v1/push/extension`, **`POST /api/v1/push/user`** (email 라우팅 — extension 이 아직 없는 사용자용, gateway 1.4.9.0+ · SDK 메서드 없이 REST 로 호출), `POST /api/v1/push/call-summary/{linkedId}`. 모든 푸시는 `did`(대표번호)/`caller`/`callerName` 을 **extension 유무와 무관하게** 실어 보낼 수 있다 — 외부수신(IVR/AI 선수신)은 단말 extension 없이 대표번호(DID)로 라우팅·표시되므로, extension 이 없어도 외부수신/부재중/요약/일반알림은 동작한다. 단말이 직접 울리는 `incoming_softphone` 만 extension 전제. tenantId 는 JWT 강제(본문 신뢰 금지).
 >
-> **외부수신 자동 푸시 (gateway 1.4.8.14+)**: `GW_PUSH_ON_CALL_NEW=true` (기본 false, 푸시 릴레이 구성 전제) 시, 인입(`callDirection=inbound` + caller 있음 — gateway 1.4.9.15+; voice-flow/AI 선수신의 mode=both 인입 포함) `call:new` 마다 dvg 가 **자동으로** `subtype=incoming_call` 푸시(did/caller/callerName/tenantId/linkedId 포함)를 송신한다. 켜면 makecall 서버가 call:new 를 받아 `/push/*` 를 직접 호출할 필요가 없다. 발신(outbound)·회의·보조채널(caller 없음)은 제외. best-effort 비차단. **(gateway 1.4.9.18+)** incoming_call/missed_call 의 `data` 에 구조화 필드 `{caller_number, caller_name, receiver_number, call_type:"external"|"internal"}` 동봉(`linkedid` 는 최상위 유지) — 앱 전체화면 수신 UI(M3)용. 추가로 **`incoming_call_cancelled`**(silent 데이터 푸시, `data.reason="caller_cancelled"|"answered_elsewhere"`, 동일 linkedid)가 발신자 벨 도중 끊김/타 단말 응답 시 발사돼 앱이 수신 UI 를 안전하게 내릴 수 있다. **`call:new`/snapshot 이벤트의 `callDirection`("inbound"/"outbound", gateway 1.4.9.15+) 으로 발신/수신을 구분하라** — `dir` 은 스트림 모드 파생값(mode=both 인입도 dir=both)이라 방향 판별에 쓰면 틀린다.
+> **외부수신 자동 푸시 (gateway 1.4.8.14+)**: 운영사가 이 기능을 켜면 인입 통화(`callDirection=inbound` + caller 있음)의 `call:new` 마다 게이트웨이가 **자동으로** `subtype=incoming_call` 푸시(did/caller/callerName/tenantId/linkedId 포함)를 보낸다. 이 경우 앱 서버가 `/push/*` 를 직접 호출할 필요가 없다. 발신(outbound)·회의·보조채널(caller 없음)은 제외. best-effort 비차단. **(gateway 1.4.9.18+)** incoming_call/missed_call 의 `data` 에 `{caller_number, caller_name, receiver_number, call_type:"external"|"internal"}` 동봉(`linkedid` 는 최상위). 추가로 **`incoming_call_cancelled`**(silent 데이터 푸시, `data.reason="caller_cancelled"|"answered_elsewhere"`, 동일 linkedid)가 발신자 취소/타 단말 응답 시 발사돼 앱이 수신 UI 를 내릴 수 있다. **`call:new`/snapshot 이벤트의 `callDirection`("inbound"/"outbound", gateway 1.4.9.15+) 으로 발신/수신을 구분하라** — `dir` 은 스트림 방향이라 방향 판별에 쓰면 틀린다.
 
-> **`call:ringing` 이벤트 (gateway 1.4.9.13+) — 수신 푸시 트리거는 이걸 쓰세요**: callinfo 구독으로 받는 `call:ringing`{linkedId, callee=울리는 seat 내선, caller, callerName, tenantId} 은 **단말이 울리기 시작하는 순간**(AMI 피호출 seat 레그 생성) 발행된다. `call:new` 는 Stasis 진입 시점이라 배포에 따라 사실상 **응답 시점**이어서 — 짧은 통화면 수신 푸시가 통화 종료 후에 도착하는 원인이 된다. 수신 알림을 직접 발송하는 서버(makecall 등)는 트리거를 call:new → **call:ringing** 으로 옮길 것. 내부/외부 수신 공통, 착신전환으로 seat 가 울리지 않는 통화는 미발행(앱이 안 울리므로 정상). (linkedid+내선) 단위 1회.
+> **`call:ringing` 이벤트 (gateway 1.4.9.13+) — 수신 푸시 트리거는 이걸 쓰세요**: callinfo 구독으로 받는 `call:ringing`{linkedId, callee=울리는 seat 내선, caller, callerName, tenantId} 은 **단말이 울리기 시작하는 순간** 발행된다. `call:new` 는 배포에 따라 사실상 **응답 시점**일 수 있어 짧은 통화면 수신 푸시가 통화 종료 후에 도착할 수 있다. 수신 알림을 직접 보내는 서버는 트리거를 call:new → **call:ringing** 으로 옮길 것. 내부/외부 수신 공통, 착신전환으로 seat 가 울리지 않는 통화는 미발행(앱이 안 울리므로 정상). (linkedid+내선) 단위 1회.
 
 ### WebRTC 소프트폰 프로비저닝 (gateway 1.4.8.3+ / SDK 1.8.1+)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| **`provisionSoftphone({enrollToken?, extension?, idToken?, deviceId, platform?, deviceModel?, vendor?, firmware?, appVersion?, deviceName?})`** | **`provision_softphone(device_id, *, enroll_token?, extension?, id_token?, platform?, device_model?, vendor?, firmware?, app_version?, device_name?)`** | **QR 의 1회용 enrollToken 으로 소프트폰 프로비저닝. 반환 `{extension, tenantId?, sip?, ice?, refresh?, pushOnly?, message?}` — **내선 미배정이면 `pushOnly:true` 이고 `sip/ice/refresh` 는 없음(알림만, 통화 불가)**, 배정되면 `sip{wssUri,authUser,authToken,realm,expiresAt}+ice+refresh` 발급. 앱은 `sip.wssUri`(dvg 엣지)로 등록 — PBX 직접 연결 아님. **`idToken`**(gateway 1.4.8.21+): Firebase ID 토큰을 `Authorization: Bearer` 로 보내 enrollToken 없이 인증(auth B). `platform/deviceModel/vendor/firmware/appVersion/deviceName` 은 **선택적 표시 전용 단말 메타데이터**(gateway 1.4.8.24+, `deviceName` 은 1.4.11.70+) — dvg 가 seat 에 저장하고 대시보드 모바일 사용자 목록의 "단말" 컬럼에 노출. 매 provision 마다 최신값으로 갱신. **`deviceName`**(사람이 읽는 기기 이름, 예 "Norman의 iPhone")은 운영자가 같은 모델 여러 대를 구분하는 데 쓰이므로 **강력 권장**(deviceId 만으론 사람이 식별 불가)** |
+| **`provisionSoftphone({enrollToken?, extension?, idToken?, deviceId, platform?, deviceModel?, vendor?, firmware?, appVersion?, deviceName?})`** | **`provision_softphone(device_id, *, enroll_token?, extension?, id_token?, platform?, device_model?, vendor?, firmware?, app_version?, device_name?)`** | **QR 의 1회용 enrollToken 으로 소프트폰 프로비저닝. 반환 `{extension, tenantId?, sip?, ice?, refresh?, pushOnly?, message?}` — **내선 미배정이면 `pushOnly:true` 이고 `sip/ice/refresh` 는 없음(알림만, 통화 불가)**, 배정되면 `sip{wssUri,authUser,authToken,realm,expiresAt}+ice+refresh` 발급. 앱은 `sip.wssUri` 로 등록한다. **`idToken`**(gateway 1.4.8.21+): Firebase ID 토큰을 `Authorization: Bearer` 로 보내 enrollToken 없이 인증(auth B). `platform/deviceModel/vendor/firmware/appVersion/deviceName` 은 **선택적 표시 전용 단말 메타데이터**(gateway 1.4.8.24+, `deviceName` 은 1.4.11.70+) — seat 에 저장되어 관리 화면의 "단말" 컬럼에 표시된다. 매 provision 마다 최신값으로 갱신. **`deviceName`**(사람이 읽는 기기 이름, 예 "홍길동의 iPhone")은 운영자가 같은 모델 여러 대를 구분하는 데 쓰이므로 **강력 권장**(deviceId 만으론 사람이 식별 불가)** |
 | **`getSoftphoneStatus({idToken})`** | **`softphone_status(id_token)`** | **재-provision 없이 로그인 사용자의 seat 내선(단말) 할당 유무 조회(gateway 1.4.8.26+). Firebase ID 토큰(`Authorization: Bearer`)으로 email→active seat 해석. 반환 `{hasSeat, hasExtension, pushOnly, extension, tenantId?, seatId?, status?, enrolledAt?, admin?}`. 앱이 버튼 탭/포그라운드에서 "통화 가능(내선 배정)" vs "알림만(pushOnly)" UI 를 갱신. active seat 없으면 `200 {hasSeat:false, pushOnly:true}`(에러 아님), email 다건 409 `ambiguous_seat`** |
 | **`refreshSoftphone(refreshToken)`** | **`refresh_softphone(refresh_token)`** | **refreshToken 회전 → 새 sip+ice. `expiresAt - minTtlSeconds` 에 선제 호출. 401(revoke)이면 소프트폰 내리고 click-to-call 폴백** |
-| **`createSoftphoneEnrollment(extension)`** (admin) | **`create_softphone_enrollment(extension)`** | **1회용 enrollToken + `dvgprov://enroll?t=&h=` QR URI 발급. tenantPath 는 JWT 에서 서버 강제** |
-| **`deprovisionSoftphone({deviceId, extension})`** | **`deprovision_softphone(device_id, extension)`** | **토큰 체인 무효화(로그아웃). PBX device 는 삭제 안 함(운영자 관리)** |
+| **`createSoftphoneEnrollment(extension)`** (admin) | **`create_softphone_enrollment(extension)`** | **1회용 enrollToken + `dvgprov://enroll?t=&h=` QR URI 발급. 테넌트는 JWT 에서 서버 강제** |
+| **`deprovisionSoftphone({deviceId, extension})`** | **`deprovision_softphone(device_id, extension)`** | **토큰 체인 무효화(로그아웃). 단말(device) 자체는 삭제하지 않음(운영사 관리)** |
 
-> REST: `POST /api/v1/softphone/{provision,refresh,enroll,deprovision}`. device 는 **운영자가 PBX 관리자 웹에서 생성**(protocol=wss·mobile_client=true), dvg 는 `GET /api/v2/devices` 로 조회만 한다(read-only). 토폴로지·QR·수명 규약은 [docs/webrtc-softphone-provisioning-contract.md](../docs/webrtc-softphone-provisioning-contract.md) 참조.
+> REST: `POST /api/v1/softphone/{provision,refresh,enroll,deprovision}`. 단말(device)은 운영사(관리자)가 만든다 — SDK/REST 로 생성하지 않는다. 소프트폰 기능이 꺼져 있으면 모든 엔드포인트가 503 — 운영사에 요청하세요.
 >
-> **⚠️ INTERIM**: device WRITE/secret-rotation API 가 생기기 전까지 `sip.authToken` 은 device 의 **raw PBX secret** 을 그대로 담는다. WRITE API 도입 시 단기 회전 secret 으로 교체되며 **응답 스키마는 불변**이다. `GW_SOFTPHONE_ENABLED` 미설정 시 모든 엔드포인트 503.
->
-> **인증 B — Firebase ID 토큰 (gateway 1.4.8.21+)**: `GW_SOFTPHONE_FIREBASE_PROJECT` 설정 시 `provision` 이 `enrollToken` 대신 **`Authorization: Bearer <firebase-id-token>`** 도 수용. dvg 가 토큰을 검증(RS256·aud=project·iss·exp)하고 **email → active seat** 으로 (tenant·내선)을 해석한다(seat 가 SSOT). seat 없음 403 `no_seat`, 다건 409 `ambiguous_seat`. **내선 미배정이면 거부하지 않고 `200 {pushOnly:true}` 로 등록 성공**(SIP cred 없음 — softphone 통화는 내선 배정 후, 알림/외부수신은 즉시 동작). `provision`/`refresh` 는 RLS 게이트 면제(토큰 자체가 자격증명).
+> **인증 B — Firebase ID 토큰 (gateway 1.4.8.21+)**: 운영사가 Firebase 인증을 구성한 경우 `provision` 이 `enrollToken` 대신 **`Authorization: Bearer <firebase-id-token>`** 도 받는다. 게이트웨이가 토큰을 검증하고 **email → active seat** 으로 (tenant·내선)을 찾는다. seat 없음 403 `no_seat`, 다건 409 `ambiguous_seat`. **내선 미배정이면 거부하지 않고 `200 {pushOnly:true}` 로 등록 성공**(SIP 자격증명 없음 — 통화는 내선 배정 후, 알림/외부수신은 즉시 동작). `provision`/`refresh` 는 토큰 자체가 자격증명이라 별도 게이트웨이 JWT 가 필요 없다.
 
 ### 모바일 사용자 seat 관리 (테넌트별 정원·발급, gateway 1.4.9.0+)
-연동된 모바일 앱(makecall) **사용자 정원(seat)** 을 테넌트별로 관리. dvg 가 정원·발급권을 소유하고, **이메일은 식별 라벨로만 저장**한다(검증·인증은 makecall Firebase 가 SSOT — 기존 경계 불변). 발급(enrollment)은 위 소프트폰 `enrollToken` 을 재사용한다. seat 정원은 동시통화 한도와 **별개**다.
+모바일 앱 **사용자 정원(seat)** 을 테넌트별로 관리한다. 게이트웨이가 정원·발급권을 가지며 **이메일은 식별 라벨로만 저장**한다(로그인 검증은 앱 쪽 인증이 담당). 발급(enrollment)은 위 소프트폰 `enrollToken` 을 재사용한다. seat 정원은 동시통화 한도와 **별개**다.
 
 | REST 엔드포인트 | 권한 | 설명 |
 |---|---|---|
-| `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함. provision 시 앱이 단말 메타데이터를 보냈으면 각 seat 에 **`device:{platform?, model?, vendor?, firmware?, appVersion?, deviceName?, label?, deviceId?, updatedAt?}`**(표시 전용, gateway 1.4.8.24+ · `deviceName` 1.4.11.70+ · `label` 1.4.11.70+ 운영자 지정 별명) 포함. 다단말 seat 는 `devices[]` 배열로도 노출 |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/device-label` | admin | 운영자가 단말에 **별명(label)** 지정 `{deviceId, label}`(gateway 1.4.11.70+). 앱 `deviceName` 과 별개·우선이며 provision 이 덮어쓰지 않는다(운영자 의도 보존). 빈 label=제거(자동 표시 폴백). 같은 모델 여러 대를 사람이 식별하는 용도. 대시보드 단말 셀 ✏️ 로 호출 |
-| `GET /api/v1/tenants/{id}/seats/devices?protocol=wss` | admin · 본인 | **내선 후보** — PBX 단말 중 `protocol=wss` 만 `{extension, deviceName, mobileClient}`. seat 의 내선은 이 목록에서만 선택(임의 입력 금지) |
-| `POST /api/v1/tenants/{id}/seats` | admin · **본인 테넌트** | seat 생성 `{email, extension?, admin?, did?, receivesIncoming?, mobileNumber?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded`. **`mobileNumber`**(gw 1.4.15.164)=개인 휴대폰 번호 — 착신전환 목적지의 **초기값** 출처(선택). 저장 시 숫자만 남기고, **이미 목적지가 있으면 덮지 않는다**(해석 체인의 맨 끝) |
+| `GET /api/v1/tenants/{id}/seats` | admin · 본인 테넌트 | seat 목록 + `{limit, used, policy, seats[]}`. seat 에 `admin` 플래그 포함. provision 시 앱이 단말 메타데이터를 보냈으면 각 seat 에 **`device:{platform?, model?, vendor?, firmware?, appVersion?, deviceName?, label?, deviceId?, updatedAt?}`**(표시 전용, gateway 1.4.8.24+ · `deviceName`·`label` 1.4.11.70+) 포함. 다단말 seat 는 `devices[]` 배열로도 노출 |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/device-label` | admin | 단말에 **별명(label)** 지정 `{deviceId, label}`(gateway 1.4.11.70+). 앱 `deviceName` 과 별개·우선이며 provision 이 덮어쓰지 않는다. 빈 label=제거 |
+| `GET /api/v1/tenants/{id}/seats/devices?protocol=wss` | admin · 본인 | **내선 후보** — `protocol=wss` 단말만 `{extension, deviceName, mobileClient}`. seat 의 내선은 이 목록에서만 선택(임의 입력 금지) |
+| `POST /api/v1/tenants/{id}/seats` | admin · **본인 테넌트** | seat 생성 `{email, extension?, admin?, did?, receivesIncoming?, mobileNumber?}` → seat + softphone `{enrollToken, qrUri, expiresAt}`. 정원 초과 **409** `seat_limit_exceeded`. **`mobileNumber`**=개인 휴대폰 번호 — 착신전환 목적지의 **초기값**(선택). 숫자만 저장하고, **이미 목적지가 있으면 덮지 않는다** |
 | `POST /api/v1/tenants/{id}/seats/self-enroll` | 본인 테넌트 · admin | **앱 자동 등록**(policy=auto 일 때만). `{email, extension?}` → seat + enrollment. email 기준 **멱등**(재설치/재로그인이 seat 안 늘림). manual 이면 **403** `self_enroll_disabled`, 정원 초과 **409**. `admin:true` 는 무시(권한 상승 방지) |
-| `POST /api/v1/tenants/{id}/seats/import` | admin | CSV/JSON 일괄 **등록·갱신**(부분 성공 `created/updated/skipped/errors`). CSV 헤더 `email,extension,admin,mvoip,sms,did,receives,maxDevices,mobile`(gw 1.4.15.161·164). **기존 사용자는 email 로 매칭해 갱신**하고 **빈 칸은 그대로 둔다**(재-임포트가 배정을 날리지 않게). 1회 **5,000행** 상한(초과분은 `errors` 보고, 응답 `maxRows`) |
+| `POST /api/v1/tenants/{id}/seats/import` | admin | CSV/JSON 일괄 **등록·갱신**(부분 성공 `created/updated/skipped/errors`). CSV 헤더 `email,extension,admin,mvoip,sms,did,receives,maxDevices,mobile`. **기존 사용자는 email 로 매칭해 갱신**하고 **빈 칸은 그대로 둔다**. 1회 **5,000행** 상한(초과분은 `errors` 보고, 응답 `maxRows`) |
 | `POST /api/v1/tenants/{id}/seats/{seatId}/{suspend\|resume\|archive\|restore}` | admin | 보류/재개/보관/복원. archive=정원 슬롯 반환, **restore=보관(archived)→활성(active), 복원 시 정원 재확인(초과 409 `seat_limit_exceeded`)** |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/admin` | admin | `{admin:bool}` 관리계정 토글(테넌트 관리 알림/푸시 구분 라벨) |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/enroll` | admin · **본인 테넌트** | enrollToken 재발급(QR 재전송). 본인 테넌트 토큰도 자기 seat 의 QR 발급 허용(대시보드 "내 테넌트" self-view 🔗 QR). softphone 미구성 시 **503**(seat 은 유지) |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/extension` | admin · **본인 테넌트** | seat 내선(WSS 단말) 선택/변경/저장. body `{extension}`(빈 값=미배정). PBX WSS 단말 목록(`/seats/devices`)에 있는 내선만 허용 — 임의 입력 시 **400** `ext_not_wss`, 다른 seat 가 쓰는 내선이면 **409** `extension_taken`. 후보 조회는 `GET …/seats/devices?protocol=wss`(본인 테넌트 허용) |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/mobile-number` | admin · **본인 테넌트** | 개인 휴대폰 번호 설정 `{mobileNumber}`(빈 값=지움, gw 1.4.15.164). 앱은 이 번호를 알아낼 수 없다(iOS 공개 API 부재 · Android 는 SIM 기록 필요) — 온보딩 시점이 운영자가 아는 유일한 시점이다. **seat `archive` 시 함께 지워진다**(개인정보), `suspend` 는 유지(복귀 전제) |
-| `POST /api/v1/tenants/{id}/seats/{seatId}/email` | admin · **본인 테넌트** | enrollToken 재발급 후 **seat 의 라벨 이메일로** **QR(인라인 PNG)+딥링크+토큰** 발송(대시보드 admin 모달 + "내 테넌트" self-view 의 "✉" 버튼). 수신자는 seat 이메일로 고정(임의 지정 불가) → 본인 테넌트도 자기 seat 사용자에게 전송 가능. dvg SMTP(`GW_SMTP_HOST`+`GW_SMTP_FROM`) 필요 — 미설정 시 **503** `mailer_disabled`; softphone 미구성 시 503; seat 이메일 없으면 400 |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/admin` | admin | `{admin:bool}` 관리계정 토글 |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/enroll` | admin · **본인 테넌트** | enrollToken 재발급(QR 재전송). 본인 테넌트 토큰도 자기 seat 의 QR 발급 허용. 소프트폰 기능이 꺼져 있으면 **503**(seat 은 유지) |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/extension` | admin · **본인 테넌트** | seat 내선 선택/변경/저장. body `{extension}`(빈 값=미배정). `/seats/devices` 목록에 있는 내선만 허용 — 임의 입력 시 **400** `ext_not_wss`, 다른 seat 가 쓰는 내선이면 **409** `extension_taken` |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/mobile-number` | admin · **본인 테넌트** | 개인 휴대폰 번호 설정 `{mobileNumber}`(빈 값=지움). 앱은 이 번호를 스스로 알아낼 수 없으므로 온보딩 때 입력한다. **seat `archive` 시 함께 지워진다**, `suspend` 는 유지 |
+| `POST /api/v1/tenants/{id}/seats/{seatId}/email` | admin · **본인 테넌트** | enrollToken 재발급 후 **seat 의 라벨 이메일로** **QR(인라인 PNG)+딥링크+토큰** 발송. 수신자는 seat 이메일로 고정(임의 지정 불가). 메일 발송이 구성되지 않았으면 **503** `mailer_disabled`(운영사에 문의); 소프트폰 기능이 꺼져 있으면 503; seat 이메일 없으면 400 |
 | `GET\|PUT /api/v1/tenants/{id}/seats/limit` | admin(PUT) | seat 정원 조회/설정(동시통화 한도와 독립) |
 | `GET\|PUT /api/v1/tenants/{id}/seats/policy` | admin(PUT) | 등록 정책 `{policy: "manual"\|"auto"}` |
 
-> **등록 정책**: `manual`(기본)=관리자 사전등록만 / `auto`=앱 self-enroll 허용(정원 내 즉시 active). **자동 등록 흐름**: 앱 → makecall 서버(Firebase 로그인 검증) → dvg `self-enroll` 대행 호출. dvg 는 자신이 발급한 인증(SDK 키→JWT, 본인 테넌트)만 신뢰하고 email 은 라벨로 저장한다. **앱은 dvg 에 직결하지 않는다.** 정원이 무단 가입의 게이트.
+> **등록 정책**: `manual`(기본)=관리자 사전등록만 / `auto`=앱 self-enroll 허용(정원 내 즉시 active). **자동 등록 흐름**: 앱 → 앱 서버(로그인 검증) → 게이트웨이 `self-enroll` 대행 호출. 게이트웨이는 자신이 발급한 인증(SDK 키→JWT, 본인 테넌트)만 신뢰하고 email 은 라벨로 저장한다. **모바일 앱이 게이트웨이 관리 API 에 직접 붙지 않는다.** 정원이 무단 가입의 게이트다.
 >
-> ⚠️ **seat 관리는 SDK 에 넣지 않는다 — REST 직접 호출이 정식 경로다**(2026-08-16 결정,
-> 종전 표기 "후속 SDK 릴리즈에서 추가 예정"을 철회).
->
-> **거버넌스 이유**: 이 SDK 는 **통화 AI 통합용**(오디오 스트림·STT/TTS·callinfo)이고 통합사에
-> 배포된다. seat 생성·정원·관리계정은 **admin/테넌트 권한 영역**이라, 같은 클라이언트에 섞으면
-> **권한 경계가 흐려진다** — SDK 키를 받은 통합사가 조직의 사용자 계정을 만들 수 있는 것처럼
-> 보인다(실제 권한은 서버가 막지만, 표면이 그렇게 보이는 것 자체가 문제다).
->
-> 온보딩 자동화(HR 연동·사내 스크립트)는 REST 로 충분하고 이미 전부 열려 있다 — 위 표 참조.
-> **다시 열 조건**: 통합사(SDK 사용자)에게 온보딩 자동화를 제품으로 제공하기로 하면 그때
-> **별도 admin 클라이언트**로 만든다(이 SDK 에 합치지 않는다).
->
-> 통합 흐름·필드 상세는 [docs/mobile-app-sdk-guide.md](../docs/mobile-app-sdk-guide.md),
-> 경계·라이프사이클은 [docs/mobile-seats-contract.md](../docs/mobile-seats-contract.md) 참조.
+> ⚠️ **seat 관리는 SDK 메서드가 없다 — 위 REST 를 직접 호출한다.** 이 SDK 는 통화 AI 통합용(오디오 스트림·STT/TTS·callinfo)이고, seat 생성·정원·관리계정은 admin/테넌트 권한 영역이다.
 
 ### PBX 관리
-> ⚠️ **수신 설정·번호 원장·가시성은 SDK 에 넣지 않는다 — REST 직접 호출이 정식 경로다**
-> (gw 1.4.15.249 결정, 위 seat 관리와 **같은 근거**).
+> ⚠️ 수신 설정(번호를 앱 내선 ↔ SDK/AI 플로우로 전환)·번호 관리·가시성 그룹은 **SDK 메서드가 없다** — 관리자 권한 영역이며 운영사(관리자)가 다룬다.
 >
-> gw 1.4.15.243~.249 에서 열린 표면 — `GET|PUT /api/v1/inbound-routes*`(DID 를 앱 내선 ↔
-> SDK/AI 플로우로 전환) · `/api/v1/numbers*`(번호 인벤토리 + 다축 대조) ·
-> `POST /api/v1/seats/group-ids`(가시성 그룹) — 은 **admin/테넌트 권한 영역**이다.
->
-> **거버넌스 이유**: 이 SDK 는 **통화 AI 통합용**이고 **통합사에 배포**된다. 수신 라우팅을
-> 메서드로 노출하면 **SDK 키를 받은 통합사가 조직의 전화를 어디로 보낼지 바꿀 수 있는 것처럼
-> 보인다**(서버가 막더라도 표면이 그렇게 보이는 것 자체가 문제). 그리고 이 쓰기는 잘못되면
-> **전화가 안 울린다** — 게이트웨이에서 파급이 가장 큰 쓰기라 조회/쓰기를 env 로 2단 게이트한다.
->
-> 계약 전문: [docs/inbound-routing-and-numbers-api.md](../docs/inbound-routing-and-numbers-api.md)
->
-> ⭐ 다만 **요약 응답의 `usage`**(`POST /api/v1/calls/{linkedid}/summary`)는 기존 REST 응답에
-> **필드가 추가**된 것이라 SDK 표면 변화가 없다 — `cached:true` 면 `sttSeconds` 를 싣지 않는다
-> (STT 소비 0). 자세한 것은 위 문서 §4.
+> 통화 요약 응답(`POST /api/v1/calls/{linkedid}/summary`)의 `usage` 필드: `cached:true` 면 `sttSeconds` 를 싣지 않는다(STT 소비 없음).
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `applyChanges()` | `apply_changes()` | PBX 설정 재적용 |
 | `clickToCall({caller,callee,...,clientMsgId?})` | `click_to_call(caller,callee,...,client_msg_id=None)` | 클릭투콜. **SDK 1.9.4+ 는 중복 방지 키를 자동으로 붙인다**. 응답의 `actionID` 로 `POST /api/v1/pbx/click-to-call/cancel` 취소 |
-| `getPhonebook(tenantId?)` | `get_phonebook(tenant_id)` | 테넌트 내선 폰북(internal contacts) 조회 — 게이트웨이가 VitalPBX phonebooks→internal 첫 id→contacts 를 조인. 반환 `{phonebookId, contacts[]}`. tenant 토큰은 자사, admin 은 tenantId 지정 |
+| `getPhonebook(tenantId?)` | `get_phonebook(tenant_id)` | 테넌트 내선 폰북(internal contacts) 조회. 반환 `{phonebookId, contacts[]}`. tenant 토큰은 자사, admin 은 tenantId 지정 |
 
 ### 큐(대기열) 관리 + 에이전트 런타임 (gateway 1.4.11.30+ / SDK 1.8.7+)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `listQueues({direction?, tenantId?})` | `list_queues(*, direction?, tenant_id?)` | 테넌트 큐 목록(멤버 포함). `direction`=`inbound`/`outbound` 필터. 반환 `Queue[]` |
 | `getQueue(id, {tenantId?})` | `get_queue(id, *, tenant_id?)` | 단일 큐 상세 |
-| `createQueue(spec, {tenantId?})` | `create_queue(spec, *, tenant_id?)` | 큐 생성. `spec`=Dynamic VoIP 큐 본문(`extension`,`description`,`strategy`,`members[{extension_id}]`,…). **설정 변경은 Asterisk 반영에 별도 apply 단계가 필요할 수 있음** |
+| `createQueue(spec, {tenantId?})` | `create_queue(spec, *, tenant_id?)` | 큐 생성. `spec`=Dynamic VoIP 큐 본문(`extension`,`description`,`strategy`,`members[{extension_id}]`,…). **설정 변경이 반영되려면 별도 apply(`applyChanges()`)가 필요할 수 있음** |
 | `updateQueue(id, spec, {tenantId?})` | `update_queue(id, spec, *, tenant_id?)` | 큐 수정(전체 본문) |
 | `deleteQueue(id, {tenantId?})` | `delete_queue(id, *, tenant_id?)` | 큐 삭제 |
-| `getQueueAgentStatus(deviceId, {tenantId?})` | `queue_agent_status(device_id, *, tenant_id?)` | 에이전트(단말) 큐별 상태 — 큐 id 키 맵 `{status,paused,queue,type}`. **`deviceId`는 PBX device id(내선번호 아님)** |
-| `queueAgentLogin(deviceId, {queues?, tenantId?})` | `queue_agent_login(device_id, *, queues?, tenant_id?)` | 큐 로그인. `queues`=`all`(기본)/콤마 목록. **라이브 AMI — 즉시 반영(apply 불필요)** |
+| `getQueueAgentStatus(deviceId, {tenantId?})` | `queue_agent_status(device_id, *, tenant_id?)` | 에이전트(단말) 큐별 상태 — 큐 id 키 맵 `{status,paused,queue,type}`. **`deviceId`는 단말(device) id(내선번호 아님)** |
+| `queueAgentLogin(deviceId, {queues?, tenantId?})` | `queue_agent_login(device_id, *, queues?, tenant_id?)` | 큐 로그인. `queues`=`all`(기본)/콤마 목록. **즉시 반영(apply 불필요)** |
 | `queueAgentLogout(deviceId, {queues?, tenantId?})` | `queue_agent_logout(device_id, *, queues?, tenant_id?)` | 큐 로그아웃 |
 | `queueAgentPause(deviceId, {queues?, reason?, tenantId?})` | `queue_agent_pause(device_id, *, queues?, reason?, tenant_id?)` | 일시정지. `reason`=사유 라벨(예 `break`) |
 | `queueAgentUnpause(deviceId, {queues?, tenantId?})` | `queue_agent_unpause(device_id, *, queues?, tenant_id?)` | 정지 해제 |
 
-> REST: `GET/POST /api/v1/queues`, `GET/PUT/DELETE /api/v1/queues/{id}`, `GET /api/v1/queues/agent/{deviceId}`, `POST /api/v1/queues/agent/{deviceId}/{login|logout|pause|unpause}`. tenantId 는 JWT 강제(=PBX path), admin 토큰만 `tenantId` 로 대상 지정. **PBX 동기화(`PBX_TENANT_SYNC_ENABLED`) 필요 — 미설정 시 503.** `Queue` 필드는 Dynamic VoIP 큐 모델 그대로(snake_case)이며, PBX 가 엔드포인트별로 bool/`"yes"`·`"no"` 를 혼용하므로 플래그 필드는 느슨히 타이핑. 상세·설계는 [docs/queue-api-analysis.md](../go-gateway/docs/queue-api-analysis.md).
+> REST: `GET/POST /api/v1/queues`, `GET/PUT/DELETE /api/v1/queues/{id}`, `GET /api/v1/queues/agent/{deviceId}`, `POST /api/v1/queues/agent/{deviceId}/{login|logout|pause|unpause}`. tenantId 는 JWT 강제, admin 토큰만 `tenantId` 로 대상 지정. **게이트웨이의 PBX 연동이 구성되지 않았으면 503** — 운영사에 문의하세요. `Queue` 필드는 Dynamic VoIP 큐 모델 그대로(snake_case)이며, 플래그 필드는 bool/`"yes"`·`"no"` 가 섞여 올 수 있으니 느슨하게 다룰 것. 사용 가이드: [docs/sdk-guide/19-queues.md](19-queues.md).
 
 ### SMS 발송·수신 (SIP MESSAGE, gateway 1.4.14.43+ / SDK 1.8.9+)
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| `sendSMS({from,to[],text,callback?,priority?,subject?,displayName?,reservedTime?,tenantId?,clientMsgId?})` | `send_sms(*, from_, to, text, callback?, priority?, subject?, display_name?, reserved_time?, tenant_id?, client_msg_id?)` | SMS 발신. `from`=발신 **내선**(게이트웨이가 실제 발신번호로 자동 변환 — external CID→테넌트 CID). `to`=수신번호 최대 10(동보). `priority`=`0`긴급/`1`빠름/`2`보통. 반환 `{id,messageId,status,recipients,idempotentReplay?}`. **SDK 1.9.4+ 는 중복 방지 키(`clientMsgId`)를 자동으로 붙인다** — 재시작 너머까지 막으려면 직접 넘겨라 |
+| `sendSMS({from,to[],text,callback?,priority?,subject?,displayName?,reservedTime?,tenantId?,clientMsgId?})` | `send_sms(*, from_, to, text, callback?, priority?, subject?, display_name?, reserved_time?, tenant_id?, client_msg_id?)` | SMS 발신. `from`=발신 **내선**(게이트웨이가 그 내선의 실제 발신번호로 자동 변환). `to`=수신번호 최대 10(동보). `priority`=`0`긴급/`1`빠름/`2`보통. 반환 `{id,messageId,status,recipients,idempotentReplay?}`. **SDK 1.9.4+ 는 중복 방지 키(`clientMsgId`)를 자동으로 붙인다** — 재시작 너머까지 막으려면 직접 넘겨라 |
 | `listSMS({direction?,from?,to?,limit?,offset?,tenantId?})` | `list_sms(*, direction?, from_time?, to_time?, limit?, offset?, tenant_id?)` | 이력(최신순). `direction`=`in`/`out`, 기간 ISO, 페이징. 반환 `{total,records}` |
 | `getSMS(id, tenantId?)` | `get_sms(id, *, tenant_id?)` | 단건 상태(`submitted`/`delivered`/`failed`/`received`) |
 | `deleteSMS({before?,tenantId?,allTenants?})` | `delete_sms(*, before?, tenant_id?, all_tenants?)` | 이력 **일괄** 삭제(테넌트 스코프, `before`=RFC3339 이전). admin 은 `tenantId` 로 대상 지정 — ⚠️ **전 테넌트는 `allTenants:true`(REST `?all=1`) 명시 필수**이고 둘 다 없으면 400 `tenant_or_all_required`. **단건 삭제 없음**(`DELETE /api/v1/sms/{id}` → 405). 반환 `{deleted, allTenants}` |
 | `getSMSConfig(tenantId?)` | `get_sms_config(*, tenant_id?)` | 라우팅 설정 조회(글로벌+테넌트 병합) |
 | `setSMSConfig({enabled?,smscDomain?,senderRealm?,trunkEndpoint?,defaultCallback?,charset?}, tenantId?)` | `set_sms_config(config, *, tenant_id?)` | 라우팅 설정 저장(admin=글로벌/`tenantId`, 테넌트=자기것) |
 
-> REST: `POST /api/v1/sms/send`, `GET/DELETE /api/v1/sms`, `GET /api/v1/sms/{id}`, `GET/PUT /api/v1/config/sms`. tenantId 는 JWT 강제, 모바일(`api.accessToken`)은 본인 내선만 발신. **미설정 시 발송이 `412`(`sms_disabled`/`sms_unprovisioned`+`missing[]`) 로 "관리자에게 문의" 안내를 한국어로 반환** — SDK 예외 메시지를 그대로 사용자에게 노출하면 된다. 수신은 callinfo `sms:received` 이벤트 + `listSMS({direction:'in'})`. 본문 인코딩 EUC-KR(테넌트 charset). 설계·다이얼플랜: [docs/sms-integration.md](../docs/sms-integration.md), 사용 가이드: [docs/sdk-guide/21-sms.md](../docs/sdk-guide/21-sms.md).
+> REST: `POST /api/v1/sms/send`, `GET/DELETE /api/v1/sms`, `GET /api/v1/sms/{id}`, `GET/PUT /api/v1/config/sms`. tenantId 는 JWT 강제, 모바일 토큰은 본인 내선만 발신. **SMS 가 구성되지 않았으면 발송이 `412`(`sms_disabled`/`sms_unprovisioned`+`missing[]`) 로 "관리자에게 문의" 안내를 한국어로 반환** — SDK 예외 메시지를 그대로 사용자에게 노출하면 된다. 수신은 callinfo `sms:received` 이벤트 + `listSMS({direction:'in'})`. 본문 인코딩 EUC-KR(테넌트 charset). 사용 가이드: [docs/sdk-guide/21-sms.md](21-sms.md).
 
 ### 착신전환 / 방해금지 / 개인비서 (Diversions)
 | TypeScript | Python | 설명 |
@@ -422,11 +374,11 @@ const s = await gw.getAudioStatus(linkedId);
 
 - **CFI/CFB/CFN/CFU** — 착신전환. 활성화하려면 `enable: 'yes'` + `destination`(착신번호) 둘 다 필요.
 - **DND** — 방해금지. `{ enable: 'yes' | 'no' }`. `destination` 은 무시되지만 **`timeGroup` 은 적용된다**
-  (gw 1.4.14.88+ — 예: 업무시간에만 방해금지).
-- **PEA** — 개인비서. DND 와 같은 모양(`timeGroup` 적용). **실측 우선순위는 CFI > PEA > 벨울림** —
+  (gateway 1.4.14.88+ — 예: 업무시간에만 방해금지).
+- **PEA** — 개인비서. DND 와 같은 모양(`timeGroup` 적용). **우선순위는 CFI > PEA > 벨울림** —
   즉시 착신전환(CFI)이 켜져 있으면 PEA 는 동작하지 않고, PEA 가 응대하는 동안 조건부 착신전환
-  (CFB/CFN/CFU)에는 도달하지 않는다(우선순위는 다이얼플랜이 결정, SDK/게이트웨이는 플래그만 기록).
-- ⚠️ **입력 검증(gw 1.4.16.235+)**: `enable` 은 `'yes'`/`'no'` 만, `destination` 은
+  (CFB/CFN/CFU)에는 도달하지 않는다. SDK 는 설정만 바꾸며 라우팅 순서는 PBX 가 정한다.
+- ⚠️ **입력 검증(gateway 1.4.16.235+)**: `enable` 은 `'yes'`/`'no'` 만, `destination` 은
   `^[A-Za-z0-9_.,+*#-]{1,160}$`(공백 불가) — 그 밖은 **400**.
 
 ```typescript
@@ -461,17 +413,17 @@ await gw.set_diversion("1001", "PEA", enable="yes", tenant_id=tenant_id)
 | `DVGatewayClient.EARLY_MEDIA_DEFAULT_EXT` | `DVGatewayClient.EARLY_MEDIA_DEFAULT_EXT` | `"_default"` 상수 — 위 메서드 대신 직접 지정도 가능 |
 
 두 가지 음원 모드 (택일):
-- **`audioUrl`**: 외부 URL 자동 다운로드 + ffmpeg WAV 변환 (8kHz mono PCM, 1회성)
+- **`audioUrl`**: 외부 URL 을 저장 시 1회 다운로드해 전화용 오디오(8kHz mono)로 변환
 - **`tts`**: 클라우드 TTS로 합성 — 대시보드 **프로바이더 API 키** 탭의 테넌트별 키 자동 사용
 
 #### Per-DID 설정 (특정 번호에만 적용)
 
 ```typescript
 // TypeScript — 특정 DID에 TTS 안내음
-await gw.setEarlyMedia('07045144801', {
+await gw.setEarlyMedia('07012345601', {
   enabled: 'yes',
   tts: {
-    text: '안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.',
+    text: '안녕하세요, OO컴퍼니입니다. 잠시만 기다려주세요.',
     provider: 'elevenlabs',  // optional, 미지정 시 대시보드 primary 사용
     voice: '9BWtsMINqrJLrRacOk9x',  // optional
   },
@@ -480,10 +432,10 @@ await gw.setEarlyMedia('07045144801', {
 
 ```python
 # Python — 특정 DID에 TTS 안내음
-await gw.set_early_media("07045144801",
+await gw.set_early_media("07012345601",
     enabled="yes",
     tts={
-        "text": "안녕하세요, 얼쑤팩토리입니다. 잠시만 기다려주세요.",
+        "text": "안녕하세요, OO컴퍼니입니다. 잠시만 기다려주세요.",
         "provider": "elevenlabs",  # optional
     },
     tenant_id="tenant-id")
@@ -491,7 +443,7 @@ await gw.set_early_media("07045144801",
 
 #### 테넌트 기본값 (v1.4+) — 개별 설정 없는 모든 DID에 자동 적용
 
-**다이얼플랜 폴백 순서**:
+**적용 순서**:
 1. 해당 DID의 개별 설정이 `enabled="yes"` → **그 설정** 사용
 2. 아니면 `_default` 프로파일이 `enabled="yes"` → **기본값** 사용
 3. 둘 다 활성화 안 됨 → Early Media 스킵
@@ -561,24 +513,16 @@ await gw.set_early_media(
 )
 ```
 
-#### 저장 경로 & 주의사항
+#### 주의사항
 
-| 항목 | Per-DID | 기본값 |
-|------|---------|--------|
-| 파일 경로 | `/var/spool/asterisk/{tenantId}/pa/{DID}/pamsg.wav` | `/var/spool/asterisk/{tenantId}/pa/_default/pamsg.wav` |
-| AstDB 키 | `/{tenantId}/earlymedia/{DID}/*` | `/{tenantId}/earlymedia/_default/*` |
-| 변환 시점 | 저장 시 1회 ffmpeg 변환 (8kHz mono WAV) | 동일 |
-| 다이얼플랜 컨텍스트 | `[dvgateway-pa-noa]` | 동일 (하나의 컨텍스트가 fallback 처리) |
-
-- TTS 메타데이터 (`text`/`provider`/`voice`)는 AstDB에 저장되어 GET 응답에 포함
-- `audioUrl`을 업데이트하면 저장 시 즉시 다운로드 + 변환 (통화 시 재다운로드 없음)
-- `enabled="no"` 로 설정해도 저장된 `ttsText` / `audioUrl` 값은 유지 (재활성화 시 재사용 가능)
-- `_default` extension은 예약어 — 실제 전화번호로는 사용 불가 (밑줄 접두사로 충돌 방지)
+- TTS 메타데이터(`text`/`provider`/`voice`)는 저장되어 GET 응답에 포함된다
+- `audioUrl`을 업데이트하면 저장 시 즉시 다운로드 + 변환된다 (통화 시 재다운로드 없음)
+- `enabled="no"` 로 설정해도 저장된 `ttsText` / `audioUrl` 값은 유지된다 (재활성화 시 재사용 가능)
+- `_default` extension은 예약어 — 실제 전화번호로는 사용 불가
 
 ### 캠페인 (예약/동보/주기 발신)
 
-> 🔐 캠페인 API 는 **관리자 토큰 전용**이다(게이트웨이 마스터 API 키로 받은 토큰). 테넌트 API 키로
-> 받은 토큰은 `403 admin_required` — 실행기가 설치 전체 PBX 키로 발신하므로 테넌트 스코프가 없다.
+> 🔐 캠페인 API 는 **관리자 토큰 전용**이다. 테넌트 API 키로 받은 토큰은 `403 admin_required`.
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
@@ -604,28 +548,27 @@ await gw.set_early_media(
 | `stopThinking(linkedId)` | `stop_thinking(linked_id)` | Comfort noise 종료 |
 | `postVad(linkedId, side, speaking)` | `post_vad(linked_id, side, speaking)` | 대시보드 VAD 인디케이터 전달 (OpenAI Realtime VAD 등) |
 
-### Playback — `mode=lite` 통화용 ARI 직접 재생 (SDK 1.7+, gateway 1.4.3+)
+### Playback — `mode=lite` 통화용 직접 재생 (SDK 1.7+, gateway 1.4.3+)
 
-`mode=lite` Stasis 통화는 ExternalMedia·Snoop·Bridge를 만들지 않는 최소 리소스 프로파일입니다 (단순 IVR / 안내 멘트 / DTMF 입력 수집 용도). PCM 스트리밍 주입 경로(`play_audio`, `inject_tts`, `say`)는 ExternalMedia가 필요하므로 lite 통화에선 동작하지 않습니다. 대신:
+`mode=lite` 통화는 오디오 스트림을 만들지 않는 최소 리소스 프로파일입니다 (단순 IVR / 안내 멘트 / DTMF 입력 수집 용도). PCM 스트리밍 주입 경로(`play_audio`, `inject_tts`, `say`)는 오디오 스트림이 필요하므로 lite 통화에선 동작하지 않습니다. 대신:
 
-- **사운드 파일·숫자·톤 재생** → `playback()` (ARI Playback API 직접 호출)
-- **자유 텍스트 TTS 재생** → `liteTtsPlayback()` (SDK 1.7.2+, gateway 1.4.5.8+) — 게이트웨이가 합성 → sln16 캐시 → ARI Playback 까지 한 번에 처리
+- **사운드 파일·숫자·톤 재생** → `playback()`
+- **자유 텍스트 TTS 재생** → `liteTtsPlayback()` (SDK 1.7.2+, gateway 1.4.5.8+) — 게이트웨이가 합성 → 캐시 → 재생까지 한 번에 처리
 
 | TypeScript | Python | 설명 |
 |------------|--------|------|
-| `playback({ linkedId, media })` | `playback(linked_id, media)` | ARI Playback 시작. 즉시 반환되고 `playback_id`를 돌려줍니다. 완료는 `audio:playback` 이벤트(`lifecycle: done`)로 알 수 있습니다 |
-| `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+)* | `lite_tts_playback(linked_id, text, provider=None, voice=None)` | 텍스트 → cloud TTS 합성 → ARI Playback. 동일 (tenant, provider, voice, text) 재호출 시 게이트웨이가 캐시 적중으로 즉시 재생 (`cache_hit=True`). cloud 키 미설정 시 espeak-ng 로컬 폴백. **게이트웨이 1.4.5.8+ 필요** (1.4.5.7 이하는 404) |
+| `playback({ linkedId, media })` | `playback(linked_id, media)` | 재생 시작. 즉시 반환되고 `playback_id`를 돌려줍니다. 완료는 `audio:playback` 이벤트(`lifecycle: done`)로 알 수 있습니다 |
+| `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+)* | `lite_tts_playback(linked_id, text, provider=None, voice=None)` | 텍스트 → cloud TTS 합성 → 재생. 동일 (tenant, provider, voice, text) 재호출 시 게이트웨이가 캐시 적중으로 즉시 재생 (`cache_hit=True`). cloud 키 미설정 시 로컬 TTS(espeak-ng)로 폴백. **게이트웨이 1.4.5.8+ 필요** (1.4.5.7 이하는 404) |
 | `stopPlayback(linkedId, playbackId)` | `stop_playback(linked_id, playback_id)` | 진행 중인 playback 중단. 이미 끝난 경우도 안전 (no-op). `playback()` / `liteTtsPlayback()` 모두 동일 메서드로 중단 |
 
-**`media` URI 포맷** (Asterisk 규약):
-- `sound:hello-world` — `sounds/{lang}/hello-world.{format}`
-- `sound:/abs/path-without-ext` — 절대경로, 확장자 자동 감지
+**`media` URI 포맷**:
+- `sound:hello-world` — PBX 에 설치된 사운드 파일 (확장자 없이)
 - `number:1234` — 숫자 읽어주기 ("천이백삼십사")
 - `digits:1234` — 자리별 읽기 ("일 이 삼 사")
 - `characters:abc` — 글자 한 자씩 ("에이 비 시")
-- `tone:dial` / `tone:busy` 등 — `indications.conf` 톤
+- `tone:dial` / `tone:busy` 등 — 표준 신호음
 
-**DTMF 수신**: lite 모드에서도 AMI DTMF가 정상 발생하므로 기존 callinfo 이벤트(`call:dtmf`)와 `collectDtmf()` 도우미가 그대로 동작합니다 — SDK 측 추가 코드 없음.
+**DTMF 수신**: lite 모드에서도 DTMF 이벤트가 정상 발생하므로 기존 callinfo 이벤트(`call:dtmf`)와 `collectDtmf()` 도우미가 그대로 동작합니다 — SDK 측 추가 코드 없음.
 
 **TypeScript 예시 — 간단 IVR**:
 ```typescript
@@ -714,18 +657,12 @@ gw.on_call_event(on_call)
 ```
 
 **`liteTtsPlayback()` 동작 디테일**:
-- **캐시 키**: `sha256(tenant | provider | voice | text)`. 같은 인풋 재호출 시 게이트웨이의 디스크 캐시(`GW_TTS_CACHE_DIR`, 기본 `/var/lib/dvgateway/tts-cache/{tenant}/{hash}.sln16`) 에서 바로 ARI Playback — 합성 RTT 0, 응답 보통 50ms 이내. `cache_hit=true` 로 보고.
-- **provider/voice 해상**: 명시한 값 > 테넌트 primary 키 > espeak-ng 로컬 폴백. cloud provider 실패 시(예: 키 만료, 네트워크) 자동으로 espeak 로 fallback (영어 음성), 로그 `[PLAYBACK-TTS] cloud synth failed ... falling back to espeak-ng` 남김.
-- **저장 형식**: 16 kHz signed-linear PCM (`.sln16`) — Asterisk 네이티브, 트랜스코드 불필요. PBX 의 `asterisk` 사용자가 게이트웨이의 `dvgateway` 사용자와 다른 OS 계정이어도 파일이 world-readable (`0644`) 로 저장돼 그대로 읽힘.
+- **캐시**: 같은 (tenant, provider, voice, text) 로 다시 호출하면 게이트웨이 캐시에서 바로 재생 — 합성 지연 없음, 응답 보통 50ms 이내. `cache_hit=true` 로 보고.
+- **provider/voice 결정**: 명시한 값 > 테넌트 primary 키 > 로컬 TTS(espeak-ng) 폴백. cloud provider 실패 시(예: 키 만료, 네트워크) 자동으로 로컬 TTS(영어 음성)로 폴백.
 - **중단**: 일반 playback 과 동일하게 `stopPlayback(linkedId, playbackId)` / `stop_playback(linked_id, playback_id)` 호출.
-- **이벤트 channel**: `audio:playback` 이벤트가 그대로 발화됨 (`lifecycle: playing → done`). 별도 `tts:playback` 이벤트는 발화되지 않음 (그건 ExternalMedia 기반 `inject_tts` 전용).
+- **이벤트**: `audio:playback` 이벤트가 발화됨 (`lifecycle: playing → done`). 별도 `tts:playback` 이벤트는 발화되지 않음 (그건 `inject_tts` 전용).
 
-**다이얼플랜 예시** (PBX 측 설정):
-```ini
-exten => _8X.,1,NoOp(간단 IVR — lite 모드)
- same => n,Stasis(dvgateway,mode=lite,did=${EXTEN},callid=${UNIQUEID},tenantid=${TENANTID})
- same => n,Hangup()
-```
+**lite 모드 연결**: 번호를 `mode=lite` 로 연결하는 것은 운영사(관리자)가 합니다. 운영사에 요청하세요.
 
 **언제 lite 모드를 쓰면 좋은가**:
 - 단순 안내 멘트 + DTMF 메뉴 (예: "1번 영업, 2번 기술지원")
@@ -733,7 +670,7 @@ exten => _8X.,1,NoOp(간단 IVR — lite 모드)
 - 통화 녹음 동의 안내 후 DTMF 컨펌
 - STT/LLM/실시간 음성 분석이 **필요 없는** 모든 통화
 
-리소스 절감(통화당): ExtMedia goroutine + Snoop audiohook + Mixing bridge + STT 세션 + ~4KB 오디오 버퍼 + downstream fan-out 4096-슬롯이 통째로 사라집니다. 라이선스 동시통화 카운터·CDR·테넌트 격리·대시보드 표시는 일반 모드와 동일하게 동작합니다.
+lite 통화는 오디오 스트림·STT 세션을 만들지 않아 통화당 자원을 크게 줄입니다. 동시통화 한도·CDR·테넌트 격리·대시보드 표시는 일반 모드와 동일하게 동작합니다.
 
 ### 시뮬레이션 (게이트웨이 · 전화번호 불필요)
 | TypeScript | Python | 설명 |
@@ -747,7 +684,7 @@ exten => _8X.,1,NoOp(간단 IVR — lite 모드)
 4. 문서 "Try it" 위젯 — 브라우저에서 코드 수정 → 음성 출력 재생
 5. 오프라인 데모 — 전시장/영업 환경에서 전화망 없이 시연
 
-**동작 방식**: 동일 `pipeline().stt().llm().tts().start()` 코드가 그대로 실행됩니다. `simulate()`가 내부 `WsPool`에 3개의 가상 경로를 설치해:
+**동작 방식**: 동일 `pipeline().stt().llm().tts().start()` 코드가 그대로 실행됩니다. `simulate()`가 SDK 안에 3개의 가상 경로를 설치해:
 - `/api/v1/ws/callinfo` → 합성 `call:new` 이벤트 1개 발행 → 오디오 종료 후 `call:ended`
 - `/api/v1/ws/stream?linkedid={id}` → WAV 파일을 20ms/프레임으로 주입
 - `/api/v1/ws/tts/{linkedId}` → 파이프라인이 주입한 TTS 바이트를 메모리에 캡처
@@ -838,18 +775,18 @@ asyncio.run(main())
 **주의사항**:
 - `simulate()`는 WS 계층에서만 게이트웨이를 대체합니다. `hangup()`, `redirect()`, `startThinking()` 등 **HTTP API 호출은 에러로 실패**합니다 (시뮬레이터가 처리 안 함). 테스트에서는 해당 호출을 목(mock)하거나 try/catch로 감싸세요.
 - 멀티테넌트 격리 검증에는 `tenantId` 옵션으로 시나리오별 통화를 분리할 수 있습니다.
-- 실제 게이트웨이와 완전히 동일한 동작을 보장하지 않습니다 — ConfBridge, AMI 이벤트 순서 등 복잡한 흐름은 실기 테스트 필요.
+- 실제 게이트웨이와 완전히 동일한 동작을 보장하지 않습니다 — 회의(ConfBridge), 이벤트 순서 등 복잡한 흐름은 실제 통화로 테스트하세요.
 
 ### 이벤트/세션
 | TypeScript | Python | 설명 |
 |------------|--------|------|
 | `onCallEvent(handler)` | `on_call_event(handler)` | 전체 통화 이벤트 구독 |
-| `on(type, handler)` | `on(event_type, handler)` · `@gw.on(event_type)` | 특정 타입 이벤트만 구독. Python 데코레이터 형태는 **SDK 1.9.4+**(종전엔 `TypeError`) |
+| `on(type, handler)` | `on(event_type, handler)` · `@gw.on(event_type)` | 특정 타입 이벤트만 구독. Python 데코레이터 형태는 **SDK 1.9.4+** |
 | `onTtsComplete(handler)` | `on_tts_complete(handler)` | **TTS 재생 완료 이벤트 구독 (v1.4+)** |
-| `listSessions()` | `list_sessions()` | 활성 세션 목록 — 1:1 통화 + 회의 참여자(`confId` 설정). **1.9.7 전에는 언제나 빈 목록**(응답 키 불일치) |
+| `listSessions()` | `list_sessions()` | 활성 세션 목록 — 1:1 통화 + 회의 참여자(`confId` 설정). **SDK 1.9.7+ 필요**(이전 버전은 빈 목록을 돌려준다) |
 | `listSessionsByTenant(id)` | `list_sessions_by_tenant(id)` | 특정 테넌트 세션(관리자) |
-| ~~`updateSessionMeta()`~~ | ~~`update_session_meta()`~~ | ⚠️ **deprecated · 게이트웨이에 API 없음** — `DVGatewayUnsupportedError` 를 던진다(요청 없음). 통화에 값을 붙이려면 Stasis 인자 `custom_value_01~03` → `customValue1~3` |
-| `downloadMinutes(confId, 'json'\|'txt')` | `download_minutes(conf_id, format)` | 회의록 — `GET /api/v1/conferences/{confId}` · 진행 중=**실시간**, 종료 후=**저장본**(게이트웨이 1.4.16.285+ · `GW_MINUTES_PERSIST=true` 로 켰을 때만 — gw 1.4.16.286 부터 기본 꺼짐 · 발화 1건 이상일 때만 · 응답 헤더 `X-DVG-Minutes-Source: live\|stored`) · 저장본이 없거나 구버전이면 404 · `'txt'` 는 SDK 렌더링 · 회의록은 **게이트웨이 자체 STT**(`POST /api/v1/stt/conf/{confId}`)가 만든다 · ⚠️ 발화별 `sentiment` 는 현재 채워지지 않는다 |
+| ~~`updateSessionMeta()`~~ | ~~`update_session_meta()`~~ | ⚠️ **deprecated · 게이트웨이에 API 없음** — `DVGatewayUnsupportedError` 를 던진다(요청 없음). 통화에 붙은 사용자 값은 세션의 `customValue1~3` 으로 읽는다(값을 싣는 것은 운영사 설정) |
+| `downloadMinutes(confId, 'json'\|'txt')` | `download_minutes(conf_id, format)` | 회의록 — `GET /api/v1/conferences/{confId}` · 진행 중=**실시간**, 종료 후=**저장본**(게이트웨이 1.4.16.285+ · 운영사가 회의록 저장을 켰을 때만 · 발화 1건 이상일 때만 · 응답 헤더 `X-DVG-Minutes-Source: live\|stored`) · 저장본이 없거나 구버전이면 404 · `'txt'` 는 SDK 렌더링 · 회의록은 **게이트웨이 자체 STT**(`POST /api/v1/stt/conf/{confId}`)가 만든다 · ⚠️ 발화별 `sentiment` 는 현재 채워지지 않는다 |
 | ~~`submitTranscript()`~~ · ~~`autoSubmitTranscripts()`~~ | ~~`submit_transcript()`~~ · ~~`auto_submit_transcripts()`~~ | ⚠️ **deprecated · 게이트웨이에 API 없음** — 앞은 `DVGatewayUnsupportedError`, 뒤는 no-op 콜백 + 경고 1회 |
 
 #### 이벤트 타입 목록
@@ -858,8 +795,8 @@ asyncio.run(main())
 |--------|-----------|---------|
 | `call:new` | 새 통화 시작 | `session` (CallSession), `tenantId` |
 | `call:ended` | 통화 종료 | `linkedId`, `durationSec` |
-| `call:ringing` *(SDK 1.9.4+ · 게이트웨이 v1.4.9.13+)* | 피호출 seat 가 울리기 시작 (Stasis 미경유 통화 포함) | `linkedId`, `caller`(A-leg 발신자), `callerName`, `callee`(울리는 내선), `tenantId`, `serverId`, `ts` |
-| `stt:result` *(SDK 1.9.4+ · 게이트웨이 v1.4.6.24+)* | 게이트웨이 클라우드 STT 결과 (`POST /api/v1/stt/{linkedId}/start`) | `linkedId`, `speaker`, `text`(보정본), `rawText`(보정 전 원문 — 다를 때만, gw 1.4.15.223+), `isFinal`, `sentiment`, `sentimentScore` |
+| `call:ringing` *(SDK 1.9.4+ · 게이트웨이 v1.4.9.13+)* | 피호출 seat 가 울리기 시작 (모든 수신 통화) | `linkedId`, `caller`(A-leg 발신자), `callerName`, `callee`(울리는 내선), `tenantId`, `serverId`, `ts` |
+| `stt:result` *(SDK 1.9.4+ · 게이트웨이 v1.4.6.24+)* | 게이트웨이 클라우드 STT 결과 (`POST /api/v1/stt/{linkedId}/start`) | `linkedId`, `speaker`, `text`(보정본), `rawText`(보정 전 원문 — 다를 때만, 게이트웨이 1.4.15.223+), `isFinal`, `sentiment`, `sentimentScore` |
 | `sms:received` *(SDK 1.9.4+ · 게이트웨이 v1.4.14.40+)* | 인입 SMS | `from`, `to[]`, `text`, `messageId`, `recordId`, `tenantId` (와이어 키는 `smsFrom`/`smsTo`/`smsText`/`smsMessageId`/`smsRecordId`) |
 | `warm_transfer:bridged` *(SDK 1.9.4+ · 게이트웨이 v1.4.14.26+)* | warm transfer 브릿지 성립 | `linkedId`, `holdStartMs`(보류 시작 unix ms), `ts`(브릿지 시각) — 녹취·전사 타임라인 정렬용 |
 | **`call:rejected`** *(⚠️ 실제 수신은 SDK 1.9.4+ · 게이트웨이 v1.4.4.0+)* | **통화 수용 거부 — 라이선스 전역 한도 또는 테넌트 동시통화 한도 도달** | **`linkedId`, `tenantId`, `reason` (`license_global`/`tenant_limit`), `currentActive` (거부 시점 활성 세션 수), `limit` (도달한 한도), `serverId`** |
@@ -867,30 +804,30 @@ asyncio.run(main())
 | `conf:leave` | 회의 퇴장 | `linkedId`, `confId` |
 | `conf:ended` | 회의 종료 | `confId` |
 | **`tts:complete`** | **TTS 재생 완료** | **`linkedId`, `tenantId`, `serverId`** |
-| **`call:dtmf`** | **DTMF 키 입력 (AMI DTMFBegin/DTMFEnd 기반)** | **`linkedId`, `digit`, `phase` (`begin`/`end`), `durationMs` (end 단계), `direction` (`received`/`sent`), `tenantId`, `serverId`, `ts`** |
-| **`channel:state`** *(SDK 1.5.3+, identity fields SDK 1.6.8+)* | **Asterisk 채널 상태 변화 (AMI Newstate / DialEnd 기반)** | **`linkedId`, `channelId`, `leg` (`a`/`b`), `state` (`ring`/`up`/`down`/`busy`/`no_answer`/`rejected`), `direction` (`inbound`/`outbound`), `sipResponseCode` (선택), `did`/`caller`/`callerName`/`callee` (선택 · 게이트웨이 v1.4.3.1+ · `call:new` 등록 이후의 이벤트에만 채워짐), `tenantId`, `serverId`, `ts`** |
+| **`call:dtmf`** | **DTMF 키 입력** | **`linkedId`, `digit`, `phase` (`begin`/`end`), `durationMs` (end 단계), `direction` (`received`/`sent`), `tenantId`, `serverId`, `ts`** |
+| **`channel:state`** *(SDK 1.5.3+, identity fields SDK 1.6.8+)* | **통화 채널 상태 변화 (울림·응답·종료·실패)** | **`linkedId`, `channelId`, `leg` (`a`/`b`), `state` (`ring`/`up`/`down`/`busy`/`no_answer`/`rejected`), `direction` (`inbound`/`outbound`), `sipResponseCode` (선택), `did`/`caller`/`callerName`/`callee` (선택 · 게이트웨이 v1.4.3.1+ · `call:new` 등록 이후의 이벤트에만 채워짐), `tenantId`, `serverId`, `ts`** |
 | **`audio:playback`** *(SDK 1.6.0+)* | **`play_audio()` 라이프사이클** | **`linkedId`, `playbackId`, `url`, `phase` (`start`/`complete`/`canceled`/`failed`), `durationMs`, `errorReason` (failed 시), `tenantId`, `serverId`, `ts`** |
-| **`tts:playback`** *(SDK 1.6.1+)* | **`inject_tts()` 라이프사이클** | **`linkedId`, `injectId`, `phase` (`playout`/`complete`/`canceled`/`failed` — `playout` 은 SDK 1.9.0+ · 게이트웨이 v1.4.14.17+, 첫 실오디오 프레임이 Asterisk 채널에 write 된 **실재생 시작** 실측 앵커 · `durationMs=0` · media-ready 대기/pre-roll 워밍업 이후라 inject 시점과 0~3s+ 차이날 수 있음 — 녹취 타임라인 마커 정렬에는 반드시 `playout` 의 `ts` 를 쓸 것), `durationMs` (frames × 20ms — RTP-paced), `errorReason` (canceled: `preempted`/`barge_in`/`hangup`/`user_request` · failed: `channel_lost`/`playback_failed`), `tenantId`, `serverId`, `ts`** |
-| **`recording:started`** *(SDK 1.9.0+ · 게이트웨이 v1.4.14.17+ · `gw.onRecordingStarted` / `gw.on_recording_started`)* | **PBX 녹취(MixMonitor) 시작 실측 — 녹취 파일 절대 원점(t=0)** | **`linkedId`, `channelId` (녹취 attach 된 leg), `tenantId`, `serverId`, `ts` (게이트웨이 AMI `MixMonitorStart` 수신 시각 unix ms ≈ 녹취 파일 첫 샘플 ±20ms). linkedid 당 1회(첫 recorder). 같은 값이 게이트웨이 CDR `recordingStartMs` 필드로도 영속(라이브 이벤트를 놓쳐도 `GET /api/v1/cdr` 로 사후 조회). 마커 위치 = 발화 절대시각 − 이 `ts`** |
+| **`tts:playback`** *(SDK 1.6.1+)* | **`inject_tts()` 라이프사이클** | **`linkedId`, `injectId`, `phase` (`playout`/`complete`/`canceled`/`failed` — `playout` 은 SDK 1.9.0+ · 게이트웨이 v1.4.14.17+, 첫 오디오 프레임이 통화 채널로 실제 출력된 **실재생 시작** 시점 · `durationMs=0` · 준비·워밍업 이후라 inject 시점과 0~3s+ 차이날 수 있음 — 녹취 타임라인 마커 정렬에는 반드시 `playout` 의 `ts` 를 쓸 것), `durationMs` (frames × 20ms — RTP-paced), `errorReason` (canceled: `preempted`/`barge_in`/`hangup`/`user_request` · failed: `channel_lost`/`playback_failed`), `tenantId`, `serverId`, `ts`** |
+| **`recording:started`** *(SDK 1.9.0+ · 게이트웨이 v1.4.14.17+ · `gw.onRecordingStarted` / `gw.on_recording_started`)* | **PBX 녹취 시작 — 녹취 파일 절대 원점(t=0)** | **`linkedId`, `channelId` (녹취가 걸린 leg), `tenantId`, `serverId`, `ts` (녹취 시작 시각 unix ms ≈ 녹취 파일 첫 샘플 ±20ms). linkedid 당 1회. 같은 값이 게이트웨이 CDR `recordingStartMs` 필드로도 영속(라이브 이벤트를 놓쳐도 `GET /api/v1/cdr` 로 사후 조회). 마커 위치 = 발화 절대시각 − 이 `ts`** |
 
 #### `channel:state` 이벤트 — B-leg 응답 감지 (click-to-call 핵심)
 
-**SDK 1.5.3+** (게이트웨이 **v1.3.9.1+** 필요) — outbound click-to-call 통화에서 **callee(B-leg)가 실제로 받은 시점**을 명시 신호로 노출합니다. EXEC_AA 자동응답 후 RTP 첫 청크는 ringback 중에도 도착하므로, "첫 청크 = answer" 휴리스틱으로 greeting 을 재생하면 callee 가 들을 수 없습니다. 이 이벤트로 정확한 응답 시점에 동기화하세요.
+**SDK 1.5.3+** (게이트웨이 **v1.3.9.1+** 필요) — outbound click-to-call 통화에서 **callee(B-leg)가 실제로 받은 시점**을 명시 신호로 노출합니다. 오디오 첫 청크는 링백 중에도 도착하므로, "첫 청크 = answer" 휴리스틱으로 greeting 을 재생하면 callee 가 들을 수 없습니다. 이 이벤트로 정확한 응답 시점에 동기화하세요.
 
 **상태 enum**:
 
-| state | 의미 | 출처 |
-|-------|------|------|
-| `ring` | SIP 180 Ringing 또는 Asterisk Ring | AMI Newstate (Ring/Ringing) |
-| `up` | 수신측 응답 (SIP 200 OK + 채널 Up) | AMI Newstate (Up) |
-| `down` | 채널 종료 / 행업 | AMI Newstate (Down) |
-| `busy` | 통화중 (SIP 486) | AMI DialEnd (BUSY) |
-| `no_answer` | 시간내 무응답 (SIP 487) | AMI DialEnd (NOANSWER) |
-| `rejected` | 거절 (SIP 603 / 회선 불가) | AMI DialEnd (CANCEL/CONGESTION/CHANUNAVAIL) |
+| state | 의미 |
+|-------|------|
+| `ring` | 울림 (SIP 180 Ringing) |
+| `up` | 수신측 응답 (SIP 200 OK) |
+| `down` | 채널 종료 / 행업 |
+| `busy` | 통화중 (SIP 486) |
+| `no_answer` | 시간내 무응답 (SIP 487) |
+| `rejected` | 거절 (SIP 603 / 회선 불가 / 혼잡) |
 
-**leg 구분**: `a` = 게이트웨이 측 originating 채널 (uniqueid==linkedid), `b` = Dial/Originate 로 생성된 후속 채널. Click-to-call 에서 `b` = 외부 callee, 인바운드에서는 `a` = 외부 caller (originating leg). 다중 leg 흐름(예: agent 재시도)은 모두 `b` 로 합쳐지므로 `channelId` 로 구분.
+**leg 구분**: `a` = 통화를 시작한(originating) 채널, `b` = 그 통화에서 새로 걸린 후속 채널. Click-to-call 에서 `b` = 외부 callee, 인바운드에서는 `a` = 외부 caller (originating leg). 다중 leg 흐름(예: agent 재시도)은 모두 `b` 로 합쳐지므로 `channelId` 로 구분.
 
-**`sipResponseCode`**: 현 MVP 에선 비어있을 수 있음(`None`/`undefined`). 향후 dialplan 변수 + Hangup cause 매핑으로 채워질 예정. billing 면제(미응답 통화) 판정 등 진단용으로 활용 가능.
+**`sipResponseCode`**: 비어 있을 수 있음(`None`/`undefined`) — 항상 있다고 가정하지 말 것. 미응답 통화 판정 등 진단용.
 
 **Wire format**:
 
@@ -913,7 +850,7 @@ asyncio.run(main())
 }
 ```
 
-> **신규 필드** (게이트웨이 v1.4.3.1+ · SDK 1.6.8+): `did`/`caller`/`callerName`/`callee` 는 `call:new` 가 registry 에 세션을 등록한 *뒤* 발생한 `channel:state` 이벤트에만 채워집니다. 그 이전(매우 이른 Newstate)에는 비어 있을 수 있으니 `if event.caller:` 패턴으로 가드하세요. SDK 는 빈 문자열도 `undefined`/`None` 으로 정규화합니다.
+> **신규 필드** (게이트웨이 v1.4.3.1+ · SDK 1.6.8+): `did`/`caller`/`callerName`/`callee` 는 `call:new` *이후* 발생한 `channel:state` 이벤트에만 채워집니다. 그 이전(매우 이른 상태 변화)에는 비어 있을 수 있으니 `if event.caller:` 패턴으로 가드하세요. SDK 는 빈 문자열도 `undefined`/`None` 으로 정규화합니다.
 
 **Python**:
 
@@ -964,14 +901,14 @@ else:
 
 #### `call:rejected` 이벤트 — 동시통화 한도 초과 감지
 
-**SDK 1.7.0+** (게이트웨이 **v1.4.4.0+** 필요) — 새 통화가 라이선스 전역 한도 또는 테넌트별 동시통화 한도에 막혀 게이트웨이가 수용을 거부했을 때 발사됩니다. 이벤트가 도착하는 시점에는 WebSocket 연결이 이미 닫혔거나 ConfBridge 참여자가 강제 퇴장된 상태이므로 **순수 알림(informational)** 입니다 — 게이트웨이 측 정리는 끝났고, SDK 측은 사용자에게 "capacity exceeded" UI/메트릭만 노출하면 됩니다.
+**SDK 1.9.4+** (게이트웨이 **v1.4.4.0+** 필요) — 새 통화가 라이선스 전역 한도 또는 테넌트별 동시통화 한도에 막혀 게이트웨이가 수용을 거부했을 때 발사됩니다. 이벤트가 도착하는 시점에는 해당 통화의 오디오 연결이 이미 닫혔거나 회의 참여자가 퇴장된 상태이므로 **순수 알림(informational)** 입니다 — 게이트웨이 측 정리는 끝났고, SDK 측은 사용자에게 "capacity exceeded" UI/메트릭만 노출하면 됩니다.
 
 **`reason` enum**:
 
 | reason | 의미 | 트리거 |
 |--------|------|--------|
 | `license_global` | 게이트웨이 라이선스의 `maxConcurrentCalls` 도달 | 모든 테넌트 합산 활성 세션 = 한도 |
-| `tenant_limit` | 해당 테넌트의 `TENANT_LIMITS` / `/api/v1/config/tenant-limits` 한도 도달 | 단일 테넌트 활성 세션 = 테넌트 한도 |
+| `tenant_limit` | 해당 테넌트의 동시통화 한도 도달 | 단일 테넌트 활성 세션 = 테넌트 한도 |
 
 **Wire format** (`/api/v1/ws/callinfo`):
 
@@ -1006,7 +943,7 @@ async def on_rejected(evt):
                    evt.linked_id, evt.reason, evt.current_active, evt.limit)
 ```
 
-> **참고**: 한도는 게이트웨이 측에서 hot-reloadable 합니다. admin 토큰으로 `PUT /api/v1/config/tenant-limits` (body: `{"tenant-a":5,"tenant-b":10}`) 또는 대시보드 "👥 테넌트 동시통화 한도" 탭에서 변경하면 즉시 반영됩니다. 게이트웨이 재시작 불필요.
+> **참고**: 동시통화 한도는 운영사(관리자)가 정하며 재시작 없이 바뀔 수 있습니다. 한도 조정은 운영사에 요청하세요.
 
 #### `audio:playback` 이벤트 — `play_audio()` 라이프사이클 정확 측정
 
@@ -1017,7 +954,7 @@ async def on_rejected(evt):
 | phase | 의미 | 비고 |
 |-------|------|------|
 | `start` | PCM 주입 시작 직전 | `durationMs`=0, 선택적 |
-| `complete` | 모든 PCM 프레임이 Asterisk 로 전송 완료 | `durationMs` = 실제 재생 길이 |
+| `complete` | 모든 PCM 프레임이 통화 채널로 전송 완료 | `durationMs` = 실제 재생 길이 |
 | `canceled` | `DELETE /api/v1/play/{linkedId}` 또는 `interruptOnDtmf` 키 입력 | `durationMs` = 중단까지 경과 |
 | `failed` | 재생 중 오류 | `errorReason` 필드로 분류 |
 
@@ -1027,7 +964,7 @@ async def on_rejected(evt):
 |-----|------|------------|
 | `fetch_failed` | URL 다운로드 / 캐시 실패 | ✅ (일시적 네트워크 오류) |
 | `decode_failed` | 트랜스코드 / 포맷 오류 | ❌ (재시도 무의미) |
-| `channel_lost` | RTP/WS to Asterisk 단절 (통화 hangup) | ❌ (통화 자체 종료) |
+| `channel_lost` | 통화 채널 연결 끊김 (통화 hangup) | ❌ (통화 자체 종료) |
 | `playback_failed` | 일반 player 오류 | ⚠️ 케이스별 판단 |
 
 **`playback_id` 매칭**: `gw.play_audio()`/`gw.playAudio()` 가 반환하는 `playback_id`/`playbackId` 와 이벤트의 `playback_id` 가 일치할 때만 처리. 한 통화에 여러 audio 가 순차 재생될 때 정확한 매칭에 필수.
@@ -1119,9 +1056,9 @@ else:
 
 | phase | 의미 | 비고 |
 |-------|------|------|
-| `playout` *(SDK 1.9.0+ · 게이트웨이 v1.4.14.17+)* | **첫 실오디오 프레임이 Asterisk 채널에 write 성공한 순간** — 실재생(가청) 시작 실측 | `durationMs`=0. media-ready 대기 + pre-roll 워밍업 **이후**라 inject 시점과 통화별 0~3s+ 차이 가능. **녹취 타임라인 마커 정렬 앵커는 반드시 이 phase 의 `ts`** (`recording:started` 의 `ts` 와 조합: 마커 위치 = playout ts − recording ts). terminal 전에 발사, 실프레임 0개(빈 스트림/즉시 선점)면 미발사 |
-| `start` | (예약) inject 시점 앵커 | **게이트웨이는 발사하지 않음** — 실측 onset 은 `playout` 사용 |
-| `complete` | 모든 PCM 프레임이 Asterisk 로 전송 완료 | `durationMs` = frames × 20ms (게이트웨이 ticker 정확 페이싱) |
+| `playout` *(SDK 1.9.0+ · 게이트웨이 v1.4.14.17+)* | **첫 오디오 프레임이 통화 채널로 실제 출력된 순간** — 실재생(가청) 시작 | `durationMs`=0. 준비·워밍업 **이후**라 inject 시점과 통화별 0~3s+ 차이 가능. **녹취 타임라인 마커 정렬 앵커는 반드시 이 phase 의 `ts`** (`recording:started` 의 `ts` 와 조합: 마커 위치 = playout ts − recording ts). terminal 전에 발사, 실프레임 0개(빈 스트림/즉시 선점)면 미발사 |
+| `start` | (예약) inject 시점 앵커 | **게이트웨이는 발사하지 않음** — 실제 재생 시작은 `playout` 사용 |
+| `complete` | 모든 PCM 프레임이 통화 채널로 전송 완료 | `durationMs` = frames × 20ms (20ms 정확 페이싱) |
 | `canceled` | 자연 EOF 이전에 중단 | `errorReason` 으로 사유 분류 |
 | `failed` | 재생 중 오류 | `errorReason` 으로 분류 |
 
@@ -1133,7 +1070,7 @@ else:
 | `canceled` | `barge_in` | 게이트웨이 측 VAD 가 caller 발화를 감지해 TTS 자동 중단 |
 | `canceled` | `hangup` | 통화 종료가 재생 중 발생 |
 | `canceled` | `user_request` | `DELETE /api/v1/tts/{lid}` 또는 `{"cmd":"stop"}` |
-| `failed` | `channel_lost` | Asterisk WebSocket 끊김 (통화 hangup 가능성 높음) |
+| `failed` | `channel_lost` | 통화 채널 연결 끊김 (통화 hangup 가능성 높음) |
 | `failed` | `playback_failed` | 일반 player 오류 |
 
 **`inject_id` 매칭**: `gw.inject_tts()` / `gw.injectTts()` 가 `InjectTtsResult { inject_id }` 반환. 한 통화에 여러 TTS 가 순차 주입될 때 phase=canceled (이전 주입 선점) 와 phase=complete (현재 주입 종료) 를 정확히 구분하려면 매칭 필수. **선점된 (preempted) 세션도 자기 inject_id 로 phase=canceled 이벤트가 발사**되므로 양쪽 ID 모두 추적 가능.
@@ -1154,10 +1091,10 @@ else:
 }
 ```
 
-**Python — `wait_tts_playback` 단순화 (makecall 마이그레이션)**:
+**Python — `wait_tts_playback` 단순화 (시간 추정 → 이벤트 기반)**:
 
 ```python
-# Before — 시간 기반 추정 (CLAUDE.md "이벤트 기반 개발 원칙" 위반)
+# Before — 시간 기반 추정 (sleep 에 의존 — 권장하지 않음)
 async def wait_tts_playback_old(linked_id: str, audio_duration_ms: int):
     inject_start = time.time()
     await gw.inject_tts(linked_id, audio_chunks)
@@ -1237,24 +1174,15 @@ if ('onTtsPlayback' in gw) {
 }
 ```
 
-**타이밍 정확도 — 측정 결과**:
+**타이밍 정확도**:
 
-게이트웨이 ticker 가 20ms strict 페이싱이므로 `phase=complete` 의 `durationMs` 는 결정론적입니다. 실측 (2026-04-29 production 로그):
-
-| 오디오 길이 | frames | 측정 delta | 일치 |
-|---|---|---|---|
-| 2.6s | 132 | 2640ms (132 × 20) | ✓ |
-| 519ms (barge-in) | 25 | 500ms (25 × 20) | ✓ |
-
-게이트웨이 → Asterisk 전송 완료 ≈ 실제 RTP-end 시점 (Asterisk 측 jitter buffer drain ~20-100ms 가 잔여 — 일반 voice-bot turn-taking 에는 무시 가능).
+게이트웨이가 20ms 단위로 정확히 페이싱하므로 `phase=complete` 의 `durationMs` 는 결정론적입니다(예: 2.6s 오디오 = 132 frames = 2640ms). 전송 완료 시점과 실제 수화기 재생 종료 사이에는 전화망 버퍼로 인한 20~100ms 정도의 차이가 남습니다 — 일반 voice-bot turn-taking 에는 무시해도 됩니다.
 
 #### `call:dtmf` 이벤트 — 통화 중 키패드 입력 감지
 
-게이트웨이는 Asterisk AMI `DTMFBegin` / `DTMFEnd` 이벤트를 수신해 `call:dtmf` 이벤트로 전달합니다. IVR 입력, 전화기 단축키, 회의 제어 등에 사용하세요.
+게이트웨이는 통화 중 키패드 입력을 `call:dtmf` 이벤트로 전달합니다. IVR 입력, 전화기 단축키, 회의 제어 등에 사용하세요.
 
-게이트웨이 환경 변수:
-- `GW_DTMF_ENABLED` (기본 `true`) — 전체 스위치.
-- `GW_DTMF_PHASE_FILTER` (기본 `end`) — `end`만 발행 (duration 포함), `both`로 설정하면 `begin`도 함께 발행.
+기본적으로 `end` 단계(키를 뗀 시점, `durationMs` 포함)만 발행됩니다. `begin` 단계도 필요하거나 DTMF 이벤트가 오지 않으면 운영사(관리자)에 문의하세요.
 
 CDR에도 통화 종료 시 집계(`dtmfCount`, `dtmfDigits`)가 자동으로 기록됩니다.
 
@@ -1314,8 +1242,7 @@ await gw.muteStt(linkedId);           // 명시적 unmute 전까지 유지
 await gw.unmuteStt(linkedId);         // 즉시 해제 (모든 holder drop)
 ```
 
-게이트웨이 환경 변수:
-- `GW_STT_MUTE_ENABLED` (기본 `true`) — 기능 자체 토글. `false`면 API 호출은 200을 반환하지만 실제 드롭은 수행되지 않음.
+운영사가 이 기능을 꺼 둔 게이트웨이에서는 API 호출이 200을 반환하지만 실제로 음소거되지 않습니다. 음소거가 동작하지 않으면 운영사에 문의하세요.
 
 게이트웨이 REST:
 - `POST /api/v1/stt/{linkedId}/mute[?duration_ms=N]` — mute (ref-count +1)
@@ -1378,12 +1305,12 @@ await gw.stopAudio(linkedId);
 
 활성 통화를 에이전트 내선 또는 외부 PSTN 번호로 웜 트랜스퍼합니다. 게이트웨이가 `destination`으로 새 레그를 Originate하고, 선택적으로 에이전트에 귓속말(whisper) 프롬프트를 재생한 뒤, 콜러와 에이전트를 브릿지합니다. `timeout_ms` 안에 응답이 없으면 타임아웃 처리되며 원본 통화는 유지됩니다.
 
-`outbound=True`/`outbound: true` 를 지정하면 `destination`을 PJSIP 내부 peer 가 아닌 다이얼플랜 컨텍스트(`Local/{destination}@{context}`)로 라우팅합니다 — 외부 휴대폰/유선번호로 트렁크를 통해 발신할 때 필요합니다. 이 모드에서 `cid_number` / `cid_name` / `account_code` 가 트렁크 측 caller-ID 와 CDR 에 반영됩니다.
+`outbound=True`/`outbound: true` 를 지정하면 `destination`을 내선이 아닌 외부 번호로 보고 `context`(발신 경로)로 라우팅합니다 — 외부 휴대폰/유선번호로 발신할 때 필요합니다. `context` 값은 운영사(관리자)가 알려 줍니다. 이 모드에서 `cid_number` / `cid_name` / `account_code` 가 트렁크 측 caller-ID 와 CDR 에 반영됩니다.
 
 Whisper TTS 는 두 가지 모드로 동작합니다:
 
 1. **SDK-side 합성 (권장)** — `whisper_tts` / `whisperTts` 에 직접 보유한 `TtsAdapter` (ElevenLabs / OpenAI / Gemini 등) 를 전달. SDK 가 사용자 API 키로 로컬 합성 후 PCM 을 게이트웨이로 전송. **프로바이더 키가 게이트웨이를 거치지 않음** (보안 우선). `client.say()` 와 동일한 패턴.
-2. **Gateway-side 합성 (관리형)** — `whisper_text` / `whisperText` 만 전달. 게이트웨이가 `/etc/dvgateway/apikeys/<tenantId>.json` 의 테넌트별 클라우드 TTS 설정(`/api/v1/tts/synthesize` 와 동일한 프로바이더)으로 서버에서 합성.
+2. **Gateway-side 합성 (관리형)** — `whisper_text` / `whisperText` 만 전달. 게이트웨이에 등록된 테넌트별 클라우드 TTS 설정(`/api/v1/tts/synthesize` 와 동일한 프로바이더)으로 서버에서 합성.
 
 두 경로 모두 실패하면 `whisper_played=False` 이고 `whisper_skip_reason` 에 사유 코드가 포함됩니다. 트랜스퍼 자체는 항상 영향 없음 — whisper 는 best-effort.
 
@@ -1395,7 +1322,7 @@ result = await gw.warm_transfer(
     destination="1001",
     whisper_text="VIP 고객입니다",
     hold_audio_url="https://cdn.example.com/hold.mp3",
-    context="from-internal",      # 기본값
+    context="from-internal",      # 기본값 (운영사 설정에 따라 다를 수 있음)
     timeout_ms=30_000,             # 기본 30s
 )
 ```
@@ -1412,12 +1339,12 @@ tts = ElevenLabsAdapter(
 
 result = await gw.warm_transfer(
     linked_id,
-    destination="01026132471",
+    destination="01012345678",
     outbound=True,
-    context="cos-all",                # 트렁크 다이얼플랜 컨텍스트
-    cid_number="16682471",
+    context="outbound-context",       # 운영사가 알려 준 발신 경로 값
+    cid_number="0212345678",
     cid_name="회사명",
-    account_code="07045144800",
+    account_code="07012345678",
     whisper_text="고객: 홍길동, 용건: 환불 문의",
     whisper_tts=tts,                  # ← 사용자 키로 SDK 측 합성
     hold_audio_url="https://cdn.example.com/hold.mp3",
@@ -1426,7 +1353,7 @@ result = await gw.warm_transfer(
 # result.connected: bool
 # result.timed_out: bool
 # result.error: str | None                  (빈 문자열은 None으로 정규화)
-# result.agent_channel: str | None          ("PJSIP/...-...")
+# result.agent_channel: str | None          (채널 이름 문자열)
 # result.bridge_id: str | None              ("bridge-xyz")
 # result.whisper_played: bool
 # result.whisper_skip_reason: str | None    ("no_tts_provider" / "synthesize_failed" /
@@ -1452,12 +1379,12 @@ const tts = new ElevenLabsAdapter({
 
 const result = await gw.warmTransfer({
   linkedId,
-  destination: '01026132471',
+  destination: '01012345678',
   outbound: true,
-  context: 'cos-all',
-  cidNumber: '16682471',
+  context: 'outbound-context',        // 운영사가 알려 준 발신 경로 값
+  cidNumber: '0212345678',
   cidName: '회사명',
-  accountCode: '07045144800',
+  accountCode: '07012345678',
   whisperText: '고객: 홍길동, 용건: 환불 문의',
   whisperTts: tts,                    // ← 사용자 키로 SDK 측 합성
   holdAudioUrl: 'https://cdn.example.com/hold.mp3',
@@ -1479,8 +1406,8 @@ if (result.connected && !result.whisperPlayed) {
 
 **Whisper 동작 조건**:
 - SDK-side: 사용자가 보유한 `TtsAdapter` 가 `synthesize(text)` 로 16 kHz mono 16-bit slin16 PCM 청크를 emit 해야 합니다 (`ElevenLabsAdapter`, `OpenAITtsAdapter`, `GeminiTtsAdapter`, `CosyVoiceAdapter` 등 내장 어댑터 모두 충족).
-- Gateway-side: 게이트웨이가 활성 클라우드 TTS 프로바이더(`/etc/dvgateway/apikeys/<tenantId>.json` 또는 `/api/v1/config/apikeys` 로 설정) 를 갖고 있어야 합니다. 없으면 `whisper_skip_reason="no_tts_provider"` 로 스킵.
-- 게이트웨이는 PCM 을 `GW_WARM_TRANSFER_WHISPER_DIR`(기본 `/var/lib/dvgateway/whisper`)에 `.sln16` 임시 파일로 저장한 뒤 ARI Play 로 에이전트 채널에 재생합니다. 이 디렉터리는 Asterisk 프로세스가 읽을 수 있어야 하며, 재생 완료/타임아웃(기본 20초) 후 자동 삭제됩니다.
+- Gateway-side: 게이트웨이에 활성 클라우드 TTS 프로바이더가 설정되어 있어야 합니다(대시보드 "프로바이더 API 키" 탭). 없으면 `whisper_skip_reason="no_tts_provider"` 로 스킵.
+- whisper 재생은 기본 20초 안에 끝나지 않으면 건너뛰고 브릿지를 진행합니다.
 - 최대 PCM 크기: 약 1.92 MB (60초 분량의 16 kHz mono 16-bit). 초과 시 게이트웨이가 `413 Request Entity Too Large` 반환.
 
 **`whisper_skip_reason` 값 가이드**:
@@ -1489,41 +1416,41 @@ if (result.connected && !result.whisperPlayed) {
 |----|------|----------|
 | `null` | whisper 정상 재생 또는 미요청 | 없음 |
 | `"no_request"` | `whisper_text` 와 `whisper_tts` 모두 미설정 | 의도된 동작 — 무시 가능 |
-| `"no_tts_provider"` | SDK 어댑터 없고 게이트웨이도 키 없음 | `whisper_tts` 전달하거나 게이트웨이 `/api/v1/config/apikeys` 설정 |
-| `"synthesize_failed"` | 게이트웨이 측 합성 실패 (HTTP/quota/network) | 게이트웨이 로그 확인 + 프로바이더 quota 점검 |
+| `"no_tts_provider"` | SDK 어댑터 없고 게이트웨이도 키 없음 | `whisper_tts` 전달하거나 게이트웨이에 TTS 키 등록 |
+| `"synthesize_failed"` | 게이트웨이 측 합성 실패 (HTTP/quota/network) | 프로바이더 quota 점검, 계속되면 운영사에 문의 |
 | `"bad_pcm_format"` | SDK PCM 이 2-byte aligned 아님 (slin16 아님) | 어댑터가 16 kHz mono 16-bit LE 를 emit 하는지 확인 |
-| `"play_failed"` | ARI Play 가 audio 파일 거부 | 게이트웨이 로그 + `GW_WARM_TRANSFER_WHISPER_DIR` 권한 확인 |
-| `"timeout"` | PlaybackFinished 가 timeout 안에 안 옴 | 오디오는 재생됐을 가능성 큼 — `GW_WARM_TRANSFER_WHISPER_TIMEOUT_MS` 조정 |
+| `"play_failed"` | 에이전트 채널에서 재생 실패 | 운영사에 문의 |
+| `"timeout"` | 재생 완료 신호가 제한 시간 안에 오지 않음 | 오디오는 재생됐을 가능성 큼 — whisper 문구를 짧게 하거나 운영사에 문의 |
 | `"cancelled"` | caller context 가 취소됨 | 클라이언트가 요청을 abort 한 경우 — 정상 |
 
 **Mixed audio capture stream (SDK 1.6.6+ / Gateway 1.4.0.0+)**:
-- `stream_mixed_to_external_media=True` / `streamMixedToExternalMedia: true` 옵션 시 게이트웨이가 warm bridge 에 별도 ExternalMedia 채널을 부착하여 customer↔agent mixed audio 를 동일 customer linkedID 의 fanout 으로 송출.
+- `stream_mixed_to_external_media=True` / `streamMixedToExternalMedia: true` 옵션 시 게이트웨이가 customer↔agent 혼합(mixed) 오디오를 같은 customer linkedId 의 오디오 스트림으로 송출.
 - 호출자는 응답 객체의 `mixed_stream_url` / `mixedStreamUrl` (보통 `ws://<gw>:8080/api/v1/ws/stream?linkedid=<lid>&dir=both`) 로 (재)연결하여 audio 수신.
-- ⚠️ **그 URL 에는 토큰이 없다 — 그대로 열면 401 이다**(gw 1.4.16.234+ `GW_STREAM_AUTH=enforce` 기본). 오디오는 **`gw.streamAudio(customerLinkedId)` / `gw.stream_audio(customer_linked_id)`** 로 받는다(SDK 가 `?token=` 을 붙인다). SDK 밖에서 직접 열어야 하면 `?token=<JWT>` 를 덧붙이거나 `Authorization: Bearer <JWT>` 헤더를 준다(JWT = `POST /api/v1/auth/token` 으로 받은 것).
+- ⚠️ **그 URL 에는 토큰이 없다 — 그대로 열면 401 이다**(gateway 1.4.16.234+). 오디오는 **`gw.streamAudio(customerLinkedId)` / `gw.stream_audio(customer_linked_id)`** 로 받는다(SDK 가 `?token=` 을 붙인다). SDK 밖에서 직접 열어야 하면 `?token=<JWT>` 를 덧붙이거나 `Authorization: Bearer <JWT>` 헤더를 준다(JWT = `POST /api/v1/auth/token` 으로 받은 것).
 - 포맷: mono slin16 (16 kHz, 20 ms / 640 B 프레임). stereo split 미지원 — Deepgram nova-3 등의 mono diarization 으로 화자 분리.
 - 부착 실패 시 `mixed_stream_started=False` 로 graceful degrade. warm transfer 자체는 성공 유지.
-- 통화 종료 (warm bridge dissolve) 시 ExternalMedia 자동 정리.
+- 통화 종료 시 자동 정리.
 
 게이트웨이 REST:
 - `POST /api/v1/transfer/warm/{linkedId}` — body: `{destination, context?, whisperText?, whisperPcm?, holdAudioUrl?, timeoutMs?, outbound?, cidNumber?, cidName?, accountCode?, streamMixedToExternalMedia?}`
 - `whisperPcm`: base64-encoded 16 kHz mono 16-bit signed-linear LE PCM. SDK 가 자동으로 채움 (사용자가 `whisper_tts` 지정 시).
 - 성공 응답: `{"connected":true,"timedOut":false,"error":null,"agentChannel":"...","bridgeId":"...","whisperPlayed":true|false,"whisperSkipReason":""|"...","mixedStreamStarted":true|false,"mixedStreamUrl":"ws://..."|"","dualStreamIn":true|false,"dualStreamOut":true|false,"dualStreamSkipReason":""|"...","dualStreamErrorDetail":""|"..."}`
-- `dualStream*`(gw 1.4.16.40+ · SDK 1.9.4+ 가 `WarmTransferResult` 로 노출): 레그별(Snoop) 스트림 부착 결과. ⚠️ **한쪽 레그만 실패한 경우**가 핵심이다 — «오디오가 오는가» 만 보는 소비자는 알아채지 못하고 그 축만 조용히 빈다. `dualStreamErrorDetail` 은 **로그·운영 알림 전용**(사용자 화면 노출 금지). 필드 부재 = 구버전 게이트웨이
+- `dualStream*`(gateway 1.4.16.40+ · SDK 1.9.4+ 가 `WarmTransferResult` 로 노출): 레그별(고객·상담원) 스트림 부착 결과. ⚠️ **한쪽 레그만 실패한 경우**가 핵심이다 — «오디오가 오는가» 만 보는 소비자는 알아채지 못하고 그 축만 조용히 빈다. `dualStreamErrorDetail` 은 **로그·운영 알림 전용**(사용자 화면 노출 금지). 필드 부재 = 구버전 게이트웨이
 - 타임아웃: `{"connected":false,"timedOut":true,"error":"no_answer","whisperPlayed":false,"whisperSkipReason":"...","mixedStreamStarted":false}`
-- 실패: `400` (잘못된 base64 / destination 누락) / `403` (테넌트 권한) / `413` (whisperPcm 크기 초과) / `503` (warm_transfer disabled) with `{"error":"..."}`
+- 실패: `400` (잘못된 base64 / destination 누락) / `403` (테넌트 권한) / `413` (whisperPcm 크기 초과) / `503` (warm_transfer 꺼짐 — 운영사에 문의) with `{"error":"..."}`
 
 #### `tts:complete` 이벤트 — TTS 재생 완료 감지
 
-SDK의 `injectTts()` / `inject_tts()` 는 오디오 iterator가 소진되면 즉시 반환되지만, **게이트웨이가 실제로 모든 프레임을 Asterisk에 주입 완료한 시점이 아닙니다**. TTS Player는 20ms 틱 루프로 프레임을 밀어넣기 때문에, 오디오 길이만큼 대기한 뒤에야 실제 재생이 끝납니다.
+SDK의 `injectTts()` / `inject_tts()` 는 오디오 iterator가 소진되면 즉시 반환되지만, **게이트웨이가 실제로 모든 프레임을 통화에 주입 완료한 시점이 아닙니다**. 게이트웨이는 20ms 단위로 프레임을 내보내므로, 오디오 길이만큼 지난 뒤에야 실제 재생이 끝납니다.
 
 `tts:complete` 이벤트는 게이트웨이가 **실제 재생 완료 시점**에 발행하는 authoritative 신호입니다.
 
 **발생 시점**:
-- `Player.Play()` 세션이 정상 EOF로 종료 (페이드아웃 포함 모든 프레임 Asterisk로 전송 완료)
-- 명시적 `Stop()` 호출로 중단
-- 동시 `Play()` 호출에 의한 선점 (stale 세션은 발행 안 함 — 중복 알림 방지)
+- 재생이 정상 종료 (페이드아웃 포함 모든 프레임 전송 완료)
+- 명시적 중지로 중단
+- 같은 통화에 새 TTS 가 주입되어 선점됨 (선점된 이전 재생은 따로 발행하지 않음 — 중복 알림 방지)
 
-**의미**: 게이트웨이→Asterisk WebSocket 주입 완료. Asterisk→전화기 RTP 버퍼(~20–40ms)는 고려 안 됨 (IVR/음성봇 턴 관리에는 무의미한 차이).
+**의미**: 게이트웨이 → 통화 채널 주입 완료. 전화기까지의 버퍼(~20–40ms)는 고려 안 됨 (IVR/음성봇 턴 관리에는 무의미한 차이).
 
 **주요 활용**:
 1. 고객 VAD 리오픈 — AI 응답이 끝날 때까지 고객 발화 차단 유지
@@ -1556,7 +1483,7 @@ gw.on_tts_complete(on_done)
 
 **Wire format** (`/api/v1/ws/callinfo`):
 ```json
-{"event":"tts:complete","linkedId":"1775805184.495","tenantId":"7be69580e27641df","serverId":"gw-seoul-01"}
+{"event":"tts:complete","linkedId":"1775805184.495","tenantId":"0123456789abcdef","serverId":"gw-seoul-01"}
 ```
 
 **S2S 모드와의 관계**: OpenAI Realtime / Gemini Live 어댑터의 `onAudioOutput` 콜백으로 받은 PCM을 `gw.injectTts()`로 주입하면, 게이트웨이가 재생을 마칠 때마다 `tts:complete`가 발행됩니다. 이 이벤트를 이용해 "AI 발화 종료" 시점을 정확히 감지할 수 있습니다.
@@ -1574,10 +1501,10 @@ gw.on_tts_complete(on_done)
 | `did` | DID 번호 |
 | `tenantId` / `tenant_id` | 멀티테넌트 ID |
 | `serverId` / `server_id` | 게이트웨이 서버 ID |
-| `customValue1~3` / `custom_value_1~3` | 커스텀 변수 (다이얼플랜에서 전달) |
+| `customValue1~3` / `custom_value_1~3` | 커스텀 변수 (운영사가 통화에 실어 보내는 값) |
 | `callDirection` / `call_direction` | `inbound` / `outbound` — 발신·수신 판별은 이 값으로(`dir` 은 스트림 방향이라 쓰면 틀린다). SDK 1.9.4+ |
-| `orgId` / `org_id` · `orgSource` / `org_source` | 주문 회사 귀속(gw 1.4.15.209+ · SDK 1.9.4+). **3-상태** — TS: `undefined`=구버전(키 없음) / `null`=미매핑 / 문자열. Python: `org_id_reported` 로 키 유무를 가른다 |
-| `streamUrl` / `stream_url` | 오디오 WebSocket URL. ⚠️ **토큰이 없는 주소**다 — 직접 열면 401(gw 1.4.16.234+). `streamAudio(linkedId)` 를 쓰거나 `?token=<JWT>` 를 덧붙인다 |
+| `orgId` / `org_id` · `orgSource` / `org_source` | 주문 회사 귀속(gateway 1.4.15.209+ · SDK 1.9.4+). **3-상태** — TS: `undefined`=구버전(키 없음) / `null`=미매핑 / 문자열. Python: `org_id_reported` 로 키 유무를 가른다 |
+| `streamUrl` / `stream_url` | 오디오 WebSocket URL. ⚠️ **토큰이 없는 주소**다 — 직접 열면 401(gateway 1.4.16.234+). `streamAudio(linkedId)` 를 쓰거나 `?token=<JWT>` 를 덧붙인다 |
 
 ---
 
@@ -2060,7 +1987,7 @@ Gemini Live의 **half-cascade 모델**(`gemini-live-2.5-flash-preview`)은 TTS �
 
 **동작**: 어댑터가 각 오디오 청크에 선형 게인을 적용한 후 int16 범위로 clamp합니다. `24 dB`는 ≈16배 증폭이고, int16 최대 크기(±32767)를 초과하는 샘플은 wrap-around 없이 안전하게 clipped됩니다.
 
-**운영 진단**: 게이트웨이 로그에서 `[TTS] WARNING session max_peak=-XX.XXdBFS is below -30 dBFS` 메시지가 보이면 이 옵션이 미설정이거나 값이 너무 낮다는 신호입니다. 어댑터 자체도 첫 오디오 청크에서 다음과 같이 경고합니다:
+**진단**: 이 옵션이 미설정이거나 값이 너무 낮으면 어댑터가 첫 오디오 청크에서 다음과 같이 경고합니다:
 
 ```
 [GeminiLive] source peak -43.5dBFS is quiet for a phone sink (< -30 dBFS) and
@@ -2216,12 +2143,12 @@ realtime = GeminiLiveAdapter(
 )
 ```
 
-- ⚠️ **리전이 `us-central1`·`us`·`eu` 뿐이다** — 한국 통화의 음성이 **미국·유럽에서 처리**된다(지연 + 데이터 국외 이전). 그래서 **SDK 기본 모델은 바꾸지 않았다** — 배포만으로 처리 국가가 바뀌면 안 된다. 다른 location 을 주면 어댑터가 경고를 낸다(`geminiLiveConfigWarnings`).
+- ⚠️ **리전이 `us-central1`·`us`·`eu` 뿐이다** — 한국 통화의 음성이 **미국·유럽에서 처리**된다(지연 + 데이터 국외 이전). SDK 기본 모델은 이 모델이 아니므로 명시해야 쓴다. 다른 location 을 주면 어댑터가 경고를 낸다(`geminiLiveConfigWarnings`).
 - ⚠️ **AI Studio(`endpoint: 'ai-studio'`) 제공 여부는 문서에 없다** — 경고를 내고 그대로 시도한다.
 - `customVocabulary` / `custom_vocabulary` → `input_audio_transcription.custom_vocabulary`. **3.8 전용**이라 비어 있으면 필드를 보내지 않는다(모르는 setup 필드는 소켓을 닫는다). 다른 모델에 주면 경고.
-- 2.5 의 `enable_affective_dialog`·`proactivity` 는 3.8 에서 **제거**됐다 — 이 어댑터는 원래 보내지 않으므로 할 일 없음. thinking 미지원.
+- 2.5 의 `enable_affective_dialog`·`proactivity` 는 3.8 에서 지원되지 않는다 — 이 어댑터는 보내지 않으므로 할 일 없음. thinking 미지원.
 - 헬퍼: `GEMINI_38_LIVE_LOCATIONS` · `buildInputAudioTranscription` · `geminiLiveConfigWarnings` (Python: `build_input_audio_transcription` · `gemini_live_config_warnings`).
-- 🔴 **실제 키로 검증하지 않았다** — setup 형태는 문서 기준이다.
+- ⚠️ 이 모델의 setup 형태는 Google 공개 문서 기준이다 — 첫 적용 시 실제 키로 확인하세요.
 
 ##### Vertex AI 리전 엔드포인트 사용 (GCP 네이티브 배포)
 
@@ -2362,7 +2289,7 @@ interpreter = OpenAIRealtimeAdapter(
 )
 ```
 
-지원 언어: 입력 70+ / 출력 13 (OpenAI Realtime translate 모델 기준). 동작 검증 예제는 [examples/10-realtime-translate-ko-en.ts](../examples/10-realtime-translate-ko-en.ts) / [examples/python/05_realtime_translate_ko_en.py](../examples/python/05_realtime_translate_ko_en.py) 참고.
+지원 언어: 입력 70+ / 출력 13 (OpenAI Realtime translate 모델 기준). 동작 검증 예제는 [examples/typescript/10-realtime-translate-ko-en.ts](examples/typescript/10-realtime-translate-ko-en.ts) / [examples/python/09_realtime_translate_ko_en.py](examples/python/09_realtime_translate_ko_en.py) 참고.
 
 #### S2S vs 기존 파이프라인 비교
 
@@ -2621,14 +2548,14 @@ asyncio.run(gw.connect())
 
 LLM API 키는 STT/TTS/S2S와 동일하게 **프로바이더 API 키** 탭에서만 관리합니다. **파이프라인 설정** 탭은 *어떤 키를 쓸지*(선택)와 모델·프롬프트·동작(히스토리/인사말/웹훅)만 담당합니다.
 
-| 역할 | 저장 위치 | 설명 |
+| 역할 | REST | 설명 |
 |------|-----------|------|
-| LLM API 키 (claude, openai, gemini) | `apiKeysConfig.LLM` (`/api/v1/config/apikeys`) | 테넌트별 JSON. `enabled`, `role` (`primary`/`backup`), `apiKey` |
-| LLM 선택자 | `pipelineconf.Config` (`/api/v1/config/pipeline`) | `llmProvider`, `llmRole`, `llmModel`, `fallbackProvider`, `fallbackRole`, `fallbackModel` |
-| LLM 자격증명 해석 | `GET /api/v1/llm/resolve?role=primary\|backup[&provider=claude]` | 파이프라인 선택자를 apiKeysConfig.LLM에 매핑해 `{provider, role, model, apiKey, **baseUrl**}` 반환 |
+| LLM API 키 (claude, openai, gemini) | `/api/v1/config/apikeys` | 테넌트별. `enabled`, `role` (`primary`/`backup`), `apiKey` |
+| LLM 선택자 | `/api/v1/config/pipeline` | `llmProvider`, `llmRole`, `llmModel`, `fallbackProvider`, `fallbackRole`, `fallbackModel` |
+| LLM 자격증명 해석 | `GET /api/v1/llm/resolve?role=primary\|backup[&provider=claude]` | 파이프라인 선택자를 등록된 LLM 키에 매핑해 `{provider, role, model, apiKey, **baseUrl**}` 반환 |
 
-우선순위 (서버의 `resolveLLMProvider`와 동일):
-1. `provider` 쿼리 파라미터가 `apiKeysConfig.LLM`에 enabled+keyed로 존재하면 그 항목
+우선순위:
+1. `provider` 쿼리 파라미터가 등록된 LLM 키 중 enabled+keyed로 존재하면 그 항목
 2. `role` 파라미터 또는 파이프라인 `llmRole`/`fallbackRole`과 일치하는 enabled+keyed 항목
 3. `role == "primary"`인 첫 번째 enabled+keyed 항목
 4. 임의의 enabled+keyed 항목 (fallback)
@@ -2662,18 +2589,16 @@ llm = AnthropicAdapter(api_key=api_key, model=model, base_url=base_url)
 
 ⚠️ **`baseUrl` 은 온프렘·폐쇄망의 핵심 스위치다.** 대시보드 "프로바이더 API 키" 탭에서
 LLM 프로바이더에 `baseUrl` 을 넣으면 공식 API 대신 그 주소로 나간다(로컬 LLM·사내 프록시).
-게이트웨이는 이 값을 **gw 1.4.14.114 부터 저장·제공**했지만 **어댑터가 받는 자리가 없어**
-SDK 파이프라인에서는 반영되지 않았다 — **SDK 1.9.2 에서 연결**됐다. 그 이전 버전을 쓰면
-게이트웨이 설정과 무관하게 **공식 엔드포인트로 나간다**(폐쇄망에서는 그대로 실패).
-값이 비면 어댑터는 벤더 SDK 에 키를 **넘기지 않는다**(공식 엔드포인트 유지) —
-resolve 응답을 조건 없이 펼쳐 넣어도 안전하다.
+어댑터가 `baseUrl` 을 받는 것은 **SDK 1.9.2+** 다 — 그 이전 버전은 이 값을 무시하고
+**공식 엔드포인트로 나간다**(폐쇄망에서는 실패). 값이 비면 어댑터는 공식 엔드포인트를 유지하므로
+resolve 응답을 조건 없이 넘겨도 안전하다.
 
 Primary/Backup 페일오버가 필요한 경우:
 1. API Keys 탭에서 Claude(role=primary)와 OpenAI(role=backup) 모두 enabled+키 입력
 2. Pipeline 탭에서 Fallback 섹션에 원하는 프로바이더 또는 `역할 = Backup` 선택
 3. SDK는 `?role=primary` 실패 시 `?role=backup`으로 재시도 → 서로 다른 프로바이더로 자동 전환
 
-`llmProvider = "webhook"`는 자격증명이 아니므로 예외입니다. `resolve` 응답은 `{provider: "webhook", webhookUrl}`을 반환하고, SDK는 `pipelineconf.WebhookURL`/`WebhookSecret`을 사용해 요청을 서명합니다.
+`llmProvider = "webhook"`는 자격증명이 아니므로 예외입니다. `resolve` 응답은 `{provider: "webhook", webhookUrl}`을 반환하고, 파이프라인 설정의 웹훅 URL·시크릿으로 요청을 서명합니다.
 
 #### S2S Tool Calling (Function Calling)
 
@@ -2782,7 +2707,7 @@ realtime.on_tool_call(handle_tool_call)
 
 #### GeminiLiveAdapter — `toolChoice` / `tool_choice` 옵션은 **AUTO 고정** (중요)
 
-⚠️ **알려진 제약 (v1.4.10+에서 안전 처리)**: `GeminiLiveAdapter`도 OpenAI parity를 위해 `toolChoice` / `tool_choice` 옵션을 노출하지만, **Gemini Live BidiGenerateContent 의 `setup` 메시지 스키마에는 `tool_config` 필드가 없습니다** (일반 `GenerateContent` API에는 있지만 Live API에는 없음). v1.4.5 ~ 1.4.9에서는 SDK가 `tool_config`를 setup에 포함시켜 **Gemini가 WS를 즉시 close (code=1011 bad setup)** 하는 버그가 있었습니다 — 사용자 측 증상은 `start_session_exit age=0s chunks_sent=N` 로 나타났습니다.
+⚠️ **알려진 제약**: `GeminiLiveAdapter`도 OpenAI parity를 위해 `toolChoice` / `tool_choice` 옵션을 노출하지만, **Gemini Live BidiGenerateContent 의 `setup` 메시지 스키마에는 `tool_config` 필드가 없습니다** (일반 `GenerateContent` API에는 있지만 Live API에는 없음). 어댑터 v1.4.5 ~ 1.4.9 는 이 필드를 보내 Gemini 가 연결을 즉시 닫았으므로(code=1011) **v1.4.10 이상**을 쓰세요.
 
 **v1.4.10+ 동작**:
 - `tools`만 사용하면 정상 작동 (Gemini는 항상 AUTO 모드로 함수 호출 결정)
@@ -2871,11 +2796,7 @@ TTS_PROVIDER=gemini                  # gemini / elevenlabs / openai / cosyvoice
 | 문서 | 내용 |
 |------|------|
 | [SDK 가이드 (전체)](https://github.com/OLSSOO-Inc/dvgateway-releases) | 설치부터 고급 기능까지 |
-| [PBX 관리 API](../docs/pbx-management-api.md) | 착신전환, 발신자표시, 클릭투콜, 캠페인 REST API |
-| [퀵 매뉴얼](../docs/pbx-quick-reference.md) | curl 예제 복사해서 바로 사용 |
-| [어댑터 상세](../docs/sdk-guide/04-adapter-reference.md) | STT/LLM/TTS 설정 |
-| [캠페인 가이드](../docs/sdk-guide/11-pbx-management.md) | 캠페인 + 이벤트 모니터링 |
-
----
-
-_최종 업데이트: 2026-04-06_
+| [PBX 관리 API](pbx-management-api.md) | 착신전환, 발신자표시, 클릭투콜, 캠페인 REST API |
+| [퀵 매뉴얼](pbx-quick-reference.md) | curl 예제 복사해서 바로 사용 |
+| [어댑터 상세](04-adapter-reference.md) | STT/LLM/TTS 설정 |
+| [캠페인 가이드](11-pbx-management.md) | 캠페인 + 이벤트 모니터링 |

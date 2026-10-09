@@ -1,8 +1,8 @@
 # 17. 최소 비용 IVR 봇 만들기 (`mode=lite`)
 
-> **요약** — 안내 멘트 + 번호(DTMF) 입력만 받으면 되는 통화에는 `mode=lite` Stasis 프로파일이 **표준 패턴**입니다. STT/LLM/TTS 어댑터·실시간 PCM 스트림이 전부 빠지고 ARI Playback API + AMI DTMF 이벤트만 사용해, 통화당 메모리·CPU를 **수 KB / 수 µs 단위**로 끌어내릴 수 있습니다.
+> **요약** — 안내 멘트 + 번호(DTMF) 입력만 받으면 되는 통화에는 `mode=lite` 프로파일이 **표준 패턴**입니다. STT/LLM/TTS 어댑터·실시간 PCM 스트림이 전부 빠지고 재생(`playback`) API + DTMF 이벤트만 사용해, 통화당 자원 사용을 크게 줄일 수 있습니다.
 >
-> Gateway 1.4.3+ / SDK 1.7.0+ 부터 지원. 라이선스 동시통화 카운터·CDR·테넌트 격리·대시보드는 일반 모드와 동일합니다.
+> Gateway 1.4.3+ / SDK 1.7.0+ 부터 지원. 동시통화 한도·통화기록(CDR)·테넌트 격리는 일반 모드와 동일합니다.
 
 ---
 
@@ -17,7 +17,7 @@
 | 콜백 예약 (시간대 번호 선택) | **lite** | 메뉴 + DTMF |
 | AI 상담 / 대화형 봇 | full (`both`) | STT/LLM/TTS 필요 |
 | 회의록 자동 생성 | full | STT 필요 |
-| 콜센터 상담원 실시간 보조 | `role=monitor` | 음성 캡처 + 분석 필요 |
+| 콜센터 상담원 실시간 보조 | 모니터 모드 (운영사 설정) | 음성 캡처 + 분석 필요 |
 
 **판단 기준 한 줄**: "고객의 **말**을 들어야 하나, **번호 입력**만 받으면 되나?" 후자라면 lite.
 
@@ -27,13 +27,11 @@
 
 `lite` 모드는 통화당 다음 자원을 **사용하지 않습니다**:
 
-- ExternalMedia (chan_websocket) goroutine
-- Snoop audiohook (PBX 측 framehook)
-- Mixing bridge 1개
+- 실시간 오디오 스트림 연결 (게이트웨이 ↔ 내 앱)
+- 통화 오디오 캡처·믹싱
 - STT 세션 (제공자 연결 + 오디오 버퍼)
-- Downstream WebSocket fan-out (4096 슬롯 채널)
-- AGC / RMS / VAD 처리 루프
-- 오디오 PCM 버퍼 (~4 KB)
+- 음량 보정 / 음성 감지 처리
+- 오디오 PCM 버퍼
 
 또한 **STT 호출이 0건**이고, 사운드 파일 (`sound:`/`number:`/`digits:`/`tone:`)만 쓰는 IVR이라면 **TTS 호출도 0건**입니다. 동적 TTS가 필요하면 `liteTtsPlayback()` 으로 추가 가능하며, 같은 문장은 게이트웨이 캐시 적중으로 1회만 합성하므로 cloud TTS 호출 비용도 호출당이 아니라 **문장당**으로 떨어집니다.
 
@@ -41,25 +39,9 @@
 
 ## 3. SDK 표준 패턴
 
-### 3.1 다이얼플랜 (PBX 측)
+### 3.1 번호 연결 (운영사)
 
-```ini
-; /etc/asterisk/extensions.conf
-[from-trunk]
-exten => _8X.,1,NoOp(단순 IVR — lite 모드)
- same => n,Set(DID=${EXTEN})
- same => n,Stasis(dvgateway,\
-     mode=lite,\
-     did=${DID},\
-     callid=${UNIQUEID},\
-     callernum=${CALLERID(num)},\
-     callednum=${EXTEN},\
-     tenantid=${TENANTID},\
-     timestamp=${EPOCH()})
- same => n,Hangup()
-```
-
-핵심은 `mode=lite` 한 줄. 나머지는 일반 Stasis 호출과 동일합니다.
+어떤 전화번호를 `lite` 모드로 받을지는 운영사가 설정합니다. 운영사에 "이 번호를 lite 모드로 연결해 달라"고 요청하세요. 연결된 통화는 `call:new` 이벤트의 `session.mode` 가 `'lite'` 로 옵니다.
 
 ### 3.2 TypeScript 표준 패턴
 
@@ -93,7 +75,7 @@ gw.onCallEvent(async (evt) => {
       case '1':
         await gw.playback({ linkedId, media: 'sound:queue-thankyou' });
         // 상담원 큐로 전환은 redirect API로 (아래 4.3 참조)
-        await gw.redirect(linkedId, { context: 'queue-sales', exten: 's' });
+        await gw.redirect(linkedId, 's', 'queue-sales');
         return;
       case '2':
         await gw.playback({ linkedId, media: 'sound:office-hours' });
@@ -141,7 +123,7 @@ async def main() -> None:
 
             if res.digits == "1":
                 await gw.playback(lid, media="sound:queue-thankyou")
-                await gw.redirect(lid, context="queue-sales", exten="s")
+                await gw.redirect(lid, "s", context="queue-sales")
                 return
             elif res.digits == "2":
                 await gw.playback(lid, media="sound:office-hours")
@@ -165,16 +147,16 @@ if __name__ == "__main__":
 
 | `media` 형식 | 예시 | 결과 |
 |--------------|------|------|
-| `sound:<filename>` | `sound:welcome` | `sounds/{lang}/welcome.{format}` 재생 |
-| `sound:<abs_path_no_ext>` | `sound:/var/lib/asterisk/sounds/custom-ko/intro` | 절대경로의 파일 재생 (확장자 생략) |
-| `number:<n>` | `number:1234` | "천이백삼십사" (Asterisk 내장 합성) |
+| `sound:<filename>` | `sound:welcome` | 등록된 사운드 파일 `welcome` 재생 (채널 언어 기준) |
+| `sound:<path_no_ext>` | `sound:custom-ko/intro` | 운영사가 등록한 경로의 파일 재생 (확장자 생략) |
+| `number:<n>` | `number:1234` | "천이백삼십사" (내장 숫자 읽기) |
 | `digits:<n>` | `digits:1234` | "일 이 삼 사" |
 | `characters:<s>` | `characters:abc` | "에이 비 시" |
-| `tone:<name>` | `tone:dial`, `tone:busy` | `indications.conf` 정의 톤 |
+| `tone:<name>` | `tone:dial`, `tone:busy` | 내장 신호음 |
 
 **반환값**: `{ linkedId, playbackId, state }`. `playbackId`는 중단/이벤트 매칭에 사용.
 
-**비동기**: 메서드는 재생 **시작 직후** 즉시 반환합니다. 끝까지 기다리려면 `audio:playback` 이벤트(`lifecycle: done`)를 구독하거나 — 간단한 IVR에서는 다음 단계로 바로 넘어가도 무방합니다 (Asterisk가 버퍼링).
+**비동기**: 메서드는 재생 **시작 직후** 즉시 반환합니다. 끝까지 기다리려면 `audio:playback` 이벤트(`lifecycle: done`)를 구독하거나 — 간단한 IVR에서는 다음 단계로 바로 넘어가도 무방합니다 (재생은 순서대로 이어집니다).
 
 ### 4.2 `collectDtmf` / `collect_dtmf`
 
@@ -186,27 +168,27 @@ const res = await gw.collectDtmf({
   interDigitTimeoutMs: 3_000, // 각 자릿수 사이 대기
   terminator: '#',         // 입력 종료 키 (선택)
 });
-// res.digits, res.timedOut, res.terminatedBy
+// res.digits, res.timedOut, res.terminatedByKey
 ```
 
-`mode=lite`에서도 동일하게 동작 — AMI DTMFBegin/End 이벤트가 채널 점유 상태와 무관하게 발생하기 때문.
+`mode=lite`에서도 동일하게 동작 — DTMF 이벤트는 오디오 스트림 유무와 무관하게 발생하기 때문.
 
 ### 4.3 통화 제어
 
 | 메서드 (TS / Python) | 용도 |
 |------|------|
 | `hangup(linkedId)` / `hangup(lid)` | 통화 종료 |
-| `redirect(linkedId, { context, exten })` / `redirect(lid, context=..., exten=...)` | 다이얼플랜의 다른 익스텐션으로 전환 (상담원 큐, 본사 라우팅 등) |
+| `redirect(linkedId, destination, context?)` / `redirect(lid, destination, context=...)` | 다른 목적지로 전환 (상담원 큐, 본사 라우팅 등). 전환할 `context`·`destination` 값은 운영사에 확인하세요 |
 
-`mode=lite`에선 **사용 불가** 메서드 (ExternalMedia 필요):
-- ❌ `playAudio` / `play_audio` (URL → ffmpeg → 스트리밍 PCM 주입)
+`mode=lite`에선 **사용 불가** 메서드 (실시간 오디오 스트림 필요):
+- ❌ `playAudio` / `play_audio` (URL 오디오 스트리밍 주입)
 - ❌ `injectTts` / `inject_tts` (PCM TTS 스트리밍 주입)
 - ❌ `say` / `broadcast_say` (TTS 어댑터 경유)
 - ❌ `streamAudio` / `stream_audio` (오디오 수신)
 
 → 실시간 PCM 스트림 / STT 같은 기능이 필요하면 `mode=lite` 대신 `mode=both`(기본) 사용.
 
-### 4.3 `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+ · gateway 1.4.5.8+)*
+### 4.4 `liteTtsPlayback({ linkedId, text, provider?, voice? })` *(SDK 1.7.2+ · gateway 1.4.5.8+)*
 
 **자유 텍스트 → 음성 재생** — 사전 녹음 없이 동적 안내음을 만들고 싶을 때 씁니다. 사운드 파일 키(`sound:welcome` 등)는 정적 콘텐츠에 적합하지만, **고객명·잔액·동적 메시지** 같은 게 끼면 매번 파일을 미리 만들 수 없으므로 이 메서드가 필요합니다.
 
@@ -234,15 +216,15 @@ print(result.playback_id, result.cache_hit)
 - `provider` — `google` / `elevenlabs` / `openai` / `gemini` / `cosyvoice`. 생략 시 테넌트의 primary TTS 키 사용.
 - `voice` — provider별 음성 ID (예: `ko-KR-Wavenet-A`). 생략 시 provider 기본 음성.
 
-**반환값**: `{ linkedId, playbackId, state, media, synthesizedBytes, cacheHit, provider, voice }`. `cacheHit=true`면 게이트웨이가 디스크 캐시에서 즉시 재생한 것이고, 합성 RTT가 0입니다.
+**반환값**: `{ linkedId, playbackId, state, media, synthesizedBytes, cacheHit, provider, voice }`. `cacheHit=true`면 게이트웨이가 캐시에서 즉시 재생한 것이고, 합성 대기 시간이 없습니다.
 
-**캐시 동작**: `sha256(tenant | provider | voice | text)` 키로 `.sln16` 파일을 디스크에 저장 (기본 `/var/lib/dvgateway/tts-cache/{tenant}/{hash}.sln16`). **같은 문장을 N번 호출하면 1번만 합성**, 나머지는 50ms 이내 응답. 반복 안내(메뉴, 환영 멘트)에서 효과 큼. 캐시 위치는 게이트웨이의 `GW_TTS_CACHE_DIR` 환경변수로 변경 가능.
+**캐시 동작**: 게이트웨이가 테넌트·provider·voice·text 가 같은 합성 결과를 캐시합니다. **같은 문장을 N번 호출하면 1번만 합성**, 나머지는 50ms 이내 응답. 반복 안내(메뉴, 환영 멘트)에서 효과 큼.
 
-**Provider 실패 시**: cloud TTS 호출이 실패하면 게이트웨이가 자동으로 espeak-ng 로컬 합성으로 fallback (영어 발음, 품질은 낮지만 통화 끊김은 방지). 게이트웨이 로그에 `[PLAYBACK-TTS] cloud synth failed ... falling back to espeak-ng`.
+**Provider 실패 시**: cloud TTS 호출이 실패하면 게이트웨이가 자동으로 기본 로컬 음성으로 대체 재생합니다 (영어 발음, 품질은 낮지만 통화 끊김은 방지). 대체 재생이 반복되면 TTS 키 설정을 운영사에 확인하세요.
 
 **중단**: 일반 playback과 동일 — `stopPlayback(linkedId, playbackId)` / `stop_playback(linked_id, playback_id)`.
 
-**이벤트**: `audio:playback` 이벤트 (`lifecycle: playing` → `done`) 가 발화됨. `tts:playback` 이벤트(`inject_tts` 라이프사이클) 는 발화되지 **않음** — 그건 ExternalMedia 기반 PCM 주입 전용이고 이 메서드는 ARI Playback 경로라서.
+**이벤트**: `audio:playback` 이벤트 (`lifecycle: playing` → `done`) 가 발화됨. `tts:playback` 이벤트(`inject_tts` 라이프사이클) 는 발화되지 **않음** — 그건 PCM 스트림 주입 전용입니다.
 
 ---
 
@@ -285,7 +267,7 @@ const queueMap: Record<string, string> = {
 const target = queueMap[res.digits];
 if (target) {
   await gw.playback({ linkedId, media: 'sound:transferring' });
-  await gw.redirect(linkedId, { context: target, exten: 's' });
+  await gw.redirect(linkedId, 's', target);
 } else {
   await gw.playback({ linkedId, media: 'sound:invalid-key' });
   await gw.hangup(linkedId);
@@ -299,7 +281,7 @@ const lang = evt.session.did?.startsWith('+1') ? 'en' : 'ko';
 await gw.playback({ linkedId, media: `sound:${lang}/welcome` });
 ```
 
-(`sound:` URI는 Asterisk가 자동으로 `/var/lib/asterisk/sounds/{lang}/...` 경로에서 찾습니다 — 채널 변수 `LANGUAGE` 설정 필요)
+(언어별 사운드 파일 등록과 채널 언어 설정은 운영사가 합니다 — 필요한 언어를 운영사에 알려 주세요)
 
 ### 5.5 콜백 예약 (시간대 번호 선택)
 
@@ -322,19 +304,13 @@ await gw.hangup(linkedId);
 
 ### 6.1 한국어 사운드 파일 준비
 
-Asterisk 기본 사운드는 영어입니다. 한국어 안내 멘트를 사용하려면:
+기본 사운드는 영어입니다. 한국어 안내 멘트를 사용하려면:
 
-```bash
-# /var/lib/asterisk/sounds/ko/ 아래에 미리 합성한 sln16 또는 wav를 배치
-sudo mkdir -p /var/lib/asterisk/sounds/ko
-sudo cp welcome-ko.sln16 /var/lib/asterisk/sounds/ko/welcome.sln16
+1. 안내 멘트를 미리 클라우드 TTS로 합성하거나 녹음해 파일로 준비합니다.
+2. 운영사에 파일을 전달해 등록과 채널 언어(한국어) 설정을 요청합니다.
+3. 등록된 이름으로 `sound:welcome` 처럼 재생합니다.
 
-# 다이얼플랜에서 채널 언어 설정
-exten => _8X.,1,Set(CHANNEL(language)=ko)
- same => n,Stasis(dvgateway,mode=lite,...)
-```
-
-미리 클라우드 TTS로 합성 → 파일로 저장하면 **재생 비용 0원**, **레이턴시 0ms** (네트워크 왕복 제거).
+미리 합성해 둔 파일을 쓰면 **재생 비용 0원**, **레이턴시 0ms** (네트워크 왕복 제거). 파일 등록이 어렵다면 `liteTtsPlayback()` 의 캐시를 활용하세요.
 
 ### 6.2 동시통화 수용량
 
@@ -361,21 +337,13 @@ try {
 const tenant = evt.session.tenantId ?? 'default';
 await gw.playback({
   linkedId,
-  media: `sound:/var/lib/asterisk/sounds/tenants/${tenant}/welcome`,
+  media: `sound:tenants/${tenant}/welcome`, // 운영사가 등록한 경로
 });
 ```
 
 ### 6.5 모니터링
 
-`lite` 모드 통화도 일반 모드와 동일하게 대시보드(`:8081`)에 표시되고 CDR/통계가 기록됩니다. `mode` 컬럼으로 lite 통화만 필터링해 사용량을 추적할 수 있습니다.
-
-```sql
--- CDR_BACKEND=db 일 때
-SELECT COUNT(*), tenant_id
-FROM cdr_events
-WHERE mode = 'lite' AND created_at > now() - interval '24 hours'
-GROUP BY tenant_id;
-```
+`lite` 모드 통화도 일반 모드와 동일하게 통화기록(CDR)·통계에 기록됩니다. lite 통화만 따로 집계한 사용량이 필요하면 운영사에 문의하세요.
 
 ---
 
@@ -383,12 +351,12 @@ GROUP BY tenant_id;
 
 | 증상 | 원인 | 해결 |
 |------|------|------|
-| `playback`이 503 반환 | `ARI_ENABLED=false` | gateway env에 `ARI_ENABLED=true` 설정 |
+| `playback`이 503 반환 | 게이트웨이의 재생 기능이 꺼져 있음 | 운영사에 문의 (`linkedId`·시각 전달) |
 | `playback`이 404 반환 | linkedId에 매핑된 활성 채널 없음 | `call:new` 이벤트 수신 후 호출하는지 확인 |
-| `playback`이 502 / ARI 404 | Asterisk가 media 파일 못 찾음 | 경로/확장자 확인. `sound:` 뒤엔 **확장자 없이** 적기 |
-| DTMF 입력이 안 받힘 | 채널 응답 전 / AMI 미연결 | 게이트웨이 로그에서 `[AMI] DTMFBegin` 확인 |
-| `collect_dtmf`가 즉시 timeout | 채널이 Up 상태가 아님 | lite 모드는 자동 응답하지만, 다이얼플랜에서 `Answer()` 먼저 호출도 가능 |
-| 일반 모드 메서드 호출 시 에러 | `playAudio`/`injectTts`는 ExtMedia 필요 | `playback`만 사용. 또는 다이얼플랜에서 `mode=both`로 변경 |
+| `playback`이 502 반환 | 게이트웨이가 media 파일을 못 찾음 | 파일 이름 확인. `sound:` 뒤엔 **확장자 없이** 적기. 파일이 등록돼 있는지 운영사에 확인 |
+| DTMF 입력이 안 받힘 | 채널 응답 전 / DTMF 이벤트 미수신 | `call:dtmf` 이벤트가 오는지 확인. 오지 않으면 운영사에 `linkedId`·시각 전달 |
+| `collect_dtmf`가 즉시 timeout | 채널이 아직 응답(Up) 상태가 아님 | `channel:state` 가 `up` 이 된 뒤 호출 |
+| 일반 모드 메서드 호출 시 에러 | `playAudio`/`injectTts`는 실시간 오디오 스트림 필요 | `playback`만 사용. 또는 운영사에 그 번호를 일반 모드(`both`)로 연결 요청 |
 | 통화가 끊기지 않음 | `hangup()` 호출 누락 | `try/finally`로 보장 |
 
 ---
@@ -410,13 +378,7 @@ gw.onCallEvent(async (evt) => {
 });
 ```
 
-다이얼플랜 측에서는 익스텐션 패턴/DID/시간대 등에 따라 `mode` 파라미터만 다르게 줘서 라우팅합니다.
-
-```ini
-; AI 상담은 mode=both, 단순 IVR은 mode=lite
-exten => _9X.,1,Stasis(dvgateway,mode=both,...)   ; AI 봇 전용 번호대
-exten => _8X.,1,Stasis(dvgateway,mode=lite,...)   ; 안내·IVR 전용 번호대
-```
+어떤 번호를 어떤 모드로 받을지(예: AI 상담 번호는 `both`, 안내·IVR 번호는 `lite`)는 운영사가 번호별로 설정합니다.
 
 ---
 
@@ -425,7 +387,7 @@ exten => _8X.,1,Stasis(dvgateway,mode=lite,...)   ; 안내·IVR 전용 번호대
 - **음성 대화가 필요해졌다면** → [03 파이프라인 패턴](03-pipeline-patterns.md)
 - **상담원 보조가 필요하다면** → [13 VoiceFlow 컨트롤](13-voice-flow-controls.md)
 - **DTMF 동작 상세** → [10 FAQ & 트러블슈팅](10-faq-troubleshooting.md)의 DTMF 섹션
-- **다이얼플랜 전체 예시** → `go-gateway/docs/asterisk-dialplan.md`
+- **번호를 lite / 일반 모드로 연결** → 운영사에 요청
 
 ---
 

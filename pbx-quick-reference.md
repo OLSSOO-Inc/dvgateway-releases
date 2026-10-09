@@ -7,9 +7,9 @@
 ## 사전 준비: 토큰 발급
 
 ```bash
-# 토큰 발급 (이후 모든 요청에 사용)
+# 토큰 발급 (이후 모든 요청에 사용) — API 키는 운영사(관리자)에게 발급받습니다
 TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/token \
-  -H "X-API-Key: $(cat /etc/dvgateway/api-key)" | jq -r '.token')
+  -H "X-API-Key: dvgw_your-api-key" | jq -r '.token')
 ```
 
 ---
@@ -21,7 +21,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/token \
 ```bash
 # 내선 전체 규칙 조회 (CFI/CFB/CFN/CFU + DND/PEA)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/diversions/45144801?tenantId=YOUR_TENANT_ID"
+  "http://localhost:8080/api/v1/diversions/12345601?tenantId=YOUR_TENANT_ID"
 ```
 
 ### 설정
@@ -30,38 +30,39 @@ curl -H "Authorization: Bearer $TOKEN" \
 # 즉시 착신전환 (CFI) 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/diversions/45144801/CFI?tenantId=YOUR_TENANT_ID" \
+  "http://localhost:8080/api/v1/diversions/12345601/CFI?tenantId=YOUR_TENANT_ID" \
   -d '{"enable":"yes","destination":"01012345678"}'
 
 # 통화중 착신전환 (CFB) 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/diversions/45144801/CFB?tenantId=YOUR_TENANT_ID" \
-  -d '{"enable":"yes","destination":"07045144802"}'
+  "http://localhost:8080/api/v1/diversions/12345601/CFB?tenantId=YOUR_TENANT_ID" \
+  -d '{"enable":"yes","destination":"07012345602"}'
 
 # 착신전환 비활성화 (번호 유지)
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/diversions/45144801/CFI?tenantId=YOUR_TENANT_ID" \
+  "http://localhost:8080/api/v1/diversions/12345601/CFI?tenantId=YOUR_TENANT_ID" \
   -d '{"enable":"no"}'
 
 # 착신전환 완전 해제 (번호 삭제)
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/diversions/45144801/CFI?tenantId=YOUR_TENANT_ID"
+  "http://localhost:8080/api/v1/diversions/12345601/CFI?tenantId=YOUR_TENANT_ID"
 
 # 방해금지(DND) 켜기 / 끄기 — destination 없는 토글
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/diversions/45144801/DND?tenantId=YOUR_TENANT_ID" \
+  "http://localhost:8080/api/v1/diversions/12345601/DND?tenantId=YOUR_TENANT_ID" \
   -d '{"enable":"yes"}'
 
-# 개인비서(PEA) 켜기 — 착신전환이 있어도 개인비서가 먼저 수신
+# 개인비서(PEA) 켜기 — CFI 가 꺼져 있으면 벨이 울리기 전에 개인비서가 먼저 수신
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/diversions/45144801/PEA?tenantId=YOUR_TENANT_ID" \
+  "http://localhost:8080/api/v1/diversions/12345601/PEA?tenantId=YOUR_TENANT_ID" \
   -d '{"enable":"yes"}'
 ```
 
-> 🔔 **개인비서(PEA)** 를 켜면 착신전환이 설정되어 있어도 **개인비서가 먼저 전화를 받습니다**
-> (우선순위는 PBX 다이얼플랜이 결정). DND·PEA는 destination 없는 `{"enable":"yes"|"no"}` 토글입니다.
+> 🔔 **개인비서(PEA)**: 즉시 착신전환(CFI)이 켜져 있으면 CFI 가 우선합니다. CFI 가 꺼져 있으면
+> 벨이 울리기 전에 **개인비서가 먼저 전화를 받으므로** 조건부 착신전환(CFB/CFN/CFU)에는 도달하지 않습니다.
+> DND·PEA는 destination 없는 `{"enable":"yes"|"no"}` 토글입니다.
 
 ---
 
@@ -71,7 +72,7 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/callerid/45144800
+  http://localhost:8080/api/v1/callerid/12345600
 ```
 
 ### 이름만 변경 + 즉시 적용
@@ -79,7 +80,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/callerid/45144800 \
+  http://localhost:8080/api/v1/callerid/12345600 \
   -d '{"name":"홍길동","applyChanges":true}'
 ```
 
@@ -88,7 +89,7 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/callerid/45144800 \
+  http://localhost:8080/api/v1/callerid/12345600 \
   -d '{"number":"0212345678","applyChanges":true}'
 ```
 
@@ -97,12 +98,12 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  http://localhost:8080/api/v1/callerid/45144800 \
-  -d '{"name":"OLSSOO Inc.","number":"16682471","applyChanges":true}'
+  http://localhost:8080/api/v1/callerid/12345600 \
+  -d '{"name":"Example Inc.","number":"0212345678","applyChanges":true}'
 ```
 
-> **`"applyChanges":true`** 를 포함하면 DB 변경 후 PBX 설정 재적용이 자동 실행됩니다.
-> 생략하면 DB만 변경되고, 별도로 설정 재적용을 호출해야 합니다.
+> **`"applyChanges":true`** 를 포함하면 변경 후 PBX 설정 재적용이 자동 실행됩니다.
+> 생략하면 저장만 되고, 별도로 설정 재적용을 호출해야 합니다.
 
 ---
 
@@ -114,7 +115,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/pbx/apply-changes
 ```
 
-> 발신자 정보, 내선 설정 등 DB 변경 후 반드시 실행해야 시스템에 반영됩니다.
+> 발신자 정보 등 설정 변경 후 반드시 실행해야 시스템에 반영됩니다.
 > CallerID API에서 `"applyChanges":true` 사용 시 자동 호출되므로 별도 실행 불필요합니다.
 
 ---
@@ -127,10 +128,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   http://localhost:8080/api/v1/pbx/click-to-call \
   -d '{
-    "caller": "45144801",
+    "caller": "12345601",
     "callee": "01012345678",
-    "cidName": "OLSSOO",
-    "cidNumber": "16682471",
+    "cidName": "Example",
+    "cidNumber": "0212345678"
   }'
 
 # 발신자 정보 + 커스텀 변수 포함
@@ -138,14 +139,20 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   http://localhost:8080/api/v1/pbx/click-to-call \
   -d '{
-    "caller": "45144801",
+    "caller": "12345601",
     "callee": "01012345678",
-    "cidName": "OLSSOO",
-    "cidNumber": "16682471",
+    "cidName": "Example",
+    "cidNumber": "0212345678",
     "customValue1": "홍길동",
     "customValue2": "ORD-20260330-001",
     "customValue3": "해피콜"
   }'
+
+# 발신 취소 (클릭투콜 응답의 actionID 사용)
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  http://localhost:8080/api/v1/pbx/click-to-call/cancel \
+  -d '{"actionID":"<action-id>","caller":"12345601","callee":"01012345678"}'
 ```
 
 ---
@@ -155,24 +162,24 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ```bash
 # 조회
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=YOUR_TENANT_ID"
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=YOUR_TENANT_ID"
 
 # 음원 URL + 활성화 (자동 WAV 변환)
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=YOUR_TENANT_ID" \
-  -d '{"enabled":"yes","audioUrl":"https://www.makecall.io/greeting.mp3"}'
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=YOUR_TENANT_ID" \
+  -d '{"enabled":"yes","audioUrl":"https://example.com/greeting.mp3"}'
 
 # 비활성화만 (음원 유지)
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=YOUR_TENANT_ID" \
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=YOUR_TENANT_ID" \
   -d '{"enabled":"no"}'
 
 # 다시 활성화
 curl -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  "http://localhost:8080/api/v1/earlymedia/07045144801?tenantId=YOUR_TENANT_ID" \
+  "http://localhost:8080/api/v1/earlymedia/07012345601?tenantId=YOUR_TENANT_ID" \
   -d '{"enabled":"yes"}'
 ```
 
@@ -191,6 +198,7 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 | Early Media 설정 | `PUT` | `/api/v1/earlymedia/{내선}?tenantId=...` |
 | 설정 재적용 | `POST` | `/api/v1/pbx/apply-changes` |
 | 클릭투콜 | `POST` | `/api/v1/pbx/click-to-call` |
+| 클릭투콜 취소 | `POST` | `/api/v1/pbx/click-to-call/cancel` |
 
 ### 착신전환 타입
 
@@ -200,6 +208,8 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 | CFB | 통화중 착신전환 |
 | CFN | 부재중 착신전환 (미응답) |
 | CFU | 미연결 착신전환 (단말기 오프라인) |
+| DND | 방해금지 (on/off) |
+| PEA | 개인비서 (on/off) |
 
 ---
 

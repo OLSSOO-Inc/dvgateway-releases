@@ -7,7 +7,7 @@ SaaS DVGateway 테넌트가 브라우저에서 자기 테넌트 자격증명만 
 인증/이벤트/주입 흐름은 SDK 가이드 [14-tenant-fixed-audio-guide.md](../../docs/sdk-guide/14-tenant-fixed-audio-guide.md) 와 정확히 일치합니다.
 
 > **참고 링크**
-> - 바이너리·install.sh — [OLSSOO-Inc/dvgateway-releases](https://github.com/OLSSOO-Inc/dvgateway-releases)
+> - 배포물(web-playground.zip 등) — [OLSSOO-Inc/dvgateway-releases](https://github.com/OLSSOO-Inc/dvgateway-releases)
 > - SDK 가이드 (한국어) — [docs/sdk-guide/](../../docs/sdk-guide/README.md)
 > - SaaS 테넌트 5분 시작 — [§14 tenant-fixed-audio-guide](../../docs/sdk-guide/14-tenant-fixed-audio-guide.md)
 > - 멀티 구독자 충돌 방지 — [§15 multi-subscriber-tenant-isolation](../../docs/sdk-guide/15-multi-subscriber-tenant-isolation.md)
@@ -36,16 +36,9 @@ TLS·non-standard 포트는 **고급** 토글에서 변경할 수 있습니다.
 
 ### 발신(클릭투콜) 사전 조건
 
-발신 패널의 Originate 버튼이 비활성화돼 있다면, 해당 테넌트에 대한 발신표시번호(`cidNumber`)와 과금번호(`accountCode`)가 아직 등록되지 않았다는 뜻입니다. **운영자(admin)** 가 다음 한 줄로 등록할 수 있습니다:
+발신 패널의 Originate 버튼이 비활성화돼 있다면, 해당 테넌트에 대한 발신표시번호(`cidNumber`)와 과금번호(`accountCode`)가 아직 등록되지 않았다는 뜻입니다. **운영사(관리자)에 발신 고정값 등록을 요청하세요.**
 
-```bash
-curl -X PUT https://gw.example.com:8080/api/v1/tenants/<tenantId>/outbound-defaults \
-  -H "Authorization: Bearer <ADMIN_JWT>" \
-  -H "Content-Type: application/json" \
-  -d '{"cidNumber":"07045144801","cidName":"ACME 상담센터","accountCode":"ACCT-2026-01"}'
-```
-
-또는 게이트웨이 대시보드의 **테넌트 설정 → 발신 고정값** 카드에서 등록합니다. 이 값은 변조 방지를 위해 클라이언트(playground/SDK)에서는 절대 변경할 수 없으며, click-to-call 요청 시 게이트웨이가 자동으로 주입합니다.
+이 값은 변조 방지를 위해 클라이언트(playground/SDK)에서는 변경할 수 없으며, click-to-call 요청 시 게이트웨이가 자동으로 적용합니다.
 
 ---
 
@@ -63,7 +56,7 @@ Mode B의 STT 가 빠진 이유: STT는 통화 오디오 스트림(20ms 프레�
 중계하는 작업이라 브라우저 3홉 경로가 적절치 않습니다. STT는 Mode A로 충분합니다.
 
 **키 저장**:
-- 게이트웨이가 마스킹된 형태(`••••••••abcd`)로 받은 키를 `/etc/dvgateway/apikeys/{tenantId}.json` 에 보관 (Mode A)
+- 게이트웨이가 받은 키를 테넌트별로 보관하며, 조회 시에는 마스킹된 형태(`••••••••abcd`)로만 보입니다 (Mode A)
 - 브라우저 `localStorage` 의 `dvgw-playground-provider-v1` 에도 사용자 입력 그대로 저장 (Clear credentials 누르면 둘 다 비워짐)
 
 **테스트 합성** 버튼은 현재 모드 + 선택된 provider 로 "테스트입니다" 를 합성해 PCM 바이트 길이를 보고합니다 — 통화에는 주입하지 않으므로 안전하게 키 검증용으로 쓰세요.
@@ -84,7 +77,7 @@ Mode B의 STT 가 빠진 이유: STT는 통화 오디오 스트림(20ms 프레�
 | 5 | DTMF 수신 | 키패드 UI로 받은 DTMF 강조 표시 |
 | 6 | STT 실시간 자막 | 회의 ID에 대해 클라우드 STT 시작/정지 + 자막 라이브 |
 | 7 | 통화 종료 후 후처리 | `call:ended` 누적 — CRM 업로드/설문 발송 패턴 |
-| … | 앱 푸시·알림 | 연동된 모바일 앱(내선 기준)으로 dvg_event 푸시 — 범용/통화요약/부재중. 푸시 릴레이 설정 필요 |
+| … | 앱 푸시·알림 | 연동된 모바일 앱(내선 기준)으로 dvg_event 푸시 — 범용/통화요약/부재중. 운영사의 푸시 설정 필요 |
 
 > 인앱 좌측 목록의 번호가 최신 기준입니다(이 표는 대표 항목만 발췌). 전체 목록은 `templates/index.js` 참조.
 
@@ -128,7 +121,7 @@ JWT 페이로드의 `tid` 클레임으로 게이트웨이가 자동 격리하므
 |------|------------|
 | `login failed (404)` | 포트 오타. `/login`은 **8081**번 포트입니다 (대시보드와 동일) |
 | `login failed (401)` | tenantId 또는 password 오류 |
-| WebSocket 즉시 `1006` 끊김 | JWT 만료(24h) — Connect 다시 / 프록시(nginx)가 `Upgrade`/`Connection` 헤더 차단 |
+| WebSocket 즉시 `1006` 끊김 | JWT 만료(24h) — Connect 다시 / 그래도 끊기면 중간 프록시가 `Upgrade`/`Connection` 헤더를 전달하는지 운영사에 확인 |
 | TTS `403` | 받은 `linkedId`가 내 테넌트 소유가 아님 (다른 테넌트 통화의 linkedId 사용) |
 | TTS `404` | 해당 통화가 이미 종료됨 — `call:ended` 받은 뒤에는 호출 불가 |
 | TTS `503` | 기능 비활성 — 라이선스 확인 요청 |

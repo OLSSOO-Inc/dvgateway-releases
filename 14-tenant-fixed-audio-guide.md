@@ -114,11 +114,11 @@ ws://gw.example.com:8080/api/v1/ws/callinfo?token=<JWT>
   "linkedId": "1778748883.1007",
   "mode": "both",
   "dir": "both",
-  "did": "07045144820",
+  "did": "07012345620",
   "callid": "1778748883.1007",
-  "caller": "01026132471",
+  "caller": "01012345678",
   "callerName": "홍길동",
-  "callee": "07045144820",
+  "callee": "07012345620",
   "tenantId": "tenant-acme",
   "serverId": "gw-seoul-1",
   "streams": {
@@ -135,7 +135,7 @@ ws://gw.example.com:8080/api/v1/ws/callinfo?token=<JWT>
 - `linkedId` — 이 통화의 고유 ID. TTS 주입 등 후속 API 호출에 이 값을 사용합니다.
 - `did` — 어떤 번호로 걸려왔는지. 여러 DID를 받고 있다면 시나리오 분기에 사용.
 - `caller` — 발신자 번호.
-- `streams` / `streamUrl` — 이 통화의 오디오 WebSocket 주소. ⚠️ **토큰이 없는 주소입니다.** gw 1.4.16.234 부터 오디오 스트림은 토큰이 필수(`GW_STREAM_AUTH=enforce` 기본)라 **그대로 열면 401** 입니다. SDK 를 쓰면 `gw.streamAudio(linkedId)` / `gw.stream_audio(linked_id)` 가 토큰을 붙여 줍니다. 직접 열 때는 `?token=<JWT>` 를 덧붙이거나 `Authorization: Bearer <JWT>` 헤더를 주세요(JWT = `POST /api/v1/auth/token` 으로 받은 값).
+- `streams` / `streamUrl` — 이 통화의 오디오 WebSocket 주소. ⚠️ **토큰이 없는 주소입니다.** 게이트웨이 1.4.16.234 부터 오디오 스트림은 토큰이 필수라 **그대로 열면 401** 입니다. SDK 를 쓰면 `gw.streamAudio(linkedId)` / `gw.stream_audio(linked_id)` 가 토큰을 붙여 줍니다. 직접 열 때는 `?token=<JWT>` 를 덧붙이거나 `Authorization: Bearer <JWT>` 헤더를 주세요(JWT = `POST /api/v1/auth/token` 으로 받은 값).
 
 ### channel:state 이벤트 예시
 
@@ -205,7 +205,7 @@ websocat "ws://$HOST:8080/api/v1/ws/callinfo?token=$TOKEN" \
 ```
 {"event":"snapshot","linkedId":null,"did":null,"caller":null,"state":null}
 {"event":"channel:state","linkedId":"1778748883.1007","did":null,"caller":null,"state":"ring"}
-{"event":"call:new","linkedId":"1778748883.1007","did":"07045144820","caller":"01026132471","state":null}
+{"event":"call:new","linkedId":"1778748883.1007","did":"07012345620","caller":"01012345678","state":null}
 {"event":"channel:state","linkedId":"1778748883.1007","did":null,"caller":null,"state":"up"}
 {"event":"call:ended","linkedId":"1778748883.1007","did":null,"caller":null,"state":null}
 ```
@@ -301,7 +301,7 @@ const TOKEN = process.env.GW_JWT;        // 14.3에서 받은 JWT
 
 // did → 음원 매핑 (미리 ffmpeg로 변환된 slin16 PCM)
 const AUDIO_BY_DID = {
-  '07045144820': '/var/lib/myapp/welcome-acme.pcm',
+  '07012345620': '/var/lib/myapp/welcome-acme.pcm',
 };
 const DEFAULT_AUDIO = '/var/lib/myapp/welcome-default.pcm';
 
@@ -352,7 +352,7 @@ HOST  = "gw.example.com"
 TOKEN = os.environ["GW_JWT"]
 
 AUDIO_BY_DID = {
-    "07045144820": "/var/lib/myapp/welcome-acme.pcm",
+    "07012345620": "/var/lib/myapp/welcome-acme.pcm",
 }
 DEFAULT_AUDIO = "/var/lib/myapp/welcome-default.pcm"
 

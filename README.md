@@ -25,7 +25,7 @@
 ## 👋 비전공자 / 의사결정자라면
 
 기술 세부사항보다 **"우리 회사에 어떤 활용이 가능한가?"**가 궁금하다면
-먼저 **[초보자 활용 가이드](../beginner-guides/README.md)**를 보세요.
+먼저 **[초보자 활용 가이드](beginner-guides/README.md)**를 보세요.
 5가지 대표 활용 시나리오(AI 상담원·무인 안내·회의록·콜센터 어시스턴트·YouTube 라이브)를
 각각 5~30분 안에 이해할 수 있도록 정리했습니다.
 
@@ -53,7 +53,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 
 | # | 문서 | 내용 |
 |---|------|------|
-| 01 | [시작하기](01-getting-started.md) | 시스템 요구사항, 서버 설치, SDK 설치, API 키 준비, 헬로 월드 봇 |
+| 01 | [시작하기](01-getting-started.md) | 개발 환경, 게이트웨이 접속 정보, SDK 설치, API 키 준비, 헬로 월드 봇 |
 | 02 | [AI 서비스 목록](02-ai-services.md) | 연동 가능한 STT·TTS·LLM 서비스 전체 목록, 한국 환경 추천 조합 |
 | 03 | [파이프라인 패턴](03-pipeline-patterns.md) | 일반 통화(STT→LLM→TTS), OpenAI 리얼타임, 컨퍼런스 회의록 |
 | 04 | [어댑터 상세 설정](04-adapter-reference.md) | Deepgram, ElevenLabs, Claude, GPT, OpenAI TTS, 로컬 STT/LLM 등 |
@@ -62,21 +62,21 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | 07 | [비용 절감](07-cost-optimization.md) | TTS 캐시, VAD 필터링, 프로바이더별 비용 비교 |
 | 08 | [Comfort Noise](08-comfort-noise.md) | AI 처리 중 무음 방지 (자동/수동, 커스텀 배경음) |
 | 09 | [파이프라인 훅 + Webhook](09-hooks-webhook.md) | RAG 컨텍스트 주입, DB 연동, n8n/Flowise Webhook 어댑터 |
-| 10 | [FAQ + 문제 해결](10-faq-troubleshooting.md) | 자주 묻는 질문, 트러블슈팅, 서버 업데이트, 초보자 가이드 |
+| 10 | [FAQ + 문제 해결](10-faq-troubleshooting.md) | 자주 묻는 질문, 트러블슈팅, 초보자 가이드 |
 | 11 | [PBX 관리 + 캠페인](11-pbx-management.md) | 착신전환, 발신자표시, 클릭투콜, 아웃바운드 캠페인, 이벤트 모니터링 |
-| 12 | [통화 음질 문제 분석 (TTS+STT)](12-tts-audio-troubleshooting.md) | TTS/STT 증상 분류, 로그 분석, SDK 점검, 환경변수, 에스컬레이션 기준 |
+| 12 | [통화 음질 문제 분석 (TTS+STT)](12-tts-audio-troubleshooting.md) | TTS/STT 증상 분류, SDK 점검, 운영사 문의 기준 |
 | 13 | [음성 플로우 제어 API](13-voice-flow-controls.md) | DTMF 수집, STT 음소거, 오디오 파일 재생, 상담원 이관 |
 | 14 | [신규 테넌트 가이드 — 통화 이벤트 + 고정 음원 재생](14-tenant-fixed-audio-guide.md) | SaaS 테넌트 가입 후 5분 만에 callinfo 수신 + TTS 주입까지 |
 | 15 | [같은 테넌트 멀티 구독자 충돌 방지](15-multi-subscriber-tenant-isolation.md) | 봇 + 모니터 + 데모를 한 테넌트로 운영할 때의 책임 분리, preempt 감지 |
 | 16 | [Web Playground 빠른 시작 — 코드 없이 5분 체험](16-web-playground-quickstart.md) | 브라우저만으로 통화 이벤트·TTS·DTMF·STT 클릭 체험, 본인 TTS/STT 키 테스트 |
-| 17 | [최소 비용 IVR 봇 (`mode=lite`)](17-lite-mode-ivr.md) | 안내 멘트 + DTMF만 받는 통화에 STT/LLM/TTS 없이 ARI Playback만 쓰는 표준 패턴. 비용·동시통화 효율 극대화 |
+| 17 | [최소 비용 IVR 봇 (`mode=lite`)](17-lite-mode-ivr.md) | 안내 멘트 + DTMF만 받는 통화에 STT/LLM/TTS 없이 재생(Playback)만 쓰는 표준 패턴. 비용·동시통화 효율 극대화 |
 | 18 | [앱 푸시 / 알림 (모바일 FCM)](18-app-push-notifications.md) | 연동된 모바일 앱 사용자에게 푸시 — 통화 종료 후 요약/녹취 링크, 부재중, 범용 `dvg_event`. `pushToExtension`/`notifyCallSummary`/`notifyMissedCall` |
 | 19 | [큐(대기열) 관리 + 에이전트 런타임](19-queues.md) | 콜센터 큐 조회·생성·수정·삭제 + 상담원 실시간 로그인/이석/복귀/로그아웃. `listQueues`/`createQueue`/`queueAgentLogin`/`queueAgentPause` |
 | 20 | [네이버웍스(NAVER WORKS) 연동](20-naverworks-integration.md) | **SDK 아님 · 게이트웨이 내장.** ① 봇 알림(통화·팩스 → WORKS 메시지) ② WOFF 미니앱(WORKS 안 클릭투콜·팩스·이력·프레즌스). 대시보드 "네이버웍스" 탭 / `…/config/lineworks`·`…/config/woff` |
-| 21 | [MCP 연동 — AI 에이전트 전화 도구](21-mcp-agent-tools.md) | **SDK 아님 · 게이트웨이 내장.** Claude Desktop/Code·n8n 같은 AI 에이전트가 전화 시스템을 도구로 조작("부재중 요약해서 문자 회신"). 도구 8종(통화이력·AI요약·SMS·클릭투콜·프레즌스·착신전환·DND·세션), `GW_MCP_ENABLED` opt-in, 온프렘 로컬 LLM 구성 포함 |
+| 21 | [MCP 연동 — AI 에이전트 전화 도구](21-mcp-agent-tools.md) | **SDK 아님 · 게이트웨이 내장.** Claude Desktop/Code·n8n 같은 AI 에이전트가 전화 시스템을 도구로 조작("부재중 요약해서 문자 회신"). 도구 8종(통화이력·AI요약·SMS·클릭투콜·프레즌스·착신전환·DND·세션), 운영사가 켜야 사용 가능, 로컬 LLM 구성 포함 |
 | 21 | [SMS 발송·수신 (SIP MESSAGE)](21-sms.md) | 문자 발신(동보 최대 10)·수신·이력·테넌트 라우팅 설정. 내선→실번호 자동 변환, 실패 시 관리자 문의 안내. `sendSMS`/`listSMS`/`getSMS`/`deleteSMS`/`setSMSConfig`. **발송 API 레퍼런스**(요청 필드 전체·멱등 키·오류 코드 표)와 ⚠️ `delivered` ≠ 배달 확인 포함 |
-| 22 | [SMS 알림 게이트웨이 활용](22-sms-alert-gateway.md) | **SDK 불필요 · 복붙 레시피.** 모니터링(Zabbix)·cron·systemd·n8n·사내 시스템에서 DVG SMS API 로 알림 문자 발송 — 건당 과금 없는 사내 문자 게이트웨이. 공용 발송 스크립트 포함 |
-| 23 | [기기발신 휴대폰 번호 인증](23-mobile-number-verify.md) | **SDK 아님 · 게이트웨이 내장.** 앱 사용자가 **자기 폰에서 문자 한 통**을 보내면 서버가 그 **발신번호를 관측**해 휴대폰 번호를 확정 — 사용자는 번호를 타이핑하지 않고 서버는 사용자의 주장을 믿지 않는다. 착신전환 목적지 오입력(회사 전화가 남에게 가는 사고) 차단용. `…/mobile-verify/{start,status}` · 전제조건·위협모델·개인정보(토큰 마스킹·30일 보존) 포함 |
+| 22 | [SMS 알림 게이트웨이 활용](22-sms-alert-gateway.md) | **SDK 불필요 · 복붙 레시피.** 모니터링(Zabbix)·cron·n8n·사내 시스템에서 DVG SMS API 로 알림 문자 발송 — 건당 과금 없는 사내 문자 게이트웨이. 공용 발송 스크립트 포함 |
+| 23 | [기기발신 휴대폰 번호 인증](23-mobile-number-verify.md) | **SDK 아님 · 게이트웨이 내장.** 앱 사용자가 **자기 폰에서 문자 한 통**을 보내면 서버가 그 **발신번호를 관측**해 휴대폰 번호를 확정 — 사용자는 번호를 타이핑하지 않고 서버는 사용자의 주장을 믿지 않는다. 착신전환 목적지 오입력 차단용. `…/mobile-verify/{start,status}` · 전제조건·개인정보(토큰 마스킹·30일 보존) 포함 |
 
 ---
 
@@ -97,6 +97,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | [07-pipeline-hooks-rag.ts](examples/typescript/07-pipeline-hooks-rag.ts) | RAG + CRM API + DB 저장 (훅) | [훅 + Webhook](09-hooks-webhook.md) |
 | [08-webhook-n8n-integration.ts](examples/typescript/08-webhook-n8n-integration.ts) | n8n Webhook 연동 + Fallback | [훅 + Webhook](09-hooks-webhook.md) |
 | [09-ai-sms-confirmation.ts](examples/typescript/09-ai-sms-confirmation.ts) | 영업시간 외 AI 예약 접수 + 확인 문자(SMS) 자동 발송 | [SMS](21-sms.md) · [훅 + Webhook](09-hooks-webhook.md) |
+| [10-realtime-translate-ko-en.ts](examples/typescript/10-realtime-translate-ko-en.ts) | 실시간 통역 (한국어 ↔ 영어, OpenAI Realtime) | [파이프라인 패턴](03-pipeline-patterns.md) |
 
 ### Python 예제
 
@@ -110,6 +111,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | [06_pipeline_hooks_rag.py](examples/python/06_pipeline_hooks_rag.py) | RAG + CRM API + DB 저장 (훅) | [훅 + Webhook](09-hooks-webhook.md) |
 | [07_webhook_integration.py](examples/python/07_webhook_integration.py) | Webhook 연동 + Fallback | [훅 + Webhook](09-hooks-webhook.md) |
 | [08_ai_sms_confirmation.py](examples/python/08_ai_sms_confirmation.py) | 영업시간 외 AI 예약 접수 + 확인 문자(SMS) 자동 발송 | [SMS](21-sms.md) · [훅 + Webhook](09-hooks-webhook.md) |
+| [09_realtime_translate_ko_en.py](examples/python/09_realtime_translate_ko_en.py) | 실시간 통역 (한국어 ↔ 영어, OpenAI Realtime) | [파이프라인 패턴](03-pipeline-patterns.md) |
 
 ### 빠른 시작
 
@@ -130,7 +132,7 @@ python examples/python/01_basic_voice_bot.py
 
 ## 🔗 관련 링크
 
-- [GitHub Releases](https://github.com/OLSSOO-Inc/dvgateway-releases/releases) — 최신 바이너리 다운로드
+- [GitHub Releases](https://github.com/OLSSOO-Inc/dvgateway-releases/releases) — Web Playground 등 배포물 다운로드
 
 ---
 

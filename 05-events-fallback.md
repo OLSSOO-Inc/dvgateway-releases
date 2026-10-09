@@ -23,7 +23,7 @@ gw.pipeline()
       // + `\n   방향        : ${session.dir}`           // 'in' | 'out' | 'both'
       // + `\n   컨퍼런스ID  : ${session.confId}`
       // + `\n   테넌트 ID   : ${session.tenantId}`
-      // + `\n   커스텀 1    : ${session.customValue1}`  // 다이얼플랜에서 전달한 사용자 정의 변수
+      // + `\n   커스텀 1    : ${session.customValue1}`  // 번호 설정에서 전달한 사용자 정의 변수
       // + `\n   커스텀 2    : ${session.customValue2}`
       // + `\n   커스텀 3    : ${session.customValue3}`
       // + `\n   시작시각    : ${session.startedAt}`
@@ -67,105 +67,53 @@ gw.pipeline()
 | 필드 (TS / Python) | 타입 | 설명 |
 |---|---|---|
 | `linkedId` / `linked_id` | `string` | Dynamic VoIP Linked ID (통화 그룹 식별자) |
-| `caller` | `string?` | 발신자 전화번호 (`CALLERID(num)`) |
-| `callerName` / `caller_name` | `string?` | 발신자 표시 이름 (`CALLERID(name)`) |
-| `callee` | `string?` | 착신번호 (B-leg / EXTEN) |
+| `caller` | `string?` | 발신자 전화번호 |
+| `callerName` / `caller_name` | `string?` | 발신자 표시 이름 |
+| `callee` | `string?` | 착신번호 |
 | `did` | `string?` | DID (Direct Inward Dialing) 대표번호 |
-| `callId` / `call_id` | `string?` | 업무 시스템 통화 ID (CRM 등 ARI args) |
+| `callId` / `call_id` | `string?` | 업무 시스템 통화 ID (CRM 등에서 전달) |
 | `agentNumber` / `agent_number` | `string?` | 상담원 내선번호 |
 | `dir` | `'in' \| 'out' \| 'both'` | 오디오 스트림 방향 |
 | `confId` / `conf_id` | `string?` | ConfBridge 컨퍼런스 ID |
 | `tenantId` / `tenant_id` | `string?` | 멀티테넌트 ID |
-| `customValue1` / `custom_value_1` | `string?` | 사용자 정의 변수 1 (다이얼플랜 `CUSTOM_VALUE_01`) |
-| `customValue2` / `custom_value_2` | `string?` | 사용자 정의 변수 2 (다이얼플랜 `CUSTOM_VALUE_02`) |
-| `customValue3` / `custom_value_3` | `string?` | 사용자 정의 변수 3 (다이얼플랜 `CUSTOM_VALUE_03`) |
+| `customValue1` / `custom_value_1` | `string?` | 사용자 정의 변수 1 |
+| `customValue2` / `custom_value_2` | `string?` | 사용자 정의 변수 2 |
+| `customValue3` / `custom_value_3` | `string?` | 사용자 정의 변수 3 |
 | `startedAt` / `started_at` | `Date` / `datetime` | 통화 시작 시각 |
 | `streamUrl` / `stream_url` | `string` | 오디오 WebSocket URL. ⚠️ **토큰이 없는 주소** — 그대로 열면 401(gw 1.4.16.234+). `streamAudio(linkedId)` 를 쓰세요 |
 | `callDirection` / `call_direction` | `string?` | `inbound` / `outbound`. 발신·수신은 이 값으로 가르세요(`dir` 은 스트림 방향). SDK 1.9.4+ |
 | `orgId` / `org_id` | `string \| null` | 주문 회사 귀속(gw 1.4.15.209+). `null`=미매핑. SDK 1.9.4+ |
 | `metadata` | `object` / `dict` | 커스텀 키-값 메타데이터 |
 
-> 💡 `caller_name`, `did`, `callee`, `call_id`, `agent_number`는 Dynamic VoIP ARI에서 전달되는 값이며,
+> 💡 `caller_name`, `did`, `callee`, `call_id`, `agent_number`는 PBX에서 전달되는 값이며,
 > PBX 설정에 따라 비어 있을 수 있습니다.
 
-### 커스텀 변수 (custom_value) — 다이얼플랜에서 AI 파이프라인으로 전달
+### 커스텀 변수 (custom_value) — 통화 설정에서 AI 파이프라인으로 전달
 
-Dynamic VoIP 다이얼플랜에서 `CUSTOM_VALUE_01` ~ `CUSTOM_VALUE_03` 변수를 설정하면, AI 파이프라인의 `session` 객체에서 접근할 수 있습니다. CRM 연동, 고객 등급, 캠페인 코드 등 비즈니스 로직에 필요한 정보를 전달하는 데 사용합니다.
+번호(통화 흐름) 설정에 사용자 정의 값 3개(`custom_value_01` ~ `custom_value_03`)를 넣어 두면, AI 파이프라인의 `session` 객체에서 접근할 수 있습니다. CRM 연동, 고객 등급, 캠페인 코드 등 비즈니스 로직에 필요한 정보를 전달하는 데 사용합니다.
 
-**전체 데이터 흐름:**
+> 이 값은 **운영사가 번호(통화 흐름) 설정에 넣어 줍니다.** 어떤 번호에 어떤 값을 넣을지 운영사에 요청하세요.
+
+**데이터 흐름:**
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Dynamic VoIP Dialplan                                                  │
-│                                                                         │
-│  Set(CUSTOM_VALUE_01=홍길동)     ← 고객명 (CRM 조회 결과)               │
-│  Set(CUSTOM_VALUE_02=ORD-001)   ← 주문번호 (Originate 시 전달)         │
-│  Set(CUSTOM_VALUE_03=happycall) ← 통화 목적 (캠페인 코드)              │
-│                                                                         │
-│  Stasis(dvgateway, ..., custom_value_01=${CUSTOM_VALUE_01},             │
-│         custom_value_02=${CUSTOM_VALUE_02},                             │
-│         custom_value_03=${CUSTOM_VALUE_03})                             │
-└─────────────────┬───────────────────────────────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  DVGateway (Go 미디어 게이트웨이)                                        │
-│                                                                         │
-│  ARI ParseArgs() → CallArgs.CustomValue1/2/3                           │
-│       │                                                                 │
-│       ├─→ Registry.CallMeta  (세션 메타데이터에 저장)                    │
-│       │                                                                 │
-│       ├─→ CallInfo Hub ──→ call:new 이벤트에 포함                       │
-│       │   {                                                             │
-│       │     "event": "call:new",                                        │
-│       │     "customValue1": "홍길동",                                    │
-│       │     "customValue2": "ORD-001",                                  │
-│       │     "customValue3": "happycall"                                 │
-│       │   }                                                             │
-│       │                                                                 │
-│       ├─→ CDR Record ──→ JSON Lines / SQLite 영속 저장                  │
-│       │                                                                 │
-│       └─→ Session API ──→ GET /api/v1/sessions/{linkedId} 응답          │
-└─────────────────┬───────────────────────────────────────────────────────┘
-                  │  WebSocket (call:new 이벤트)
-                  ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  SDK (TypeScript / Python)                                              │
-│                                                                         │
-│  .onNewCall(async (session) => {                                        │
-│      session.customValue1   // "홍길동"      (TypeScript)               │
-│      session.customValue2   // "ORD-001"     (TypeScript)               │
-│      session.customValue3   // "happycall"   (TypeScript)               │
-│                                                                         │
-│      session.custom_value_1 // "홍길동"      (Python)                   │
-│      session.custom_value_2 // "ORD-001"     (Python)                   │
-│      session.custom_value_3 // "happycall"   (Python)                   │
-│  })                                                                     │
-│                                                                         │
-│  활용 예시:                                                              │
-│  ┌──────────────────────┬────────────────────────────────────────┐      │
-│  │ 활용 패턴             │ 코드 예시                               │      │
-│  ├──────────────────────┼────────────────────────────────────────┤      │
-│  │ TTS 인사말에 고객명    │ gw.say(id, `${cv1}님 안녕하세요`)     │      │
-│  │ LLM 프롬프트 주입     │ llm.setSystemPrompt(`고객: ${cv1}`)   │      │
-│  │ 통화 목적별 분기      │ if (cv3 === 'happycall') { ... }      │      │
-│  │ 외부 API 조회 키      │ crm.lookup(cv2) // 주문번호로 조회     │      │
-│  └──────────────────────┴────────────────────────────────────────┘      │
-└─────────────────────────────────────────────────────────────────────────┘
+번호 설정 (custom_value_01~03)
+        │
+        ▼
+DVGateway ──→ call:new 이벤트 { "customValue1": "vip", "customValue2": "campaign-2026Q1", ... }
+        │      GET /api/v1/sessions/{linkedId} 응답 · CDR 기록에도 포함
+        ▼
+SDK  session.customValue1~3 (TypeScript) / session.custom_value_1~3 (Python)
 ```
 
-**다이얼플랜 예제 (Dynamic VoIP extensions.conf):**
+**활용 예시:**
 
-```ini
-; 인바운드 통화에 커스텀 변수를 설정하는 예
-[from-trunk]
-exten => _X.,1,NoOp(인바운드 콜 처리)
- same => n,Set(CUSTOM_VALUE_01=vip)            ; 고객 등급
- same => n,Set(CUSTOM_VALUE_02=campaign-2026Q1) ; 캠페인 코드
- same => n,Set(CUSTOM_VALUE_03=${CDR(uniqueid)}) ; 외부 시스템 고유 ID
- same => n,Stasis(dvgateway,mode=both,role=monitor,did=${DID_NUMBER},callernum=${CALLERID(num)},callername=${CALLERID(name)},callednum=${EXTEN},custom_value_01=${CUSTOM_VALUE_01},custom_value_02=${CUSTOM_VALUE_02},custom_value_03=${CUSTOM_VALUE_03})
- same => n,Dial(SIP/${EXTEN},30)
-```
+| 활용 패턴 | 코드 예시 |
+|---|---|
+| TTS 인사말에 고객명 | `` gw.say(id, `${cv1}님 안녕하세요`) `` |
+| LLM 프롬프트 주입 | `` llm.setSystemPrompt(`고객: ${cv1}`) `` |
+| 통화 목적별 분기 | `if (cv3 === 'happycall') { ... }` |
+| 외부 API 조회 키 | `crm.lookup(cv2) // 주문번호로 조회` |
 
 **SDK에서 활용 — TypeScript:**
 
@@ -175,7 +123,7 @@ gw.pipeline()
   .onNewCall(async (session) => {
     const grade = session.customValue1;     // "vip"
     const campaign = session.customValue2;  // "campaign-2026Q1"
-    const extId = session.customValue3;     // CDR uniqueid
+    const extId = session.customValue3;     // 외부 시스템 고유 ID
 
     // 고객 등급에 따라 LLM 프롬프트를 다르게 설정
     if (grade === 'vip') {
@@ -194,7 +142,7 @@ async def on_new_call(event):
     session = event["session"]
     grade    = session.custom_value_1    # "vip"
     campaign = session.custom_value_2    # "campaign-2026Q1"
-    ext_id   = session.custom_value_3    # CDR uniqueid
+    ext_id   = session.custom_value_3    # 외부 시스템 고유 ID
 
     if grade == "vip":
         llm.set_system_prompt("VIP 고객입니다. 최우선으로 응대해 주세요.")
@@ -209,19 +157,19 @@ async def on_new_call(event):
 
 ### 개요
 
-SDK의 `injectTts()` / `inject_tts()` / `say()` 는 오디오 iterator가 소진되면 즉시 반환됩니다. 그러나 **게이트웨이가 실제로 Asterisk에 모든 프레임을 주입 완료한 시점이 아닙니다**. 게이트웨이의 TTS Player는 20ms 틱 기반 루프로 프레임을 밀어넣기 때문에, 6초짜리 TTS는 대략 6초간 Asterisk에 계속 프레임을 공급합니다.
+SDK의 `injectTts()` / `inject_tts()` / `say()` 는 오디오 iterator가 소진되면 즉시 반환됩니다. 그러나 **그 시점은 통화 상대에게 재생이 끝난 시점이 아닙니다**. 게이트웨이는 오디오를 실시간 속도로 통화에 재생하므로, 6초짜리 TTS는 반환 후에도 대략 6초간 재생이 계속됩니다.
 
 `tts:complete` 이벤트는 게이트웨이가 **실제 재생 완료 시점**에 발행하는 authoritative 신호입니다.
 
 ### 발생 시점
 
-- `Player.Play()` 세션 정상 EOF 종료 (페이드아웃 포함 모든 프레임 Asterisk로 전송 완료)
-- 명시적 `Stop()` 호출로 중단
-- 동시 `Play()` 호출에 의한 선점 (stale 세션은 발행 안 함 — 중복 알림 방지)
+- 재생이 정상적으로 끝까지 진행됨 (페이드아웃 포함)
+- 명시적 중지 요청으로 중단됨
+- 새 재생 요청에 의해 선점됨 (선점된 이전 재생은 발행 안 함 — 중복 알림 방지)
 
 ### 의미
 
-게이트웨이 → Asterisk WebSocket 주입 완료. Asterisk → 전화기 RTP 버퍼 지연(~20–40ms)은 고려 안 됨. IVR / 음성봇 턴 관리 용도로는 무의미한 수준의 차이입니다.
+게이트웨이가 통화 채널로 오디오 전달을 마친 시점입니다. 전화기까지의 네트워크 버퍼 지연(~20–40ms)은 포함되지 않지만, IVR / 음성봇 턴 관리 용도로는 무의미한 수준의 차이입니다.
 
 ### 주요 활용 사례
 
@@ -359,18 +307,18 @@ gw.onTtsComplete((ev) => {
 | `conf:ended` | 회의 종료 | `confId` |
 | **`tts:complete`** | **TTS 재생 완료 (v1.4+)** | **`linkedId`, `tenantId`, `serverId`, `timestamp`** |
 | **`call:dtmf`** | **DTMF 키 입력** | **`linkedId`, `digit`, `phase`, `durationMs`, `direction`, `tenantId`, `serverId`, `ts`** |
-| `call:ringing` *(SDK 1.9.4+)* | 피호출 내선이 울리기 시작(Stasis 를 안 거치는 통화 포함) | `linkedId`, `caller`, `callerName`, `callee` |
+| `call:ringing` *(SDK 1.9.4+)* | 피호출 내선이 울리기 시작(AI 파이프라인을 거치지 않는 통화 포함) | `linkedId`, `caller`, `callerName`, `callee` |
 | `call:rejected` *(SDK 1.9.4+)* | 동시통화 한도로 통화 수용 거부 | `linkedId`, `reason`(`license_global`/`tenant_limit`), `currentActive`, `limit` |
 | `stt:result` *(SDK 1.9.4+)* | 게이트웨이 클라우드 STT 결과 | `linkedId`, `speaker`, `text`, `rawText`(보정 전 원문, 다를 때만), `isFinal` |
 | `sms:received` *(SDK 1.9.4+)* | 인입 SMS | `from`, `to`, `text`, `messageId` |
 | `warm_transfer:bridged` *(SDK 1.9.4+)* | warm transfer 브릿지 성립 | `linkedId`, `holdStartMs`, `timestamp` |
 
-> ⚠️ `call:rejected` 는 예전 문서에 «SDK 1.7.0+» 로 적혀 있었지만 **1.9.3 까지는 SDK 가 받지 못하고 버렸습니다.** 받으려면 SDK 1.9.4 이상을 쓰세요.
-> `conf:join`·`conf:leave`·`conf:ended` 는 현재 게이트웨이에서 callinfo 가 아니라 대시보드 쪽 이벤트라, SDK 로 오지 않을 수 있습니다.
+> ⚠️ `call:rejected` 를 받으려면 SDK 1.9.4 이상을 쓰세요.
+> `conf:join`·`conf:leave`·`conf:ended` 는 SDK 로 오지 않을 수 있습니다.
 
 ### 실패 응답 다루기 (SDK 1.9.4+)
 
-SDK 메서드는 기본적으로 게이트웨이의 **실패 응답(400·403·429 등)을 결과처럼 돌려줍니다**(종전 동작 유지 — 경고 로그는 남깁니다).
+SDK 메서드는 기본적으로 게이트웨이의 **실패 응답(400·403·429 등)을 결과처럼 돌려줍니다**(경고 로그는 남깁니다).
 새 코드는 예외로 받는 것을 권합니다.
 
 ```typescript
@@ -414,7 +362,7 @@ except DVGatewayHttpError as e:
   "phase":      "end",
   "durationMs": 120,
   "direction":  "received",
-  "tenantId":   "7be69580e27641df",
+  "tenantId":   "0123456789abcdef",
   "serverId":   "gw-seoul-01",
   "ts":         1745000000000
 }
@@ -428,7 +376,7 @@ except DVGatewayHttpError as e:
 | `direction` | `"received"` \| `"sent"` | 수신(고객) / 송신(게이트웨이) |
 | `ts` | `number` | 이벤트 발생 시각 (unix ms) |
 
-**`GW_DTMF_PHASE_FILTER`** 환경변수로 발행 단계를 제한할 수 있습니다 (기본값: `"end"` — DTMFEnd 이벤트만 발행, `durationMs` 포함). `"begin"` 으로 설정하면 두 단계 모두 발행됩니다.
+기본적으로 `phase="end"` 이벤트만 발행됩니다(`durationMs` 포함). `"begin"` 단계까지 받아야 하면 운영사에 요청하세요(게이트웨이 전체 설정입니다).
 
 ### 구독 예제
 
@@ -459,7 +407,7 @@ async def on_dtmf(event):
 {
   "event":    "tts:complete",
   "linkedId": "1775805184.495",
-  "tenantId": "7be69580e27641df",
+  "tenantId": "0123456789abcdef",
   "serverId": "gw-seoul-01"
 }
 ```
@@ -472,7 +420,7 @@ async def on_dtmf(event):
 
 2. **여러 통화 동시 핸들링 시 `linkedId` 필터 필수** — 콜백은 전역으로 등록되므로 반드시 `ev.linkedId === myLinkedId` 체크.
 
-3. **`Stop()` 이나 선점으로 중단된 경우도 발행됩니다** — "정상 완료"와 "중단"을 구분하고 싶다면 애플리케이션 레벨에서 상태 추적 필요. 게이트웨이는 "재생 루프가 끝났음" 만 알림.
+3. **중지 요청이나 선점으로 중단된 경우도 발행됩니다** — "정상 완료"와 "중단"을 구분하고 싶다면 애플리케이션 레벨에서 상태 추적 필요. 게이트웨이는 "재생 루프가 끝났음" 만 알림.
 
 4. **S2S 모드에서 응답이 매우 긴 경우** — OpenAI/Gemini는 턴 단위로 오디오를 나눠 보내기도 합니다. 각 청크를 별도로 `injectTts()` 하면 `tts:complete`도 청크별로 발생. 한 턴 = 한 이벤트로 받고 싶다면 청크를 모아 한 번에 주입하세요.
 

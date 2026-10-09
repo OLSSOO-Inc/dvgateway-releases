@@ -10,27 +10,12 @@ AI 음성 봇은 사용자 발화 후 응답을 생성하는 동안(STT → LLM 
 - SDK가 "지금 AI 처리 중이다" 시그널을 보내면 즉시 활성화
 - TTS 응답 재생이 시작되면 자동으로 fade-out 후 중단
 
-### Comfort Noise 서버 설정
+### 사용 전 확인
 
-게이트웨이 환경변수(`.env` 또는 `/etc/dvgateway/env`)에 추가하세요:
+Comfort Noise는 게이트웨이 운영사(관리자)가 켜야 동작합니다. 운영사에 요청하세요.
+배경 소음 크기(아주 작게 / 미묘하게 / 들릴 정도로)와 커스텀 배경음 사용 여부도 운영사가 정합니다.
 
-```bash
-# 기본: 합성 배경 노이즈 (-50 dBFS)
-GW_COMFORT_NOISE_ENABLED=true
-GW_COMFORT_NOISE_LEVEL=-50
-```
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `GW_COMFORT_NOISE_ENABLED` | `false` | comfort noise 기능 활성화 |
-| `GW_COMFORT_NOISE_LEVEL` | `-50` | 합성 노이즈 레벨 (dBFS). -60=거의 안 들림, -50=미묘한 배경음, -40=인지 가능 |
-| `GW_COMFORT_NOISE_FILE` | (없음) | 커스텀 배경음 PCM 파일 경로 (아래 "커스텀 배경음" 섹션 참조) |
-
-설정 변경 후 게이트웨이를 재시작하세요:
-
-```bash
-sudo systemctl restart dvgateway
-```
+켜져 있는지는 아래 "글로벌 상태 확인" API(`GET /api/v1/comfort/status`)의 `enabled` 값으로 확인할 수 있습니다.
 
 ### 자동 모드 — 파이프라인 빌더 (권장)
 
@@ -258,21 +243,15 @@ curl http://gateway:8080/api/v1/comfort/status \
 # ffmpeg으로 변환 (가장 권장)
 ffmpeg -i office-background.wav \
   -f s16le -ar 16000 -ac 1 \
-  /etc/dvgateway/audio/office-ambient.pcm
+  office-ambient.pcm
 
 # sox로 변환
 sox office-background.wav \
   -r 16000 -b 16 -c 1 -e signed-integer -L \
-  /etc/dvgateway/audio/office-ambient.pcm
+  office-ambient.pcm
 ```
 
-**게이트웨이 설정:**
-
-```bash
-GW_COMFORT_NOISE_ENABLED=true
-GW_COMFORT_NOISE_FILE=/etc/dvgateway/audio/office-ambient.pcm
-# GW_COMFORT_NOISE_LEVEL은 파일 모드에서 무시됩니다
-```
+변환한 파일을 운영사에 전달하면 운영사가 게이트웨이에 등록합니다. 커스텀 배경음을 쓰면 소음 크기 설정은 적용되지 않고 파일 음량 그대로 재생됩니다.
 
 > **팁**: 5~30초 길이의 자연스러운 환경음을 준비하세요. 게이트웨이가 자동으로 무한 루프 재생합니다.
 

@@ -153,7 +153,7 @@
 ## 🚀 다음 단계
 
 - 도입 검토 → 영업팀 문의로 시연 받기
-- 기술 구현 → [docs/youtube-live-caption.md](../youtube-live-caption.md)
+- 기술 구현 → 라이브 송출 설정은 운영사에 요청 · 실시간 자막/회의록은 [SDK 가이드 03 파이프라인 패턴](../03-pipeline-patterns.md)
 - 회의록 자동 생성 같이 도입 → [가이드 3](03-meeting-minutes.md)
 - 다른 가이드 → [README.md](README.md)
 

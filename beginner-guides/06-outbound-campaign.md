@@ -142,7 +142,7 @@
 
 - 도입 검토 → 영업팀 문의로 발신 컴플라이언스 진단
 - CRM/엑셀 자동 연동까지 → [가이드 7](07-no-code-crm-integration.md)
-- 기술 구현 → [docs/sdk-guide/11-pbx-management.md](../sdk-guide/11-pbx-management.md) (캠페인 섹션)
+- 기술 구현 → [docs/sdk-guide/11-pbx-management.md](../11-pbx-management.md) (캠페인 섹션)
 - 다른 가이드 → [README.md](README.md)
 
 ---

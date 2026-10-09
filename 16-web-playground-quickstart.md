@@ -150,8 +150,8 @@ ElevenLabs · OpenAI · Deepgram · Gemini · Google STT 키를 직접 가지고
 합성해 PCM 바이트 길이만 보고합니다. **통화에는 주입하지 않으므로 안전하게
 키 검증용으로 쓸 수 있습니다.**
 
-> 🔐 **보안**: 키는 게이트웨이가 마스킹된 형태 (`••••••••abcd`) 로
-> `/etc/dvgateway/apikeys/{tenantId}.json` 에 저장합니다. 브라우저
+> 🔐 **보안**: 모드 A 의 키는 게이트웨이에 **테넌트별로** 저장되며, 조회할 때는 마스킹된 형태 (`••••••••abcd`) 로만
+> 보입니다. 브라우저
 > `localStorage` 의 `dvgw-playground-provider-v1` 에도 사용자 입력 그대로
 > 저장됩니다 (모드 B 용). **Clear credentials** 누르면 둘 다 비워집니다.
 
@@ -165,7 +165,7 @@ ElevenLabs · OpenAI · Deepgram · Gemini · Google STT 키를 직접 가지고
 | TTS 버튼 누르면 `403` | 받은 `linkedId` 가 내 테넌트 소유가 아님. JWT 가 다른 테넌트로 발급된 상태이거나, 다른 사용자의 통화를 잡고 있음 |
 | TTS `404` | 그 통화가 이미 종료됨. `call:ended` 받은 뒤에는 호출 불가 |
 | TTS `503` | 기능이 라이선스로 비활성. 운영자에게 라이선스 확인 요청 |
-| WebSocket 이 즉시 `1006` 으로 끊김 | JWT 24h 만료 → **Connect** 다시. nginx/리버스 프록시가 `Upgrade` / `Connection` 헤더를 흘리는지 확인 |
+| WebSocket 이 즉시 `1006` 으로 끊김 | JWT 24h 만료 → **Connect** 다시. 그래도 끊기면 중간 프록시가 WebSocket(`Upgrade` / `Connection` 헤더)을 전달하는지 운영사에 확인 요청 |
 | TTS 가 잡음이거나 속도 이상 | 업로드한 PCM 포맷 오류. `ffmpeg -ac 1 -ar 16000 -f s16le -acodec pcm_s16le out.pcm` 로 변환 |
 | STT 시작했는데 자막 안 나옴 | 회의 ID 가 잘못됐거나 STT 라이선스 미보유. 운영자에게 회의 ID 발급 + 라이선스 피처 확인 |
 
@@ -190,14 +190,14 @@ Playground 에서 동작 확인한 흐름은 그대로 SDK 코드로 옮길 수 
 
 ---
 
-## 운영자에게 (참고)
+## 참고 — Playground 가 호출하는 API
 
 이 Playground 는 게이트웨이 **서버 측에 아무것도 설치하지 않습니다.**
 사용자 노트북에서 정적 HTML 로만 동작하고, 게이트웨이의 REST/WS API 를
-JWT 인증으로 호출합니다. 테넌트별 RLS 미들웨어가 격리해주므로 다른
-테넌트의 통화/이벤트는 절대 받을 수 없습니다.
+JWT 인증으로 호출합니다. 테넌트 단위로 격리되므로 다른
+테넌트의 통화/이벤트는 받을 수 없습니다.
 
-내부적으로 호출하는 엔드포인트:
+호출하는 엔드포인트:
 
 - `POST :8081/login` — Tenant 자격증명 → JWT
 - `WS :8080/api/v1/ws/callinfo?token=<JWT>` — 이벤트 구독
@@ -205,6 +205,5 @@ JWT 인증으로 호출합니다. 테넌트별 RLS 미들웨어가 격리해주�
 - `POST :8080/api/v1/config/apikeys` — provider 키 등록 (Mode A)
 - `POST :8080/api/v1/tts/synthesize` — 키 검증용 텍스트→음성
 
-CORS 는 게이트웨이가 모든 경로에서 `Access-Control-Allow-Origin: *` +
-`Authorization, X-API-Key, X-Tenant-ID, Content-Type` 헤더 허용하도록
-이미 설정되어 있어 별도 프록시 불필요.
+게이트웨이 API 는 브라우저에서 직접 호출할 수 있도록 CORS 를 허용하므로
+(`Authorization, X-API-Key, X-Tenant-ID, Content-Type` 헤더) 별도 프록시가 필요 없습니다.

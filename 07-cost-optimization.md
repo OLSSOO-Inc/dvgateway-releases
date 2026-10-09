@@ -240,7 +240,7 @@ const stt = new DeepgramAdapter({
 | Faster-Whisper | ~300ms | 필수 | 우수 |
 | OpenAI Whisper (공식) | ~800ms | 필수 | 우수 |
 
-자세한 설정은 [10. 어댑터별 상세 설정](#10-어댑터별-상세-설정)의 로컬 STT 섹션을 참고하세요.
+자세한 설정은 [04. 어댑터 상세 설정](04-adapter-reference.md)의 로컬 STT 섹션을 참고하세요.
 
 ---
 
