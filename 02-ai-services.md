@@ -35,6 +35,7 @@
 | **OpenAI Realtime Translate** | `OpenAIRealtimeAdapter` | `gpt-realtime-translate` | 실시간 통역 (70+ → 13 언어) |
 | **OpenAI Realtime** (legacy) | `OpenAIRealtimeAdapter` | `gpt-4o-realtime-preview` | STT+LLM+TTS 통합, 최저 지연 (현 기본값) |
 | **OpenAI Realtime Mini** (legacy) | `OpenAIRealtimeAdapter` | `gpt-4o-mini-realtime-preview` | 비용 효율적, Audio 1.5 엔진 |
+| **OpenAI GPT-Live** | `GptLiveAdapter` (SDK 1.9.10+) | `gpt-live-1` | 전이중(듣는 동안 말함) + 위임(생각·도구는 뒤쪽 모델/우리 코드). 16kHz 그대로. ⚠️ **위임 정책 지시문 필수** · 정해진 문장 그대로는 못 말함(고지는 세션 전 `gw.say()`) · 분당 $0.05 + 뒤쪽 비용 — [어댑터 레퍼런스](04-adapter-reference.md#openai-gpt-live-speech-to-speech--sdk-1910) |
 
 ### 클라우드 STT 서비스 — 내장 게이트웨이 어댑터
 

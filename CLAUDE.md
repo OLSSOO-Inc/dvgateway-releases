@@ -32,6 +32,8 @@
 | `1.9.7` | ⚠️ 동작 정정 | ① `updateSessionMeta()`/`update_session_meta()` · `submitTranscript()`/`submit_transcript()` 는 게이트웨이에 해당 API 가 없어 **요청을 보내지 않고** `DVGatewayUnsupportedError`(`code:"not_supported_by_gateway"` · `sdkMethod`/`sdk_method` · `alternative`)를 던진다(`@deprecated` · Python 은 `DeprecationWarning` 도). `autoSubmitTranscripts()`/`auto_submit_transcripts()` 는 **no-op 콜백 + 경고 1회** ② `downloadMinutes()`/`download_minutes()` 는 **`GET /api/v1/conferences/{confId}`** 를 부른다 — 회의 진행 중에는 실시간 회의록, 끝난 뒤에는 저장본(게이트웨이 1.4.16.285+ · 저장본이 없거나 구버전이면 404). `'txt'` 는 SDK 가 렌더링한다 ③ `listSessions()`/`list_sessions()` 가 게이트웨이 응답(`{calls, conferences}`)을 읽는다(회의 참여자는 `confId` 가 붙은 세션으로 포함). ⚠️ 위 메서드를 쓰던 코드는 예외 타입이 `DVGatewayUnsupportedError` 로 바뀐다 |
 | `1.9.8` | ✅ 신규 | Gemini 3.8 Live 모델(`gemini-3.8-live`) 지원 · `customVocabulary` / `custom_vocabulary`(3.8 전용) · 설정 경고 `geminiLiveConfigWarnings` / `gemini_live_config_warnings`. 기본 모델은 그대로(`gemini-live-2.5-flash-preview`) — 자세한 내용은 아래 「Gemini 3.8 Live」 |
 | `1.9.9` | ✅ 문서 정정 | 코드 무변경. `playback()`/`liteTtsPlayback()`(Python `playback`/`lite_tts_playback`)와 결과 타입의 JSDoc·docstring 이 «`audio:playback` 완료 이벤트가 온다»고 잘못 적고 있던 것을 바로잡았다 — **이 두 메서드는 재생 시작·완료 이벤트를 보내지 않는다**(`audio:playback` 은 `playAudio()` 전용, `tts:playback` 은 `injectTts()` 전용). 대안: 안내 중 `collectDtmf()` 시작, 또는 `synthesizedBytes / 32000` 초(+약 0.5초) 기다리기(16kHz 16-bit 모노) |
+| `1.9.10` | ✅ 신규 | **`GptLiveAdapter`** — OpenAI GPT-Live(`gpt-live-1`, 전이중) S2S 어댑터(TS·Python). 위임(`client`/`responses`) 필수 · 16kHz 그대로 · 무음 출력 거르기 · `store:false` 명시 · 결과 미전달 감지(`onUnspokenResult`) · 위임 정책 지시문 도우미(`buildGptLiveInstructions`). 게이트웨이 무변경 |
+| `1.9.11` | ✅ 신규 | **`createSpeechSegmentInjector`** / `SpeechSegmentInjector` — S2S 어댑터의 오디오를 **말 한 마디 단위**로 `injectTts` 에 넣는다(게이트웨이가 주입마다 페이드인·아웃을 넣으므로 조각마다 주입하면 소리가 끊긴다). GPT-Live 실행 예제(TS `11-gpt-live-voice-agent.ts` · Python `10_gpt_live_voice_agent.py`) 추가. 기존 API 무변경 |
 
 ---
 
@@ -1884,6 +1886,7 @@ tts = CachedTtsAdapter(inner, provider="elevenlabs", cache_dir="./tts-cache")
 |--------|--------|------|
 | `OpenAIRealtimeAdapter` | `dvgateway-adapters/realtime` / `dvgateway.adapters.realtime` | OpenAI Realtime API (STT+LLM+TTS 통합) |
 | `GeminiLiveAdapter` | `dvgateway-adapters/realtime` / `dvgateway.adapters.realtime` | Google Gemini Live API (BidiGenerateContent, AI Studio/Vertex) |
+| `GptLiveAdapter` | `dvgateway-adapters/realtime` / `dvgateway.adapters.realtime` | OpenAI GPT-Live (전이중 · 위임 · SDK 1.9.10+) — 아래 [GptLiveAdapter 옵션](#gptliveadapter-옵션-sdk-1910) |
 
 두 어댑터는 **동일한 `RealtimeSpeechAdapter` 인터페이스**를 구현하므로 import만 바꾸면 그대로 교체됩니다. 동일한 S2S 배선(`pipelineType=s2s` + `onSpeechActivity → postVad`)이 모두 작동합니다.
 
@@ -2297,6 +2300,97 @@ interpreter = OpenAIRealtimeAdapter(
 ```
 
 지원 언어: 입력 70+ / 출력 13 (OpenAI Realtime translate 모델 기준). 동작 검증 예제는 [examples/typescript/10-realtime-translate-ko-en.ts](examples/typescript/10-realtime-translate-ko-en.ts) / [examples/python/09_realtime_translate_ko_en.py](examples/python/09_realtime_translate_ko_en.py) 참고.
+
+#### GptLiveAdapter 옵션 (SDK 1.9.10+)
+
+OpenAI **GPT-Live**(`gpt-live-1`) — 전이중(듣는 동안 말한다) 음성 모델. 생각·도구는 **위임**(`delegation`)으로 뒤쪽에 넘긴다.
+같은 `RealtimeSpeechAdapter` 인터페이스라 배선은 다른 S2S 어댑터와 같다.
+
+| 옵션 (TS / Python) | 기본값 | 설명 |
+|---|---|---|
+| `apiKey` / `api_key` | (필수) | OpenAI 키 — **유료 등급**(무료 등급 불가). 비용은 키 소유자 계정으로 청구(분당 $0.05 · 초 단위 · **무음 포함 연결 시간 전체** + 뒤쪽 모델 비용) |
+| `delegation` | (필수) | `{type:'client'}` — 우리 코드가 답한다(`onDelegation`) · `{type:'responses', responses:{model, instructions?, tools?, webSearch?, toolChoice?, parallelToolCalls(기본 false)?, reasoning?, serviceTier?, maxOutputTokens?}}` — OpenAI 모델이 도구를 고르고 우리가 실행(`onToolCall` → `submitToolResult`). ⚠️ 기본값을 두지 않는다(OpenAI 는 빠지면 client 로 취급) |
+| `instructions` | `buildGptLiveInstructions({})` | 대화 지시문(≤16,384토큰 · 통화 중 교체 불가 — `appendInstructions` 로 덧붙이기만). 🔴 **위임 정책 필수** — `buildGptLiveInstructions()` 가 OpenAI 권장 틀(Backchannel/Interruption/Delegation policy) + 전화 규칙을 만든다 |
+| `voice` | `marin` | 통화 중 못 바꿈 |
+| `history` | (없음) | 시작 대화(≤128개 · 8,192토큰) |
+| `store` | `false` | **명시적으로 false 를 보낸다**(true 면 OpenAI 가 녹음을 30일 보관) |
+| `speechGate` / `speech_gate_threshold`·`_hang_ms` | `0.001` · `600ms` | GPT-Live 는 **무음까지 계속** 출력한다(실측) — 말소리 구간만 `onAudioOutput` 으로 낸다. 없으면 TTS 재생이 끝나지 않는다 |
+| `transcriptPauseMs` | `800` | 받아 적기 한 마디를 닫는 쉼(세션 시계) |
+| `allowMixedInput` / `allow_mixed_input` | `false` | 🔴 **전이중이라 입력은 발신자 목소리만이어야 한다** — 섞인 흐름(`dir:'both'` · Stasis `mode=both` 는 Snoop `spy=both` 로 양방향을 섞는다)이면 모델이 **자기 목소리를 듣고** 끊기거나 자기 말에 답한다. 다이얼플랜 `Stasis(dvgateway, mode=customer)` + `streamAudio(id, {dir:'in'})`. 아니면 첫 프레임에서 `onError`(`input_not_caller_only`, 치명 아님)로 한 번 알린다 |
+| `unspokenResultMs` | `5000` | 결과를 보낸 뒤 이 시간 안에 새 말이 없으면 `onUnspokenResult`(0=끔) |
+
+| 핸들러 · 메서드 | 설명 |
+|---|---|
+| `onAudioOutput` | 16kHz PCM 말소리 구간(리샘플 없음) → **`createSpeechSegmentInjector`**(SDK 1.9.11+)로 넣는다 — 조각마다 `gw.injectTts()` 를 부르면 게이트웨이가 조각마다 페이드인(200ms)·페이드아웃을 넣고 WebSocket 을 새로 열어 소리가 끊긴다 |
+| `onTranscript` | 마디 단위 확정 받아 적기(`customer`/`agent`) |
+| `onDelegation` | client 위임 — `{delegationId, transcript, pending}` → `{speak}`(말하게 · 바꿔 말함) / `{note}`(알고만 있게) / 문자열 |
+| `onToolCall` · `submitToolResult` | responses 위임 — 모든 결과를 보낸 뒤에만 이어 가게 한다 |
+| `onUnspokenResult` | 결과를 받고도 말하지 않음 — `appendCommentary` 로 다시 보낸다 |
+| `onUsage` | `{seconds, confirmed, closeReason}` — `confirmed:false` 면 종료 확인 전 마지막 값 |
+| `onSpeechActivity` | caller=받아 적기 시각 · callee=말소리 게이트(둘 다 근사) |
+| `appendCommentary` · `appendThinking` · `appendInstructions` · `muteInput` · `unmuteInput` | 통화 중 문맥 덧붙이기(각 500토큰) · 입력 음소거 |
+| `stop()` | `session.close` → `session.closed`(최종 사용량)까지 기다린 뒤 닫는다 |
+
+**`createSpeechSegmentInjector(inject, { idleEndMs = 500, onError })`** / Python **`SpeechSegmentInjector(inject, idle_end_ms=500, on_error=None)`**(SDK 1.9.11+) — 오디오가 들어오는 동안 `injectTts` 스트림 **하나**를 열어 두고, `idleEndMs` 동안 오디오가 없으면 닫는다(한 마디 = 주입 한 번). 메서드 `push(linkedId, pcm)` · `end(linkedId)`(통화 종료 때) · `endAll()`. 실패한 주입은 `onError` 로 알리고 다음 오디오가 새로 연다. GPT-Live 전용이 아니라 `onAudioOutput` 이 있는 모든 S2S 어댑터에 쓸 수 있다. 실행 예제: `examples/typescript/11-gpt-live-voice-agent.ts` · `examples/python/10_gpt_live_voice_agent.py`.
+
+⚠️ **하지 않는 것**: 자동 재연결(새 연결 = 새 과금 · 진행 중 작업 중복 위험) · 정해진 문장 그대로 말하기(고지는 `gw.say()` 로 **세션 전에**) · 키패드(WS 경로엔 없음 — `call:dtmf` 를 `appendThinking` 으로 넘긴다).
+⚠️ 측정·한계: [docs/gpt-live-integration-plan.md](../docs/gpt-live-integration-plan.md) §9 — 한국어 인식은 전화 음질 합성 질문 기준 정확, **실제 사람 목소리·실통화는 미검증**.
+
+```typescript
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { GptLiveAdapter, buildGptLiveInstructions, createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
+
+const live = new GptLiveAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,       // 유료 등급 키(무료 등급 불가)
+  delegation: { type: 'client' },            // 필수 — 또는 { type: 'responses', responses: { model, tools } }
+  instructions: buildGptLiveInstructions({   // 🔴 위임 정책 필수(없으면 확인 없이 «가능합니다» 단정 — 실측 5회 중 2회)
+    persona: '당신은 ○○ 상담 예약을 돕는 한국어 전화 상담원입니다.',
+    capabilities: ['예약: 가능한 시간 확인과 예약 생성·변경·취소'],
+  }),
+});
+
+gw.onCallEvent(async (event) => {
+  if (event.type === 'call:new') {
+    const linkedId = event.session.linkedId;
+    await gw.say(linkedId, 'AI 상담원이 응대합니다.', noticeTts);  // ① 고지는 세션 «전에» — GPT-Live 는 문장을 바꿔 말한다
+    const audio = gw.streamAudio(linkedId, { dir: 'in', pipelineType: 's2s' });  // 🔴 발신자 목소리만(다이얼플랜 Stasis mode=customer)
+    void live.startSession(linkedId, audio);                         // ② 고지가 끝난 뒤 — 그 전 시간은 과금되지 않는다
+  }
+  if (event.type === 'call:ended') {
+    out.end(event.linkedId);
+    await live.stop(event.linkedId);                                 // ③ 끊긴 뒤에도 열려 있으면 계속 과금
+  }
+});
+
+// 말 한 마디 단위로 주입 — 조각마다 injectTts 를 부르면 조각마다 페이드인·아웃이 들어가 소리가 끊긴다
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks));
+live.onAudioOutput((pcm16k, linkedId) => out.push(linkedId, pcm16k)); // 말소리 구간만 온다(무음은 어댑터가 거른다)
+live.onDelegation(async ({ linkedId, delegationId, transcript, pending }) => {
+  const r = await myBackend(transcript, pending);                    // 우리 백엔드가 확인
+  return { speak: r.sentence };                                      // 모델이 자기 말로 바꿔 전한다
+});
+live.onUnspokenResult(({ linkedId, delegationId }) => {              // 결과를 받고도 말하지 않음(실측 15회 중 1회)
+  live.appendCommentary(linkedId, delegationId, '확인 결과를 지금 알려 주세요.');
+});
+live.onUsage(({ seconds, confirmed }) => console.log('GPT-Live 사용', seconds, confirmed ? '확정' : '미확정'));
+```
+
+```python
+from dvgateway.adapters.realtime import GptLiveAdapter, SpeechSegmentInjector, build_gpt_live_instructions
+
+live = GptLiveAdapter(
+    api_key=os.environ["OPENAI_API_KEY"],
+    delegation={"type": "client"},  # 필수 — 또는 {"type": "responses", "responses": {"model": ..., "tools": [...]}}
+    instructions=build_gpt_live_instructions(
+        persona="당신은 ○○ 상담 예약을 돕는 한국어 전화 상담원입니다.",
+        capabilities=["예약: 가능한 시간 확인과 예약 생성·변경·취소"],
+    ),
+)
+out = SpeechSegmentInjector(lambda lid, chunks: gw.inject_tts(lid, chunks))  # 말 한 마디 단위로 주입
+live.on_audio_output(lambda pcm, lid: out.push(lid, pcm))                   # 통화가 끝나면 out.end(linked_id)
+live.on_delegation(lambda d: {"speak": my_backend(d.transcript, d.pending)})
+live.on_unspoken_result(lambda u: live.append_commentary(u.linked_id, u.delegation_id, "확인 결과를 지금 알려 주세요."))
+```
 
 #### S2S vs 기존 파이프라인 비교
 

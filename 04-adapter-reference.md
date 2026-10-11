@@ -509,6 +509,59 @@ const realtime = new OpenAIRealtimeAdapter({
 
 ---
 
+### OpenAI GPT-Live (Speech-to-Speech) — SDK 1.9.10+
+
+전이중 음성 모델 `gpt-live-1`. 고객 OpenAI 키로 동작하며(유료 등급), 통화 음성은 DVG 를 지나므로 녹취·통화 기록·대시보드는 그대로 유지된다.
+
+```typescript
+import { DVGatewayClient } from 'dvgateway-sdk';
+import { GptLiveAdapter, buildGptLiveInstructions, createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
+
+const live = new GptLiveAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,       // 유료 등급 키(무료 등급 불가)
+  delegation: { type: 'client' },            // 필수 — 또는 { type: 'responses', responses: { model, tools } }
+  instructions: buildGptLiveInstructions({   // 🔴 위임 정책 필수(없으면 확인 없이 «가능합니다» 단정 — 실측 5회 중 2회)
+    persona: '당신은 ○○ 상담 예약을 돕는 한국어 전화 상담원입니다.',
+    capabilities: ['예약: 가능한 시간 확인과 예약 생성·변경·취소'],
+  }),
+});
+
+gw.onCallEvent(async (event) => {
+  if (event.type === 'call:new') {
+    const linkedId = event.session.linkedId;
+    await gw.say(linkedId, 'AI 상담원이 응대합니다.', noticeTts);  // ① 고지는 세션 «전에» — GPT-Live 는 문장을 바꿔 말한다
+    const audio = gw.streamAudio(linkedId, { dir: 'in', pipelineType: 's2s' });  // 🔴 발신자 목소리만(다이얼플랜 Stasis mode=customer)
+    void live.startSession(linkedId, audio);                         // ② 고지가 끝난 뒤 — 그 전 시간은 과금되지 않는다
+  }
+  if (event.type === 'call:ended') {
+    out.end(event.linkedId);
+    await live.stop(event.linkedId);                                 // ③ 끊긴 뒤에도 열려 있으면 계속 과금
+  }
+});
+
+// 말 한 마디 단위로 주입 — 조각마다 injectTts 를 부르면 조각마다 페이드인·아웃이 들어가 소리가 끊긴다
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks));
+live.onAudioOutput((pcm16k, linkedId) => out.push(linkedId, pcm16k)); // 말소리 구간만 온다(무음은 어댑터가 거른다)
+live.onDelegation(async ({ linkedId, delegationId, transcript, pending }) => {
+  const r = await myBackend(transcript, pending);                    // 우리 백엔드가 확인
+  return { speak: r.sentence };                                      // 모델이 자기 말로 바꿔 전한다
+});
+live.onUnspokenResult(({ linkedId, delegationId }) => {              // 결과를 받고도 말하지 않음(실측 15회 중 1회)
+  live.appendCommentary(linkedId, delegationId, '확인 결과를 지금 알려 주세요.');
+});
+live.onUsage(({ seconds, confirmed }) => console.log('GPT-Live 사용', seconds, confirmed ? '확정' : '미확정'));
+```
+
+**반드시 지킬 것**(실측 근거 — 2026-10-11)
+- 🔴 **입력은 발신자 목소리만** — GPT-Live 는 듣는 동안 말하므로 자기 목소리가 섞이면 스스로 끊기거나 자기 말에 답한다. 다이얼플랜 `Stasis(dvgateway, mode=customer)` + `streamAudio(id, { dir: 'in' })`(`mode=both`·`dir:'both'` 는 양방향을 섞는다). 섞인 입력이면 어댑터가 `onError`(`input_not_caller_only`)로 한 번 알린다.
+- **위임 정책 지시문**: 없으면 확인하지 않고 «가능합니다·예약해 드릴게요» 라고 답했다(5회 중 2회). `buildGptLiveInstructions()` 를 쓰면 15회 모두 확인 단계를 거쳤다.
+- **실행은 사람 확인 뒤**: 지시문은 유도일 뿐 강제가 아니다 — 예약·결제 같은 실행은 수신자가 «네» 한 뒤 **당신 코드에서** 하라.
+- **결과 미전달 대비**: `onUnspokenResult` 에서 다시 보낸다(15회 중 1회 발생).
+- **고지 문구**: 정해진 문장을 그대로 말하지 못한다 — `gw.say()` 로 **세션 전에** 재생.
+- **통화 종료 시 `stop()`**: 무음 포함 연결 시간 전체가 과금된다.
+
+⚠️ 실제 사람 목소리·실통화·긴 대화는 아직 측정하지 않았다(측정은 전화 음질로 낮춘 합성 질문).
+
 ### 로컬(오프라인) LLM — Ollama · vLLM · LM Studio
 
 SDK 에는 로컬 LLM 전용 어댑터가 따로 없습니다. 대신 **`OpenAILlmAdapter` 의 `baseUrl` / `base_url`**(SDK 1.9.2+)로 **OpenAI 호환 API** 를 제공하는 로컬 서버를 가리키면 됩니다. Ollama · vLLM · LM Studio · SGLang · llama.cpp server 가 모두 이 방식으로 연결됩니다.

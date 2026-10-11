@@ -1,6 +1,6 @@
 # DVGateway SDK — 사용 가이드
 
-> **최신 버전: 1.9.9** | 업데이트: 2026-05-18
+> **최신 버전: 1.9.11** | 업데이트: 2026-05-18
 
 **DVGateway SDK**는 AI 음성 서비스(STT·LLM·TTS)를 실시간 전화 통화에 연결하는 라이브러리입니다.
 **Node.js**와 **Python** 두 가지 언어를 지원하며, 개발자가 아니더라도 이 문서의 예제를 따라 하면 AI 음성 봇을 구축할 수 있습니다.
@@ -98,6 +98,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | [08-webhook-n8n-integration.ts](examples/typescript/08-webhook-n8n-integration.ts) | n8n Webhook 연동 + Fallback | [훅 + Webhook](09-hooks-webhook.md) |
 | [09-ai-sms-confirmation.ts](examples/typescript/09-ai-sms-confirmation.ts) | 영업시간 외 AI 예약 접수 + 확인 문자(SMS) 자동 발송 | [SMS](21-sms.md) · [훅 + Webhook](09-hooks-webhook.md) |
 | [10-realtime-translate-ko-en.ts](examples/typescript/10-realtime-translate-ko-en.ts) | 실시간 통역 (한국어 ↔ 영어, OpenAI Realtime) | [파이프라인 패턴](03-pipeline-patterns.md) |
+| [11-gpt-live-voice-agent.ts](examples/typescript/11-gpt-live-voice-agent.ts) | OpenAI GPT-Live 음성 상담원 (전이중 · 위임 · 고지 먼저) | [어댑터 설정](04-adapter-reference.md) |
 
 ### Python 예제
 
@@ -112,6 +113,7 @@ SaaS 테넌트 자격증명만 받았다면, 코드를 한 줄도 안 쓰고 브
 | [07_webhook_integration.py](examples/python/07_webhook_integration.py) | Webhook 연동 + Fallback | [훅 + Webhook](09-hooks-webhook.md) |
 | [08_ai_sms_confirmation.py](examples/python/08_ai_sms_confirmation.py) | 영업시간 외 AI 예약 접수 + 확인 문자(SMS) 자동 발송 | [SMS](21-sms.md) · [훅 + Webhook](09-hooks-webhook.md) |
 | [09_realtime_translate_ko_en.py](examples/python/09_realtime_translate_ko_en.py) | 실시간 통역 (한국어 ↔ 영어, OpenAI Realtime) | [파이프라인 패턴](03-pipeline-patterns.md) |
+| [10_gpt_live_voice_agent.py](examples/python/10_gpt_live_voice_agent.py) | OpenAI GPT-Live 음성 상담원 (전이중 · 위임 · 고지 먼저) | [어댑터 설정](04-adapter-reference.md) |
 
 ### 빠른 시작
 
