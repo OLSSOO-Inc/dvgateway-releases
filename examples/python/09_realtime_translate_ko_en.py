@@ -25,6 +25,7 @@ from dvgateway import DVGatewayClient
 from dvgateway.adapters.realtime import (
     OpenAIRealtimeAdapter,
     OpenAIRealtimeTurnDetectionOptions,
+    SpeechSegmentInjector,
 )
 
 load_dotenv()
@@ -69,16 +70,18 @@ async def main() -> None:
     print(f"📡  Gateway: {os.getenv('DV_BASE_URL')}")
     print("🌐  Translate: ko → en (swap input_language/output_language to invert)\n")
 
-    # Route the AI's translated audio back into the call. The adapter passes
-    # the linked_id of the session that produced the audio, so one handler
-    # serves every call. inject_tts takes an async iterable of PCM chunks.
-    def on_audio(chunk: bytes, linked_id: str) -> None:
-        async def once():  # type: ignore[no-untyped-def]
-            yield chunk
-
-        asyncio.ensure_future(gw.inject_tts(linked_id, once()))
-
-    interpreter.on_audio_output(on_audio)
+    # Route the AI's translated audio back into the call, one utterance at a
+    # time. Do not call inject_tts once per chunk: the gateway treats every
+    # inject_tts call as one utterance (its own ~200 ms fade-in and fade-out,
+    # its own WebSocket), so per-chunk injection fades every chunk in and out.
+    # The injector keeps one inject stream open while audio keeps arriving
+    # (SDK 1.9.11+). The adapter passes the linked_id of the session that
+    # produced the audio, so one handler serves every call.
+    out = SpeechSegmentInjector(
+        lambda lid, chunks: gw.inject_tts(lid, chunks),
+        on_error=lambda err, lid: print(f"[call {lid}] inject failed: {err}"),
+    )
+    interpreter.on_audio_output(lambda chunk, lid: out.push(lid, chunk))
 
     # Events are objects (event.type / event.session.linked_id), not dicts.
     async def on_call(event):  # type: ignore[no-untyped-def]
@@ -92,6 +95,7 @@ async def main() -> None:
             )
             await interpreter.start_session(linked_id, audio_stream)
         elif event.type == "call:ended":
+            out.end(event.linked_id)
             await interpreter.stop(event.linked_id)
             print(f"[call {event.linked_id}] interpreter session ended")
 
@@ -101,6 +105,7 @@ async def main() -> None:
         await asyncio.Event().wait()   # run until Ctrl+C
     finally:
         print("\nShutting down interpreter…")
+        out.end_all()
         await interpreter.stop()       # no argument = stop every session
         gw.close()
 

@@ -1494,7 +1494,7 @@ gw.on_tts_complete(on_done)
 {"event":"tts:complete","linkedId":"1775805184.495","tenantId":"0123456789abcdef","serverId":"gw-seoul-01"}
 ```
 
-**S2S 모드와의 관계**: OpenAI Realtime / Gemini Live 어댑터의 `onAudioOutput` 콜백으로 받은 PCM을 `gw.injectTts()`로 주입하면, 게이트웨이가 재생을 마칠 때마다 `tts:complete`가 발행됩니다. 이 이벤트를 이용해 "AI 발화 종료" 시점을 정확히 감지할 수 있습니다.
+**S2S 모드와의 관계**: `tts:complete` 는 **`injectTts()` 호출 하나(주입 스트림 하나)의 재생이 끝날 때마다** 발행됩니다. 그래서 S2S 어댑터의 `onAudioOutput` 조각을 **조각마다** `injectTts()` 로 넣으면 조각마다 발행되어 「AI 발화 종료」 신호가 되지 못합니다(게이트웨이도 조각마다 페이드인·아웃을 넣어 소리가 끊깁니다). **`createSpeechSegmentInjector`**(SDK 1.9.11+)로 말 단위로 묶어 넣으면 말 한 마디마다 한 번 발행됩니다 — 단, 응답 도중 오디오가 `idleEndMs`(기본 500ms) 이상 끊기면 거기서 나뉘므로 「한 턴에 정확히 한 번」을 보장하지는 않습니다.
 
 ---
 
@@ -1655,7 +1655,7 @@ stt = OpenAISttAdapter(
 import { AnthropicAdapter } from 'dvgateway-adapters/llm';
 const llm = new AnthropicAdapter({
   apiKey: 'sk-ant-xxx',                    // 필수
-  model: 'claude-sonnet-4-6',              // claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001
+  model: 'claude-sonnet-4-6',              // claude-opus-4-6, claude-sonnet-4-6, claude-haiku-5-5
   systemPrompt: '친절한 AI 상담원입니다.',    // 시스템 프롬프트
   maxTokens: 1024,                          // 최대 출력 토큰
   temperature: 0.7,                         // 창의성 (0~1)
@@ -1675,6 +1675,8 @@ llm = AnthropicAdapter(
     temperature=0.7,
 )
 ```
+
+**⚠️ sampling 값(`temperature`·`topP`) — SDK 1.9.12+**: Claude Haiku 5.5·Sonnet 5.x·Opus 4.7 이상·Fable 은 기본값이 아닌 `temperature`/`top_p` 를 **400 으로 거절**한다. 1.9.11 까지의 어댑터는 `temperature` 0.7 을 **항상** 보내서 그 모델들로는 **모든 호출이 실패**했다. 1.9.12 부터 어댑터가 모델 ID 로 판정해(`acceptsSamplingParams` / `accepts_sampling_params`) 그 모델들에는 두 값을 **보내지 않고**, 직접 넣은 값이 있으면 모델마다 한 번 경고를 남긴다. 판정은 **알려진 옛 세대(3.x·4.0/4.1·4.5·4.6)만 허용**하고 그 밖의 `claude-*` 는 보내지 않는다(새 모델이 나와도 400 이 나지 않는 쪽). `claude-` 로 시작하지 않는 모델 ID(`baseUrl` 뒤의 호환 서버)는 종전 그대로 보낸다. 옛 세대에서도 `temperature` 와 `top_p` 는 함께 보내면 오류라, `topP` 만 넣으면 기본 `temperature` 는 빼고 보낸다. Haiku 5.5 는 생각(thinking)이 기본으로 켜지고 그 토큰도 `maxTokens` 에 포함된다(어댑터는 text 만 내보낸다).
 
 #### OpenAILlmAdapter 옵션
 
@@ -1915,7 +1917,7 @@ Google Gemini Live API를 사용하여 S2S 파이프라인을 구성합니다. O
 
 ```typescript
 // TypeScript
-import { GeminiLiveAdapter } from 'dvgateway-adapters/realtime';
+import { GeminiLiveAdapter, createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
 
 const realtime = new GeminiLiveAdapter({
   apiKey: process.env['GEMINI_API_KEY']!,
@@ -1936,10 +1938,9 @@ const realtime = new GeminiLiveAdapter({
   },
 });
 
-// 나머지 S2S 배선은 OpenAI와 100% 동일
-realtime.onAudioOutput(async (pcm16k, linkedId) => {
-  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
-});
+// 나머지 S2S 배선은 OpenAI와 100% 동일 — AI 오디오는 말 단위로 주입(조각마다 injectTts 금지)
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks));
+realtime.onAudioOutput((pcm16k, linkedId) => out.push(linkedId, pcm16k));
 realtime.onSpeechActivity(({ linkedId, side, speaking }) => {
   gw.postVad(linkedId, side, speaking).catch(() => {});
 });
@@ -1954,6 +1955,7 @@ gw.onCallEvent(async (event) => {
     await realtime.startSession(linkedId, stream);
   }
   if (event.type === 'call:ended') {
+    out.end(event.linkedId);                   // 열린 주입 스트림을 닫는다
     await realtime.stop(event.linkedId);
   }
 });
@@ -2410,7 +2412,7 @@ live.on_unspoken_result(lambda u: live.append_commentary(u.linked_id, u.delegati
 ```typescript
 // TypeScript — S2S 음성 봇 (STT/LLM/TTS 설정 불필요)
 import { DVGatewayClient } from 'dvgateway-sdk';
-import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+import { OpenAIRealtimeAdapter, createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
 
 const gw = new DVGatewayClient({
   baseUrl: process.env['DV_BASE_URL']!,
@@ -2426,11 +2428,11 @@ const realtime = new OpenAIRealtimeAdapter({
   turnDetection: { mode: 'server_vad', threshold: 0.5, silenceDurationMs: 200 },
 });
 
-// AI 응답 오디오 → 통화 채널에 주입
-// injectTts 는 오디오 청크의 AsyncIterable 을 받습니다 — 청크 하나도 제너레이터로 감싸 넘깁니다.
-realtime.onAudioOutput(async (pcm16k, linkedId) => {
-  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
-});
+// AI 응답 오디오 → 통화 채널에 주입 — 말 한 마디 단위로(SDK 1.9.11+)
+// 조각마다 injectTts 를 부르지 마세요: 게이트웨이는 injectTts 호출 하나를 «발화 하나»로 보고
+// 그때마다 페이드인(~200ms)·페이드아웃을 넣고 WebSocket 을 새로 엽니다 → 조각마다 소리가 끊깁니다.
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks));
+realtime.onAudioOutput((pcm16k, linkedId) => out.push(linkedId, pcm16k));
 
 // 전사 결과 수신 (speaker: 'customer' | 'agent')
 realtime.onTranscript((result) => {
@@ -2449,6 +2451,7 @@ gw.onCallEvent(async (event) => {
     await realtime.startSession(linkedId, stream);
   }
   if (event.type === 'call:ended') {
+    out.end(event.linkedId);                   // 열린 주입 스트림을 닫는다
     await realtime.stop(event.linkedId);       // call:ended 는 이벤트에 바로 linkedId 가 있습니다
   }
 });
@@ -2458,7 +2461,7 @@ gw.onCallEvent(async (event) => {
 # Python — S2S 음성 봇
 import asyncio, os
 from dvgateway import DVGatewayClient
-from dvgateway.adapters.realtime import OpenAIRealtimeAdapter
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter, SpeechSegmentInjector
 
 gw = DVGatewayClient(
     base_url=os.environ["DV_BASE_URL"],
@@ -2474,13 +2477,10 @@ realtime = OpenAIRealtimeAdapter(
     turn_detection={"mode": "server_vad", "threshold": 0.5, "silence_duration_ms": 200},
 )
 
-def on_audio(pcm16k: bytes, linked_id: str):
-    # inject_tts 는 오디오 청크의 async iterable 을 받습니다 — 청크 하나도 제너레이터로 감쌉니다.
-    async def _gen():
-        yield pcm16k
-    asyncio.ensure_future(gw.inject_tts(linked_id, _gen()))
-
-realtime.on_audio_output(on_audio)
+# AI 응답 오디오 → 말 한 마디 단위로 주입(SDK 1.9.11+). 조각마다 inject_tts 를 부르면
+# 게이트웨이가 조각마다 페이드인·아웃을 넣고 WebSocket 을 새로 열어 소리가 끊깁니다.
+out = SpeechSegmentInjector(lambda lid, chunks: gw.inject_tts(lid, chunks))
+realtime.on_audio_output(lambda pcm16k, lid: out.push(lid, pcm16k))
 realtime.on_transcript(lambda r: print(f"[{r.speaker}] {r.text}"))
 realtime.on_error(lambda err, lid: print(f"[S2S ERROR] {lid}: {err}"))
 
@@ -2491,6 +2491,7 @@ async def on_call(event):
         stream = gw.stream_audio(linked_id, dir="both", pipeline_type="s2s")
         await realtime.start_session(linked_id, stream)
     elif event.type == "call:ended":
+        out.end(event.linked_id)   # 열린 주입 스트림을 닫는다
         await realtime.stop(event.linked_id)
 
 async def main():
@@ -2533,7 +2534,7 @@ S2S 모드에서 대시보드의 수신자(Callee) VU가 "AI" 스타일로 렌�
 ```typescript
 // TypeScript — 완전한 S2S + 대시보드 VU/VAD 통합
 import { DVGatewayClient } from 'dvgateway-sdk';
-import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+import { OpenAIRealtimeAdapter, createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
 
 const gw = new DVGatewayClient({
   baseUrl: process.env['DV_BASE_URL']!,
@@ -2548,10 +2549,9 @@ const realtime = new OpenAIRealtimeAdapter({
   turnDetection: { mode: 'server_vad' }, // ← 필수: VAD 이벤트 수신
 });
 
-// AI 응답 오디오 → 통화 채널
-realtime.onAudioOutput(async (pcm16k, linkedId) => {
-  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
-});
+// AI 응답 오디오 → 통화 채널(말 단위 주입 — 조각마다 injectTts 금지)
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks));
+realtime.onAudioOutput((pcm16k, linkedId) => out.push(linkedId, pcm16k));
 
 // ★ 대시보드 VAD 전달 — 고객이 말하기 시작/종료를 대시보드에 authoritative하게 전달
 realtime.onSpeechActivity(({ linkedId, side, speaking }) => {
@@ -2570,6 +2570,7 @@ gw.onCallEvent(async (event) => {
     await realtime.startSession(linkedId, stream);
   }
   if (event.type === 'call:ended') {
+    out.end(event.linkedId);                   // 열린 주입 스트림을 닫는다
     await realtime.stop(event.linkedId);
   }
 });
@@ -2582,6 +2583,7 @@ from dvgateway import DVGatewayClient
 from dvgateway.adapters.realtime import (
     OpenAIRealtimeAdapter,
     RealtimeSpeechActivityEvent,
+    SpeechSegmentInjector,
 )
 
 gw = DVGatewayClient(
@@ -2597,12 +2599,9 @@ realtime = OpenAIRealtimeAdapter(
     turn_detection={"mode": "server_vad"},  # ← 필수: VAD 이벤트 수신
 )
 
-def on_audio(pcm16k: bytes, linked_id: str):
-    async def _gen():
-        yield pcm16k
-    asyncio.ensure_future(gw.inject_tts(linked_id, _gen()))
-
-realtime.on_audio_output(on_audio)
+# AI 응답 오디오 → 말 단위 주입(조각마다 inject_tts 금지)
+out = SpeechSegmentInjector(lambda lid, chunks: gw.inject_tts(lid, chunks))
+realtime.on_audio_output(lambda pcm16k, lid: out.push(lid, pcm16k))
 
 # ★ 대시보드 VAD 전달
 def on_vad(ev: RealtimeSpeechActivityEvent) -> None:
@@ -2623,6 +2622,7 @@ async def on_call(event):
         )
         await realtime.start_session(linked_id, stream)
     elif event.type == "call:ended":
+        out.end(event.linked_id)   # 열린 주입 스트림을 닫는다
         await realtime.stop(event.linked_id)
 
 async def main():

@@ -281,7 +281,7 @@ sttAdapter.onTranscript(async (result) => {
 
   // 방법 1: comfort noise + TTS 필러 조합
   audioStream.sendThinkingStart();
-  // "잠시만요" 재생 (캐시 히트 — API 호출 없음, <5ms)
+  // "잠시만요" 재생 (캐시 히트 — 합성 API 를 다시 부르지 않음)
   await gw.say(linkedId, '잠시만요.', tts);
 
   // LLM 처리 중에는 배경 소음이 계속 재생됩니다
@@ -349,7 +349,7 @@ async def on_transcript(result):
 |------|------|------|------|
 | 파이프라인 빌더 (자동) | JS/Python | 코드 변경 없음, 가장 간편 | 타이밍 커스터마이즈 불가 |
 | WebSocket 시그널 (수동) | JS/Python | 정밀한 타이밍 제어, 저레이턴시 | 직접 start/stop 관리 필요 |
-| REST API (수동) | Any | 언어 무관, HTTP만으로 제어 | HTTP 오버헤드 (~10ms) |
+| REST API (수동) | Any | 언어 무관, HTTP만으로 제어 | 호출마다 HTTP 요청 왕복이 더해짐 |
 
 ---
 

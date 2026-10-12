@@ -15,7 +15,7 @@
 
 | 서비스 | 어댑터 클래스 | 추천 모델 | 특징 |
 |--------|------------|---------|------|
-| **ElevenLabs** | `ElevenLabsAdapter` | `eleven_flash_v2_5` | 최저 지연(<75ms), 자연스러운 음성, 한국어 지원 |
+| **ElevenLabs** | `ElevenLabsAdapter` | `eleven_flash_v2_5` | 최저 지연(벤더 설명), 자연스러운 음성, 한국어 지원 |
 | **OpenAI TTS** | `OpenAITtsAdapter` | `tts-1` | 안정적, 여러 언어 지원 |
 | **OpenAI 신경망 TTS** | `OpenAITtsAdapter` | `gpt-4o-mini-tts` | 감정 표현, 억양 제어 가능 |
 
@@ -23,7 +23,7 @@
 
 | 서비스 | 어댑터 클래스 | 추천 모델 | 특징 |
 |--------|------------|---------|------|
-| **Anthropic Claude** | `AnthropicAdapter` | `claude-haiku-4-5-20251001` | 초저지연, 한국어 우수 |
+| **Anthropic Claude** | `AnthropicAdapter` | `claude-haiku-5-5`(어댑터 1.9.12+ — [04 참고](04-adapter-reference.md#anthropic-claude-llm)) | 초저지연, 한국어 우수 |
 | **OpenAI GPT** | `OpenAILlmAdapter` | `gpt-4o-mini` | 저렴, 빠름 |
 | **로컬 LLM** (Ollama · vLLM · LM Studio 등) | `OpenAILlmAdapter` + `baseUrl` | `qwen3:8b` 등 | OpenAI 호환 API 로 연결 (SDK 1.9.2+) — [로컬 LLM](04-adapter-reference.md#로컬오프라인-llm--ollama--vllm--lm-studio) 참고 |
 
@@ -55,7 +55,7 @@
 
 | 서비스 | 게이트웨이 어댑터 | API Key 형식 | 한국어 | 특징 |
 |--------|-----------------|-------------|--------|------|
-| **ElevenLabs** | `elevenlabs` | API Key | ✅ | 자연스러운 음성, 최저 지연(<75ms), 감정 표현 |
+| **ElevenLabs** | `elevenlabs` | API Key | ✅ | 자연스러운 음성, 최저 지연(벤더 설명), 감정 표현 |
 | **OpenAI TTS** | `openai` | API Key (`sk-...`) | ✅ | `tts-1` / `gpt-4o-mini-tts`, 안정적 |
 | **Google Cloud TTS** | `google` | 서비스 계정 JSON Key | ✅ | Neural2 / Studio 음성, 서울 리전 |
 | **Azure TTS** | `azure` | 구독 키 + 리전 | ✅ | 한국 리전, SSML 지원 |
@@ -83,12 +83,12 @@ Gemini LLM을 사용하려면 SDK에서 OpenAI 호환 어댑터로 연동하거�
 #### 조합 1: 최저 레이턴시 (AI 음성 봇)
 
 ```
-STT: Deepgram (nova-3)        — ~200ms, WebSocket 스트리밍
-LLM: OpenAI (gpt-4o-mini)     — ~100ms, 저렴하고 빠름 (기본)
-     Anthropic (haiku-4-5)    — ~80ms, 한국어 우수 (백업)
-TTS: ElevenLabs (flash v2.5)  — ~75ms, 자연스러운 음성
+STT: Deepgram (nova-3)        — WebSocket 스트리밍
+LLM: OpenAI (gpt-4o-mini)     — 저렴하고 빠름 (기본)
+     Anthropic (haiku-5-5)    — 한국어 우수 (백업)
+TTS: ElevenLabs (flash v2.5)  — 자연스러운 음성, 벤더 설명상 최저 지연
 ────────────────────────────
-총 레이턴시: ~375ms (목표 500ms 이하 ✅)
+지연 목표: 500ms 이하 — 이 조합의 실제 지연은 측정한 값이 없으니 자기 통화로 재세요
 ```
 
 ```typescript
@@ -96,7 +96,7 @@ TTS: ElevenLabs (flash v2.5)  — ~75ms, 자연스러운 음성
 await gw.pipeline()
   .stt(new DeepgramAdapter({ model: 'nova-3', language: 'ko' }))
   .llm(new OpenAILlmAdapter({ model: 'gpt-4o-mini' }))
-  .fallback(new AnthropicAdapter({ model: 'claude-haiku-4-5-20251001' }))
+  .fallback(new AnthropicAdapter({ model: 'claude-haiku-5-5' }))
   .tts(new ElevenLabsAdapter({ model: 'eleven_flash_v2_5' }))
   .start(callId);
 ```

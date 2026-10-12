@@ -8,7 +8,7 @@
 통화 음성 → [STT: 텍스트 변환] → [LLM: AI 응답 생성] → [TTS: 음성 합성] → 통화에 재생
 ```
 
-지연 시간 목표: **500ms 이하** (STT ~200ms + LLM ~80ms + TTS ~75ms)
+지연 시간 목표: **500ms 이하** — 단계별 지연은 이 프로젝트가 측정한 값이 없으니 자기 통화로 재세요.
 
 ```typescript
 import { DVGatewayClient } from 'dvgateway-sdk';
@@ -90,7 +90,7 @@ await gw.pipeline()
 ## 8. 파이프라인 패턴 2: OpenAI 리얼타임 음성 직통 (Audio 1.5)
 
 OpenAI Realtime API는 STT → LLM → TTS 파이프라인을 단일 WebSocket 연결로 대체합니다.
-**지연 시간이 ~300ms**로 가장 빠르며, 별도 STT/TTS 서비스가 필요 없습니다.
+STT·LLM·TTS 를 따로 거치지 않아 단계 사이 왕복이 줄고, 별도 STT/TTS 서비스가 필요 없습니다(지연 수치는 측정하지 않았습니다).
 
 ```
 통화 음성 → [OpenAI Realtime (gpt-4o-realtime)] → AI 음성 응답 → 통화에 재생
@@ -98,7 +98,7 @@ OpenAI Realtime API는 STT → LLM → TTS 파이프라인을 단일 WebSocket �
 
 ```typescript
 import { DVGatewayClient } from 'dvgateway-sdk';
-import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+import { OpenAIRealtimeAdapter, createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
 
 const gw = new DVGatewayClient({
   baseUrl: 'http://your-gateway:8080',
@@ -138,10 +138,11 @@ const realtimeAdapter = new OpenAIRealtimeAdapter({
   temperature: 0.8,
 });
 
-// 오디오 출력 → DVGateway TTS 주입
-realtimeAdapter.onAudioOutput(async (audioChunk, linkedId) => {
-  await gw.injectTts(linkedId, (async function*() { yield audioChunk; })());
-});
+// 오디오 출력 → DVGateway TTS 주입 — 말 한 마디 단위로(SDK 1.9.11+)
+// 조각마다 injectTts 를 부르지 마세요: 게이트웨이는 injectTts 호출 하나를 «발화 하나»로 보고
+// 그때마다 페이드인(~200ms)·페이드아웃을 넣고 WebSocket 을 새로 엽니다 → 조각마다 소리가 끊깁니다.
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks));
+realtimeAdapter.onAudioOutput((audioChunk, linkedId) => out.push(linkedId, audioChunk));
 
 // 전사 결과 처리
 realtimeAdapter.onTranscript((result) => {
@@ -166,6 +167,7 @@ gw.on('call:new', async (event) => {
 
 gw.on('call:ended', async (event) => {
   console.log(`📴 리얼타임 세션 종료: ${event.linkedId}`);
+  out.end(event.linkedId);   // 열린 주입 스트림을 닫는다
   await realtimeAdapter.stop(event.linkedId);
 });
 
@@ -200,7 +202,7 @@ const interpreter = new OpenAIRealtimeAdapter({
 
 | 항목 | STT→LLM→TTS 파이프라인 | OpenAI Realtime |
 |------|----------------------|----------------|
-| 지연 시간 | ~500ms | **~300ms** |
+| 지연 시간 | 단계마다 왕복이 쌓임 | 단일 연결 (수치 미측정) |
 | 비용 | 서비스별 요금 | 단일 요금 (토큰/초) |
 | 음성 자연스러움 | 어댑터 TTS 품질 의존 | **자연스러운 억양** |
 | AI 교체 유연성 | **자유로움** (Anthropic, OpenAI 등) | OpenAI 한정 |

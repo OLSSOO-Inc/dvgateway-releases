@@ -16,7 +16,7 @@
 
 import 'dotenv/config';
 import { DVGatewayClient } from 'dvgateway-sdk';
-import { OpenAIRealtimeAdapter } from 'dvgateway-adapters/realtime';
+import { OpenAIRealtimeAdapter, createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
 
 const gw = new DVGatewayClient({
   baseUrl: process.env['DV_BASE_URL'] ?? 'http://localhost:8080',
@@ -66,14 +66,17 @@ console.log('🎙️  Korean → English live interpreter ready');
 console.log('📡  Gateway:', process.env['DV_BASE_URL']);
 console.log('🌐  Translate: ko → en (swap inputLanguage/outputLanguage to invert)\n');
 
-// Route the AI's translated audio back into the call. The adapter passes the
-// linkedId of the session that produced the audio, so one handler serves every
-// call. injectTts takes an AsyncIterable of PCM chunks — wrap the single chunk.
-interpreter.onAudioOutput((chunk, linkedId) => {
-  gw.injectTts(linkedId, (async function* () { yield chunk; })()).catch((e: Error) => {
-    console.error(`[call ${linkedId}] inject failed:`, e.message);
-  });
+// Route the AI's translated audio back into the call, one utterance at a time.
+// Do not call injectTts once per chunk: the gateway treats every injectTts call
+// as one utterance (its own ~200 ms fade-in and fade-out, its own WebSocket), so
+// per-chunk injection fades every chunk in and out. The injector keeps one
+// inject stream open while audio keeps arriving (SDK 1.9.11+). The adapter
+// passes the linkedId of the session that produced the audio, so one handler
+// serves every call.
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks), {
+  onError: (err, id) => console.error(`[call ${id}] inject failed:`, err.message),
 });
+interpreter.onAudioOutput((chunk, linkedId) => out.push(linkedId, chunk));
 
 // The SDK opens the call-event socket on the first subscription (no connect()).
 gw.onCallEvent(async (event) => {
@@ -88,6 +91,7 @@ gw.onCallEvent(async (event) => {
     await interpreter.startSession(linkedId, audioStream);
   }
   if (event.type === 'call:ended') {
+    out.end(event.linkedId);
     await interpreter.stop(event.linkedId);
     console.log(`[call ${event.linkedId}] interpreter session ended`);
   }
@@ -95,6 +99,7 @@ gw.onCallEvent(async (event) => {
 
 process.on('SIGINT', async () => {
   console.log('\nShutting down interpreter…');
+  out.endAll();
   await interpreter.stop();        // no argument = stop every session
   gw.close();
   process.exit(0);

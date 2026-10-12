@@ -130,13 +130,15 @@ stt = DeepgramAdapter(
 
 #### 모델 비교 (2026-03 기준)
 
-| 모델 ID | 설명 | 지연 | 언어 | 요청당 글자 | 크레딧/자 | 용도 |
+| 모델 ID | 설명 | 지연(벤더 설명 · 상대) | 언어 | 요청당 글자 | 크레딧/자 | 용도 |
 |---------|------|------|------|------------|----------|------|
-| `eleven_flash_v2_5` | 최저 지연, 실시간 최적 **(기본값)** | ~75ms | 32개 | 40,000 | 0.5 | 실시간 대화, 챗봇, 음성 에이전트 |
-| `eleven_turbo_v2_5` | 품질/속도 균형 | ~200ms | 32개 | 40,000 | 0.5 | 준실시간 응답 |
-| `eleven_multilingual_v2` | 고품질 다국어 (humanVoice 기본) | ~300ms | 29개 | 40,000 | 1.0 | 자연스러운 한국어, 나레이션 |
+| `eleven_flash_v2_5` | 최저 지연, 실시간 최적 **(기본값)** | 최저 | 32개 | 40,000 | 0.5 | 실시간 대화, 챗봇, 음성 에이전트 |
+| `eleven_turbo_v2_5` | 품질/속도 균형 | 낮음 | 32개 | 40,000 | 0.5 | 준실시간 응답 |
+| `eleven_multilingual_v2` | 고품질 다국어 (humanVoice 기본) | 보통 | 29개 | 40,000 | 1.0 | 자연스러운 한국어, 나레이션 |
 | `eleven_v3` | **최신 플래그십** — 최고 표현력, Audio Tags | 높음 | **74개** | **5,000** | 1.0 | 감정 연기, 오디오북, 다자 대화 |
 
+> 지연 열은 벤더 설명에 따른 **상대 비교**이며 이 프로젝트가 측정한 값이 아닙니다(종전의 `~75ms`·`~200ms`·`~300ms` 는 근거가 없어 지웠습니다).
+>
 > **실시간 음성 에이전트**: `eleven_flash_v2_5` 권장 (최저 지연, WebSocket 스트리밍 지원)
 > **최고 한국어 품질**: `eleven_multilingual_v2` 또는 `eleven_v3` 선택
 > **감정 표현 필요**: `eleven_v3` + Audio Tags 사용
@@ -162,7 +164,7 @@ import { ElevenLabsAdapter } from 'dvgateway-adapters/tts';
 // ── 실시간 음성 에이전트 (권장) ──────────────────────────────
 const realtimeTts = new ElevenLabsAdapter({
   apiKey:  'sk_xxxx',
-  model:   'eleven_flash_v2_5',       // 실시간 최적 (~75ms)
+  model:   'eleven_flash_v2_5',       // 실시간 최적(벤더 설명상 최저 지연)
   voiceId: 'XrExE9yKIg1WjnnlVkGX',   // Yuna (한국어 여성, 추천 1위)
 });
 
@@ -363,7 +365,7 @@ await tts.synthesize('축하합니다! 주문이 완료되었습니다.');
 | API 키 발급 | ElevenLabs 사이트 | Google AI Studio (무료) |
 | 무료 크레딧 | 월 10,000자 (무료 플랜) | 무료 티어 포함 |
 | 한국어 품질 | 매우 우수 (네이티브 음성) | 우수 (자연스러운 운율) |
-| 실시간 지연 | ~75ms (flash v2.5) | 빠름 (flash-tts) |
+| 실시간 지연(벤더 설명) | 최저 (flash v2.5) | 빠름 (flash-tts) |
 | 음성 클로닝 | 지원 | 미지원 |
 | 스타일 제어 | stability/style 파라미터 | 자연어 prompt |
 | 스트리밍 | WebSocket 스트리밍 | REST (전체 응답) |
@@ -379,16 +381,16 @@ const llm = new AnthropicAdapter({
   apiKey: 'sk-ant-xxxx',
 
   // ── 모델 선택 ─────────────────────────────────────────────
-  model: 'claude-haiku-4-5-20251001',
-  // 옵션 (2026-03 기준):
-  //   'claude-haiku-4-5-20251001' — 가장 빠름, 저비용 (실시간 음성 권장)
-  //   'claude-sonnet-4-6'         — 품질/속도 균형 (기본값)
+  model: 'claude-haiku-5-5',
+  // 옵션:
+  //   'claude-haiku-5-5'          — 저비용 (실시간 음성 권장)
+  //   'claude-sonnet-4-6'         — 품질/비용 균형 (어댑터 기본값)
   //   'claude-opus-4-6'           — 최고 품질, 복잡한 추론
 
   // ── 대화 설정 ─────────────────────────────────────────────
   systemPrompt: '당신은 친절한 AI 상담원입니다. 짧게 답변하세요.',
   maxTokens:    512,   // 응답 최대 토큰 (짧을수록 빠름)
-  temperature:  0.7,   // 창의성 (0.0=정확, 1.0=창의적)
+  // temperature: 0.7,  // claude-sonnet-4-6 등 옛 세대만 — Haiku 5.5·Sonnet 5.x·Opus 4.7+ 는 받지 않는다(어댑터가 빼고 보낸다)
 
   // ── 고급 설정 (선택) ─────────────────────────────────────
   // topP: 0.9,                           // 핵 샘플링 (temperature와 동시 사용 불가)
@@ -396,13 +398,17 @@ const llm = new AnthropicAdapter({
 });
 ```
 
+> ⚠️ `claude-haiku-5-5` 같은 새 모델은 **`dvgateway-adapters` / `dvgateway` 1.9.12 이상**에서 쓰세요. 1.9.11 까지의 어댑터는 `temperature` 0.7 을 항상 보내는데, Haiku 5.5·Sonnet 5.x·Opus 4.7 이상은 기본값이 아닌 `temperature` 를 400 으로 거절해 **모든 호출이 실패**합니다. 1.9.12 부터는 그 모델들에 `temperature`·`topP` 를 보내지 않습니다.
+
 **모델 선택 가이드:**
 
-| 상황 | 추천 모델 | 예상 지연 |
+| 상황 | 추천 모델 | 비용(입력/출력 100만 토큰당 · Anthropic 공시) |
 |------|---------|----------|
-| 실시간 음성 봇 | `claude-haiku-4-5-20251001` | ~80ms |
-| 복잡한 상담 | `claude-sonnet-4-6` | ~120ms |
-| 고품질 분석 | `claude-opus-4-6` | ~200ms |
+| 실시간 음성 봇 | `claude-haiku-5-5` | $0.10 / $0.50 (프롬프트 10만 토큰 이하) |
+| 복잡한 상담 | `claude-sonnet-4-6` | $3 / $15 |
+| 고품질 분석 | `claude-opus-4-6` | $5 / $25 |
+
+> 지연 시간은 싣지 않습니다. 종전 표의 `~80ms`·`~120ms`·`~200ms` 는 이 프로젝트가 측정한 값이 아니었습니다. 첫 토큰 지연은 네트워크·프롬프트 길이·출력 길이에 따라 달라지므로 자기 트래픽으로 재세요. ⚠️ `claude-haiku-5-5` 는 생각(thinking)이 기본으로 켜져 있어 그만큼 첫 글자가 늦어질 수 있고, 생각 토큰도 `maxTokens` 와 출력 과금에 포함됩니다.
 
 ---
 
@@ -442,7 +448,7 @@ const tts = new OpenAITtsAdapter({
   // ── 모델 선택 ─────────────────────────────────────────────
   model: 'tts-1',
   // 옵션:
-  //   'tts-1'           — 실시간 최적화 (~200ms, 기본값)
+  //   'tts-1'           — 실시간 최적화 (기본값)
   //   'tts-1-hd'        — 고품질 (스튜디오 수준)
   //   'gpt-4o-mini-tts' — 신경망 TTS, 감정/억양 제어 (2025+)
 

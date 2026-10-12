@@ -137,7 +137,7 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 - [ ] ElevenLabs: `model: 'eleven_flash_v2_5'`, `optimizeStreamingLatency: 4`
 - [ ] Deepgram: `endpointingMs: 400` 이하로 설정
 - [ ] LLM: `maxTokens` 를 256–512로 줄이기
-- [ ] 가장 빠른 LLM 모델 사용: `claude-haiku-4-5-20251001` 또는 `gpt-4o-mini`
+- [ ] 가장 빠른 LLM 모델 사용: `claude-haiku-5-5` 또는 `gpt-4o-mini`
 - [ ] 또는 OpenAI Realtime 어댑터로 전환 (단일 서비스, 최저 지연)
 
 ---
@@ -355,7 +355,7 @@ async function main() {
 
   const llmFallback = new AnthropicAdapter({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    model: 'claude-haiku-4-5-20251001',  // 백업 LLM
+    model: 'claude-haiku-5-5',  // 백업 LLM
     systemPrompt: '당신은 친절한 한국어 AI 안내원입니다. 짧고 명확하게 답변하세요.',
   });
 
@@ -608,7 +608,7 @@ async function main() {
   // ── 2. TTS 어댑터 설정 ─────────────────────────────────────
   const tts = new ElevenLabsAdapter({
     apiKey: process.env.ELEVENLABS_API_KEY,
-    model: 'eleven_flash_v2_5',       // 최저 지연 (~75ms)
+    model: 'eleven_flash_v2_5',       // 최저 지연(벤더 설명)
     voiceId: '21m00Tcm4TlvDq8ikWAM',  // Rachel 음성 (무료)
   });
 
@@ -1364,7 +1364,7 @@ async def main():
 
     llm_fallback = AnthropicAdapter(
         api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        model="claude-haiku-4-5-20251001",
+        model="claude-haiku-5-5",
         system_prompt="당신은 친절한 한국어 AI 안내원입니다. 짧고 명확하게 답변하세요.",
     )
 
@@ -1627,7 +1627,7 @@ async def main():
     # ── 2. TTS 어댑터 설정 ─────────────────────────────────────
     tts = ElevenLabsAdapter(
         api_key=os.environ["ELEVENLABS_API_KEY"],
-        model="eleven_flash_v2_5",       # 최저 지연 (~75ms)
+        model="eleven_flash_v2_5",       # 최저 지연(벤더 설명)
         voice_id="21m00Tcm4TlvDq8ikWAM",  # Rachel 음성 (무료)
     )
 

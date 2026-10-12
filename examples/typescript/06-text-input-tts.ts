@@ -47,7 +47,7 @@ const tts = ttsProvider === 'elevenlabs'
   ? new ElevenLabsAdapter({
       apiKey:  process.env['ELEVENLABS_API_KEY']!,
       voiceId: process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM',
-      model:   'eleven_flash_v2_5',       // 최저 지연 (~75ms)
+      model:   'eleven_flash_v2_5',       // 최저 지연(벤더 설명)
     })
   : new GeminiTtsAdapter({
       apiKey: process.env['GEMINI_API_KEY']!,

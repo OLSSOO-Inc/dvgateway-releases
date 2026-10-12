@@ -234,11 +234,13 @@ const stt = new DeepgramAdapter({
 완전 무료로 STT를 사용하려면 로컬 Whisper 모델을 연동합니다.
 실시간 처리를 위해서는 GPU 서버가 필요합니다.
 
-| 로컬 STT | 지연시간 | GPU 필요 | 한국어 품질 |
-|----------|---------|----------|-----------|
-| whisper.cpp | ~500ms | 권장 | 양호 |
-| Faster-Whisper | ~300ms | 필수 | 우수 |
-| OpenAI Whisper (공식) | ~800ms | 필수 | 우수 |
+| 로컬 STT | GPU 필요 | 한국어 품질 |
+|----------|----------|-----------|
+| whisper.cpp | 권장 | 양호 |
+| Faster-Whisper | 필수 | 우수 |
+| OpenAI Whisper (공식) | 필수 | 우수 |
+
+> 지연시간 열은 측정 근거가 없어 지웠습니다. GPU·모델 크기·오디오 길이에 따라 크게 달라지니 자기 환경에서 재세요.
 
 자세한 설정은 [04. 어댑터 상세 설정](04-adapter-reference.md)의 로컬 STT 섹션을 참고하세요.
 
@@ -248,14 +250,16 @@ const stt = new DeepgramAdapter({
 
 #### TTS 비용 (1,000자 기준, 2026-03)
 
-| 프로바이더 | 모델 | 1,000자 비용 | 지연시간 | 한국어 |
-|-----------|------|-------------|---------|-------|
-| ElevenLabs | eleven_flash_v2_5 | ~$0.15 | ~75ms | O |
-| ElevenLabs | eleven_multilingual_v2 | ~$0.18 | ~300ms | O |
-| OpenAI | tts-1 | ~$0.015 | ~200ms | O |
-| OpenAI | tts-1-hd | ~$0.030 | ~400ms | O |
-| OpenAI | gpt-4o-mini-tts | ~$0.010 | ~150ms | O |
-| Google Cloud TTS | Neural2 | ~$0.016 | ~200ms | O |
+| 프로바이더 | 모델 | 1,000자 비용 | 한국어 |
+|-----------|------|-------------|-------|
+| ElevenLabs | eleven_flash_v2_5 | ~$0.15 | O |
+| ElevenLabs | eleven_multilingual_v2 | ~$0.18 | O |
+| OpenAI | tts-1 | ~$0.015 | O |
+| OpenAI | tts-1-hd | ~$0.030 | O |
+| OpenAI | gpt-4o-mini-tts | ~$0.010 | O |
+| Google Cloud TTS | Neural2 | ~$0.016 | O |
+
+> 지연시간 열은 측정 근거가 없어 지웠습니다(비용은 종전 표 그대로이며 다시 확인하지 않았습니다).
 
 > **비용 팁**: 안내 멘트처럼 반복 텍스트가 많은 경우 ElevenLabs + CachedTtsAdapter 조합이
 > 고품질 음성을 유지하면서 비용을 거의 $0으로 줄일 수 있습니다.

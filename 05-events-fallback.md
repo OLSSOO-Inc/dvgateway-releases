@@ -295,13 +295,17 @@ gw.onCallEvent(async (event) => {
 
 ### S2S (OpenAI Realtime / Gemini Live) 와의 연동
 
-S2S 어댑터의 `onAudioOutput` 콜백으로 받은 PCM을 `gw.injectTts()` 로 주입하면, AI 응답 한 턴이 끝날 때마다 `tts:complete` 이벤트가 발행됩니다. 이를 이용해 "AI 발화 종료 시점"을 정확히 감지할 수 있습니다.
+`tts:complete` 는 **`injectTts()` 호출 하나(주입 스트림 하나)의 재생이 끝날 때마다** 발행됩니다. 그래서 S2S 어댑터의 `onAudioOutput` 조각을 조각마다 `injectTts()` 로 넣으면 **조각마다** 발행되어 「AI 발화 종료」 신호가 되지 못하고, 게이트웨이도 조각마다 페이드인(~200ms)·페이드아웃을 넣어 소리가 끊깁니다. `createSpeechSegmentInjector`(SDK 1.9.11+)로 말 단위로 묶어 넣으면 말 한 마디마다 한 번 발행됩니다.
+
+⚠️ 「한 턴에 정확히 한 번」은 아닙니다 — 응답 도중 오디오가 `idleEndMs`(기본 500ms) 이상 끊기면 거기서 주입 스트림이 나뉘어 그만큼 더 발행됩니다.
 
 ```typescript
 // S2S 응답 종료 시점 포착 → 대화 로그 기록 / 후속 조치
-realtime.onAudioOutput(async (pcm16k, linkedId) => {
-  await gw.injectTts(linkedId, (async function* () { yield pcm16k; })());
-});
+import { createSpeechSegmentInjector } from 'dvgateway-adapters/realtime';
+
+const out = createSpeechSegmentInjector((id, chunks) => gw.injectTts(id, chunks));
+realtime.onAudioOutput((pcm16k, linkedId) => out.push(linkedId, pcm16k));
+// 통화 종료 시: out.end(linkedId)
 
 gw.onTtsComplete((ev) => {
   console.log(`AI 응답 종료: ${ev.linkedId} @ ${ev.timestamp.toISOString()}`);

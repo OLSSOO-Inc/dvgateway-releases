@@ -109,7 +109,7 @@ async def main():
 
     llm_fallback = AnthropicAdapter(
         api_key=os.environ["ANTHROPIC_API_KEY"],
-        model="claude-haiku-4-5-20251001",
+        model="claude-haiku-5-5",
         system_prompt="당신은 친절한 한국어 음성 안내원입니다. 짧고 명확하게 답변하세요.",
     )
 
@@ -157,7 +157,7 @@ import os
 from dotenv import load_dotenv
 
 from dvgateway import DVGatewayClient
-from dvgateway.adapters.realtime import OpenAIRealtimeAdapter
+from dvgateway.adapters.realtime import OpenAIRealtimeAdapter, SpeechSegmentInjector
 
 load_dotenv()
 
@@ -182,13 +182,12 @@ async def main():
         temperature=0.8,
     )
 
-    async def inject_chunk(chunk: bytes, linked_id: str) -> None:
-        await gw.inject_tts(linked_id, _single(chunk))
-
-    async def _single(chunk: bytes):
-        yield chunk
-
-    realtime.on_audio_output(inject_chunk)
+    # AI 응답 오디오 → 말 한 마디 단위로 주입(SDK 1.9.11+).
+    # on_audio_output 콜백은 «동기»로 불립니다 — async 함수를 넘기면 코루틴이 실행되지 않아
+    # 소리가 아예 나가지 않습니다. 또 조각마다 inject_tts 를 부르면 게이트웨이가 조각마다
+    # 페이드인·아웃을 넣고 WebSocket 을 새로 열어 소리가 끊깁니다.
+    out = SpeechSegmentInjector(lambda lid, chunks: gw.inject_tts(lid, chunks))
+    realtime.on_audio_output(lambda chunk, lid: out.push(lid, chunk))
     realtime.on_transcript(lambda result: print(
         f"{'🤖 AI' if result.speaker == 'agent' else '👤 고객'}: {result.text}"
     ))
@@ -203,6 +202,7 @@ async def main():
     @gw.on("call:ended")
     async def on_call_ended(event):
         print(f"📴 리얼타임 세션 종료: {event.linked_id}")
+        out.end(event.linked_id)   # 열린 주입 스트림을 닫는다
         await realtime.stop(event.linked_id)
 
     # 이벤트 루프 유지 (pipeline이 아닌 이벤트 기반 패턴에서는 프로세스 종료 방지)
@@ -379,7 +379,7 @@ const llm = new OpenAILlmAdapter({
 
 const llmFallback = new AnthropicAdapter({
   apiKey:       process.env.ANTHROPIC_API_KEY!,
-  model:        'claude-haiku-4-5-20251001',   // 백업 LLM
+  model:        'claude-haiku-5-5',   // 백업 LLM
   systemPrompt: '당신은 친절한 한국어 음성 안내원입니다. 짧고 명확하게 답변하세요.',
 });
 

@@ -196,7 +196,7 @@ const webhook = new WebhookAdapter({
   secret: 'my-hmac-secret',       // HMAC-SHA256 요청 서명 (선택)
   fallback: new AnthropicAdapter({ // Webhook 장애 시 자동 전환
     apiKey: process.env.ANTHROPIC_API_KEY!,
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-haiku-5-5',
   }),
   headers: {                       // 추가 HTTP 헤더 (선택)
     'Authorization': 'Bearer api-key',
@@ -220,7 +220,7 @@ webhook = WebhookAdapter(
     url="https://n8n.company.com/webhook/voice-bot",
     timeout=5.0,
     secret="my-hmac-secret",
-    fallback=AnthropicAdapter(api_key="...", model="claude-haiku-4-5-20251001"),
+    fallback=AnthropicAdapter(api_key="...", model="claude-haiku-5-5"),
     system_prompt="고객 상담 AI입니다.",
 )
 
