@@ -9,6 +9,7 @@
 | **Deepgram** | `DeepgramAdapter` | `nova-3` | 최고 정확도, 한국어 지원, 가장 빠른 스트리밍 |
 | **Google Chirp 3** | `GoogleChirp3Adapter` | `chirp_3` | Google Cloud STT, 한국어 지원 |
 | **OpenAI** | `OpenAISttAdapter` | `gpt-4o-transcribe` | 다국어 정확도 우수 |
+| **리턴제로 (RTZR)** | `RtzrSttAdapter` | `sommers_ko` | 국내 서버 · 한국어 전화 음성 전용 · 주소·전화번호 인식 우수(자체 비교) — SDK 1.9.13+ |
 | **로컬 엔진** (whisper.cpp · Faster-Whisper 등) | 직접 구현 (`SttAdapter`) | — | 내장 어댑터 없음 — [로컬 STT 직접 구현](04-adapter-reference.md#로컬오프라인-stt--직접-어댑터-구현) 참고 |
 
 ### 음성 합성 (TTS — Text to Speech)

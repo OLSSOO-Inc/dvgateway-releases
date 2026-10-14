@@ -1541,6 +1541,7 @@ callinfo WebSocket으로 실시간 수신:
 | `DeepgramAdapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` | Deepgram Nova-3 (한국어 최적) |
 | `GoogleChirp3Adapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` | Google Chirp 3 (V2 API) |
 | `OpenAISttAdapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` | OpenAI Realtime Transcription (gpt-4o-transcribe, gpt-realtime-whisper) |
+| `RtzrSttAdapter` | `dvgateway-adapters/stt` / `dvgateway.adapters.stt` | 리턴제로 sommers_ko — 한국어 전화 음성 (SDK 1.9.13+) |
 
 #### DeepgramAdapter 옵션
 
@@ -1639,6 +1640,44 @@ stt = OpenAISttAdapter(
     prefix_padding_ms=200,
 )
 ```
+
+#### RtzrSttAdapter 옵션 (SDK 1.9.13+)
+
+리턴제로(ReturnZero) 스트리밍 STT. 한국어 전화 음성 전용 모델(`sommers_ko`, `domain: 'CALL'`)을 씁니다.
+키는 **두 개**(콘솔의 `client_id` · `client_secret`)이고, 어댑터가 토큰(6시간)을 받아 재사용합니다.
+
+```typescript
+// TypeScript
+import { RtzrSttAdapter } from 'dvgateway-adapters/stt';
+const stt = new RtzrSttAdapter({
+  clientId: process.env.RTZR_CLIENT_ID!,         // 필수
+  clientSecret: process.env.RTZR_CLIENT_SECRET!, // 필수
+  language: 'ko',             // 기본 "ko" → sommers_ko ("ja" → sommers_ja, 그 외 → whisper)
+  domain: 'CALL',             // 전화 음성 (기본) | 'MEETING'
+  useItn: true,               // "공일공" → "010" (기본 true)
+  useDisfluencyFilter: false, // "음", "어" 제거
+  usePunctuation: false,
+  keywords: ['선불', '착불:3.5'], // 한글만 · 20자 이하 · 100개 이하 · ":점수"(-5~5) 선택
+});
+// 내 쪽에서 말이 끝났다고 판단했을 때 — 서버의 끝 판정을 기다리지 않고 바로 확정
+stt.finalize();
+```
+
+```python
+# Python
+from dvgateway.adapters.stt import RtzrSttAdapter
+stt = RtzrSttAdapter(
+    client_id=os.environ["RTZR_CLIENT_ID"],
+    client_secret=os.environ["RTZR_CLIENT_SECRET"],
+    language="ko",
+    keywords=["선불", "착불:3.5"],
+)
+await stt.finalize()
+```
+
+- ⚠️ **키워드 규칙을 어기면 연결이 HTTP 400 으로 실패**하므로 어댑터가 미리 걸러 내고 **개수만** 로그로 남깁니다(영문·숫자 낱말은 빠집니다).
+- ⚠️ 60초 동안 오디오가 없으면 서버가 연결을 끊습니다.
+- 게이트웨이 내장 경로(주문 접수·회의 STT)에서는 대시보드 STT 키에 `client_id:client_secret` 한 칸으로 넣습니다.
 
 ### LLM (AI 대화)
 

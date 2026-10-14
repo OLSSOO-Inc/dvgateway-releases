@@ -126,6 +126,54 @@ stt = DeepgramAdapter(
 
 ---
 
+### 리턴제로 (RTZR) STT — SDK 1.9.13+
+
+국내 업체 리턴제로의 스트리밍 STT 입니다. 한국어 **전화 음성 전용** 모델(`sommers_ko` + `domain: 'CALL'`)을 씁니다.
+
+**자체 비교 실측**(2026-10-14 · AWS 서울 · 합성 전화 음성 33문장 · Deepgram nova-3 와 같은 오디오):
+
+| | Deepgram | 리턴제로 |
+|---|---|---|
+| 연결 실패 | 2/33 | 0/33 |
+| 연결 시간 | 576ms | 14ms |
+| 꼭 맞혀야 할 낱말(주소·번호·결제) | 41/59 | 51/61 |
+| 말 끝 → 최종 결과(중앙값) | 457ms | 544ms |
+
+⚠️ 합성 음성 실측입니다 — 실통화 정확도는 따로 확인하십시오. 최종 결과가 약간 늦은 것은 서버가 자기 끝 판정을 기다리기 때문이고, 내 쪽에서 말이 끝났다고 판단했을 때 `finalize()` 를 부르면 바로 확정됩니다.
+
+```typescript
+import { RtzrSttAdapter } from 'dvgateway-adapters/stt';
+
+const stt = new RtzrSttAdapter({
+  clientId: process.env.RTZR_CLIENT_ID!,
+  clientSecret: process.env.RTZR_CLIENT_SECRET!,
+  keywords: ['선불', '착불', '다마스'],
+});
+```
+
+```python
+from dvgateway.adapters.stt import RtzrSttAdapter
+
+stt = RtzrSttAdapter(
+    client_id=os.environ["RTZR_CLIENT_ID"],
+    client_secret=os.environ["RTZR_CLIENT_SECRET"],
+    keywords=["선불", "착불", "다마스"],
+)
+```
+
+| 옵션 | 기본값 | 설명 |
+|---|---|---|
+| `clientId` / `client_id` | (필수) | 리턴제로 콘솔에서 발급 |
+| `clientSecret` / `client_secret` | (필수) | 리턴제로 콘솔에서 발급 |
+| `language` | `ko` | `ko` → `sommers_ko` · `ja` → `sommers_ja` · 그 외 → `whisper` |
+| `domain` | `CALL` | 전화 음성. 원거리 회의는 `MEETING` |
+| `useItn` | `true` | 「공일공」 → 「010」 같은 숫자 변환 |
+| `keywords` | `[]` | **한글과 공백만 · 20자 이하 · 100개 이하** · `낱말:점수`(-5~5). 어기면 연결이 HTTP 400 으로 실패하므로 어댑터가 미리 빼고 개수만 로그로 남깁니다. `sommers_ko` 에서만 보냅니다 |
+
+- 요금(벤더 공시 · 2026-10): 시간당 1,000원(월 1,000시간까지) · 세션당 최소 10초 과금.
+- ⚠️ 60초 동안 오디오가 없으면 서버가 연결을 끊습니다.
+- 게이트웨이 내장 경로(주문 접수·회의 STT)는 대시보드 **프로바이더 API 키 → STT → 리턴제로**에 `client_id:client_secret` 한 칸으로 넣습니다. 통화 요약(배치 전사)은 여전히 Deepgram·OpenAI 키를 씁니다.
+
 ### ElevenLabs TTS (음성 합성)
 
 #### 모델 비교 (2026-03 기준)
@@ -628,7 +676,7 @@ llm = OpenAILlmAdapter(
 
 ### 로컬(오프라인) STT — 직접 어댑터 구현
 
-SDK 에는 **로컬 STT 어댑터(whisper.cpp · Faster-Whisper 등)가 내장되어 있지 않습니다.** 내장 STT 어댑터는 클라우드용(`DeepgramAdapter` · `GoogleChirp3Adapter` · `OpenAISttAdapter`)뿐입니다. 로컬 엔진을 쓰려면 `SttAdapter` 인터페이스를 직접 구현해 파이프라인에 넣습니다.
+SDK 에는 **로컬 STT 어댑터(whisper.cpp · Faster-Whisper 등)가 내장되어 있지 않습니다.** 내장 STT 어댑터는 클라우드용(`DeepgramAdapter` · `GoogleChirp3Adapter` · `OpenAISttAdapter` · `RtzrSttAdapter`)뿐입니다. 로컬 엔진을 쓰려면 `SttAdapter` 인터페이스를 직접 구현해 파이프라인에 넣습니다.
 
 `SttAdapter` 가 구현할 것은 세 가지입니다:
 
