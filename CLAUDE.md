@@ -35,6 +35,7 @@
 | `1.9.10` | ✅ 신규 | **`GptLiveAdapter`** — OpenAI GPT-Live(`gpt-live-1`, 전이중) S2S 어댑터(TS·Python). 위임(`client`/`responses`) 필수 · 16kHz 그대로 · 무음 출력 거르기 · `store:false` 명시 · 결과 미전달 감지(`onUnspokenResult`) · 위임 정책 지시문 도우미(`buildGptLiveInstructions`). 게이트웨이 무변경 |
 | `1.9.11` | ✅ 신규 | **`createSpeechSegmentInjector`** / `SpeechSegmentInjector` — S2S 어댑터의 오디오를 **말 한 마디 단위**로 `injectTts` 에 넣는다(게이트웨이가 주입마다 페이드인·아웃을 넣으므로 조각마다 주입하면 소리가 끊긴다). GPT-Live 실행 예제(TS `11-gpt-live-voice-agent.ts` · Python `10_gpt_live_voice_agent.py`) 추가. 기존 API 무변경 |
 | `1.9.14` | ✅ 신규 | **재시도가 같은 일을 두 번 하지 않게** — HTTP 전송층이 GET 이 아닌 요청마다 `Idempotency-Key` 를 **하나** 만들어 그 요청의 **모든 재시도에 같은 값**을 붙인다(TS·Python). 응답을 못 받은 재생(`playback`)·Redirect·큐 생성의 재시도를 게이트웨이가 다시 실행하지 않고 처음 결과(`idempotentReplay:true`)를 돌려준다 — **게이트웨이 1.4.17.208+**(그 전 게이트웨이와 이 헤더를 읽지 않는 엔드포인트는 무시한다). 직접 넣은 키가 우선 · 다음 호출은 새 키. ⚠️ 보냈는데 답을 못 받은 경우는 재시도에도 **504 `outcome_unknown`** 이 그대로 온다(«실행됐을 수 있다» — 같은 일을 다시 하려면 새 호출로) |
+| `1.9.16` | ✅ 신규 | `DirectoryEntry.kind` 에 `conference`(음성회의) · `feature_code`(지금은 에코테스트 하나 · `feature:"echo_test"`) — **게이트웨이 1.4.17.210+**. 모르는 kind 는 건너뛸 것 |
 
 ---
 
