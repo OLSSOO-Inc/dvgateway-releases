@@ -34,6 +34,7 @@
 | `1.9.9` | ✅ 문서 정정 | 코드 무변경. `playback()`/`liteTtsPlayback()`(Python `playback`/`lite_tts_playback`)와 결과 타입의 JSDoc·docstring 이 «`audio:playback` 완료 이벤트가 온다»고 잘못 적고 있던 것을 바로잡았다 — **이 두 메서드는 재생 시작·완료 이벤트를 보내지 않는다**(`audio:playback` 은 `playAudio()` 전용, `tts:playback` 은 `injectTts()` 전용). 대안: 안내 중 `collectDtmf()` 시작, 또는 `synthesizedBytes / 32000` 초(+약 0.5초) 기다리기(16kHz 16-bit 모노) |
 | `1.9.10` | ✅ 신규 | **`GptLiveAdapter`** — OpenAI GPT-Live(`gpt-live-1`, 전이중) S2S 어댑터(TS·Python). 위임(`client`/`responses`) 필수 · 16kHz 그대로 · 무음 출력 거르기 · `store:false` 명시 · 결과 미전달 감지(`onUnspokenResult`) · 위임 정책 지시문 도우미(`buildGptLiveInstructions`). 게이트웨이 무변경 |
 | `1.9.11` | ✅ 신규 | **`createSpeechSegmentInjector`** / `SpeechSegmentInjector` — S2S 어댑터의 오디오를 **말 한 마디 단위**로 `injectTts` 에 넣는다(게이트웨이가 주입마다 페이드인·아웃을 넣으므로 조각마다 주입하면 소리가 끊긴다). GPT-Live 실행 예제(TS `11-gpt-live-voice-agent.ts` · Python `10_gpt_live_voice_agent.py`) 추가. 기존 API 무변경 |
+| `1.9.14` | ✅ 신규 | **재시도가 같은 일을 두 번 하지 않게** — HTTP 전송층이 GET 이 아닌 요청마다 `Idempotency-Key` 를 **하나** 만들어 그 요청의 **모든 재시도에 같은 값**을 붙인다(TS·Python). 응답을 못 받은 재생(`playback`)·Redirect·큐 생성의 재시도를 게이트웨이가 다시 실행하지 않고 처음 결과(`idempotentReplay:true`)를 돌려준다 — **게이트웨이 1.4.17.208+**(그 전 게이트웨이와 이 헤더를 읽지 않는 엔드포인트는 무시한다). 직접 넣은 키가 우선 · 다음 호출은 새 키. ⚠️ 보냈는데 답을 못 받은 경우는 재시도에도 **504 `outcome_unknown`** 이 그대로 온다(«실행됐을 수 있다» — 같은 일을 다시 하려면 새 호출로) |
 
 ---
 
@@ -337,6 +338,7 @@ const s = await gw.getAudioStatus(linkedId);
 | `applyChanges()` | `apply_changes()` | PBX 설정 재적용 |
 | `clickToCall({caller,callee,...,clientMsgId?})` | `click_to_call(caller,callee,...,client_msg_id=None)` | 클릭투콜. **SDK 1.9.4+ 는 중복 방지 키를 자동으로 붙인다**. 응답의 `actionID` 로 `POST /api/v1/pbx/click-to-call/cancel` 취소 |
 | `getPhonebook(tenantId?)` | `get_phonebook(tenant_id)` | 테넌트 내선 폰북(internal contacts) 조회. 반환 `{phonebookId, contacts[]}`. tenant 토큰은 자사, admin 은 tenantId 지정 |
+| `getDirectory(tenantId?)` | `get_directory(tenant_id)` | 📇 **조직 디렉터리**(SDK 1.9.15 · gw 1.4.17.209) — 내선·링그룹·대기열을 **PBX DB 에서 바로**(전화번호부 갱신 불필요 · 30초 안 반영) + 상태·방해금지·착신전환·울리는 동안 거는 번호·당겨받기를 한 응답으로. 반환 `{tenantId, asOf, complete, entries[], ringingNow[], summary, axes}` · `complete:false` 면 `axes` 의 `status:"unknown"` 축 확인 · 바뀌면 프레즌스 WS `{"event":"directory"}` · tenant 토큰은 자사, admin 은 tenantId 필수 |
 
 ### 큐(대기열) 관리 + 에이전트 런타임 (gateway 1.4.11.30+ / SDK 1.8.7+)
 | TypeScript | Python | 설명 |
