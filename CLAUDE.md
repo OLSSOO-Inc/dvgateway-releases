@@ -339,7 +339,7 @@ const s = await gw.getAudioStatus(linkedId);
 | `applyChanges()` | `apply_changes()` | PBX 설정 재적용 |
 | `clickToCall({caller,callee,...,clientMsgId?})` | `click_to_call(caller,callee,...,client_msg_id=None)` | 클릭투콜. **SDK 1.9.4+ 는 중복 방지 키를 자동으로 붙인다**. 응답의 `actionID` 로 `POST /api/v1/pbx/click-to-call/cancel` 취소 |
 | `getPhonebook(tenantId?)` | `get_phonebook(tenant_id)` | 테넌트 내선 폰북(internal contacts) 조회. 반환 `{phonebookId, contacts[]}`. tenant 토큰은 자사, admin 은 tenantId 지정 |
-| `getDirectory(tenantId?)` | `get_directory(tenant_id)` | 📇 **조직 디렉터리**(SDK 1.9.15 · gw 1.4.17.209) — 내선·링그룹·대기열을 **PBX DB 에서 바로**(전화번호부 갱신 불필요 · 30초 안 반영) + 상태·방해금지·착신전환·울리는 동안 거는 번호·당겨받기를 한 응답으로. 반환 `{tenantId, asOf, complete, entries[], ringingNow[], summary, axes}` · `complete:false` 면 `axes` 의 `status:"unknown"` 축 확인 · 바뀌면 프레즌스 WS `{"event":"directory"}` · tenant 토큰은 자사, admin 은 tenantId 필수 |
+| `getDirectory(tenantId?)` | `get_directory(tenant_id)` | 📇 **조직 디렉터리**(SDK 1.9.15 · gw 1.4.17.209) — 내선·링그룹·대기열을 **PBX DB 에서 바로**(전화번호부 갱신 불필요 · 30초 안 반영) + 상태·방해금지·착신전환·울리는 동안 거는 번호·당겨받기를 한 응답으로. 📱 사람 줄 `app`(SDK 1.9.17 · gw 1.4.17.226) = 그 내선 활성 seat 의 앱 기기 `{platforms:["Android","iOS"], lastSeenAt?}` · `[]`=앱 없음 · 키 없음=모름. 반환 `{tenantId, asOf, complete, entries[], ringingNow[], summary, axes}` · `complete:false` 면 `axes` 의 `status:"unknown"` 축 확인 · 바뀌면 프레즌스 WS `{"event":"directory"}` · tenant 토큰은 자사, admin 은 tenantId 필수 |
 
 ### 큐(대기열) 관리 + 에이전트 런타임 (gateway 1.4.11.30+ / SDK 1.8.7+)
 | TypeScript | Python | 설명 |
