@@ -159,7 +159,7 @@ curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
 | 400 | — | `from, to, text` 누락 · **수신자 10명 초과** |
 | 400 | **`sms_body_too_long`** | 치환 후 **80바이트** 초과. 응답의 `bytes`/`maxBytes` 참조 |
 | 400 | **`sms_unsupported_char`** | **EUC-KR 로 못 보내는 문자**(이모지 등) |
-| 400 | **`chat_link_unavailable`** | 본문에 `{chatLink}` 가 있는데 링크를 만들 수 없음 — `reason`: `no_page_widget`(단독 채팅 주소가 켜진 위젯 없음) · `ambiguous`(여럿인데 고른 것 없음) · `public_base_unset` · `webchat_off` · `no_tenant` |
+| 400 | **`chat_link_unavailable`** | 본문에 `{chatLink}` 가 있는데 링크를 만들 수 없음 — `reason`: `no_page_widget`(단독 채팅 주소가 켜진 위젯 없음) · `ambiguous`(여럿인데 고른 것 없음) · `public_base_unset` · `webchat_off` · `no_apps_license`(라이선스에 apps 없음 · gw 1.4.17.228) · `no_tenant` |
 | 403 | **`no_extension`** | 이 계정에 내선이 없음(모바일) |
 | 403 | `not_owner` | 자기 내선이 아님(모바일) |
 | 403 | **`sms_not_allowed`** | 그 seat 에 **발신 권한 없음** — 관리자가 켜야 함 |
