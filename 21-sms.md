@@ -110,6 +110,23 @@ curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
 📌 본문의 `{repName}` · `{repNumber}` 는 **서버가 치환**합니다(테넌트 대표 이름·번호).
 ⚠️ **길이 검사는 치환 *뒤*** 에 합니다 — 템플릿은 짧아도 치환하면 넘칠 수 있습니다.
 
+✉️ **`{chatLink}` — 채팅 링크**(SDK 1.9.18 · gw 1.4.17.227) — 그 테넌트 채팅 위젯의 **짧은 단독 채팅 주소**(`…/api/w/{10자}` · AWS 52바이트)로
+바뀝니다. 링크 하나로 채팅에 넘기면 80바이트 단문의 길이 제한을 비켜 갑니다.
+
+```typescript
+const link = await gw.getSMSChatLink();          // Python: await gw.get_sms_chat_link()
+if (link.chatLink) {
+  // link.bytes = 링크의 EUC-KR 길이 — 본문 길이를 셀 때 {chatLink} 대신 이 값으로 센다
+  await gw.sendSMS({ from: '1001', to: ['01012345678'], text: '채팅 상담: {chatLink}' });
+} else {
+  console.log('채팅 링크를 쓸 수 없음:', link.reasonText);  // 이때는 변수를 쓰지 않는다
+}
+```
+
+- 링크를 만들 수 없으면 서버가 **보내지 않고** 400 `chat_link_unavailable`(+`reason`)을 돌려줍니다 — 링크 자리가 빈 문자가 나가지 않습니다.
+- 쓰려면 운영사가 대시보드 💬 채팅 위젯에서 **«🔗 단독 채팅 주소»** 를 켜야 합니다(위젯이 여럿이면 «✉️ 문자 링크로 쓰기» 로 하나를 고른다).
+- `link.qr` 는 같은 링크의 QR 그림(PNG) 경로입니다(같은 토큰으로 받는다). 지금 문자는 단문이라 그림을 싣지 못하므로 공유 화면용입니다.
+
 ### 1-2. ⭐ 재시도 안전 — 멱등 키
 
 🔴 **타임아웃으로 응답을 잃으면 "보냈는지 알 수 없습니다."** 그냥 재시도하면
@@ -142,6 +159,7 @@ curl -X POST 'https://your-gateway:8080/api/v1/sms/send' \
 | 400 | — | `from, to, text` 누락 · **수신자 10명 초과** |
 | 400 | **`sms_body_too_long`** | 치환 후 **80바이트** 초과. 응답의 `bytes`/`maxBytes` 참조 |
 | 400 | **`sms_unsupported_char`** | **EUC-KR 로 못 보내는 문자**(이모지 등) |
+| 400 | **`chat_link_unavailable`** | 본문에 `{chatLink}` 가 있는데 링크를 만들 수 없음 — `reason`: `no_page_widget`(단독 채팅 주소가 켜진 위젯 없음) · `ambiguous`(여럿인데 고른 것 없음) · `public_base_unset` · `webchat_off` · `no_tenant` |
 | 403 | **`no_extension`** | 이 계정에 내선이 없음(모바일) |
 | 403 | `not_owner` | 자기 내선이 아님(모바일) |
 | 403 | **`sms_not_allowed`** | 그 seat 에 **발신 권한 없음** — 관리자가 켜야 함 |
